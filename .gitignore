@@ -4,6 +4,10 @@ fp-info-cache
 *.kicad_sch-bak
 *.kicad_pcb-bak
 __pycache__/
+.pytest_cache/
+.venv/
+hw/datasheets/
 *.step
 *.stl
 build/
+
