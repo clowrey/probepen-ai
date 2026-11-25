@@ -1,0 +1,4 @@
+(fp_lib_table
+	(version 7)
+	(lib (name "ppa") (type "KiCad") (uri "${KIPRJMOD}/lib/ppa.pretty") (options "") (descr "ProbePen-AI custom footprints"))
+)

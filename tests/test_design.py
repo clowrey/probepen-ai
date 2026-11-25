@@ -161,3 +161,14 @@ def test_power_rails_have_sources_and_test_pads():
         assert src in refs, (net, src, refs)
     for tp in ("TP_5V", "TP_3V3D", "TP_3V3A", "TP_3V0R", "TP_N1V8", "TP_1V1", "TP_AGND", "TP_GND2", "TP_VADC"):
         assert tp in {c.ref for c in design.COMPONENTS}, tp
+
+
+def test_lm2776_pinout():
+    assert design.comp("U11").pins == {
+        "1": "-3V3_RAW",
+        "2": "AGND",
+        "3": "+3V3_ANA",
+        "4": "+3V3_ANA",
+        "5": "LM2776_C1P",
+        "6": "LM2776_C1N",
+    }

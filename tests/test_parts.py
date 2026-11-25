@@ -31,7 +31,7 @@ def _extract_block(txt: str, start: int) -> str:
 @lru_cache(maxsize=None)
 def _symbol_pin_numbers(sym_id: str) -> set[str]:
     lib, name = sym_id.split(":")
-    path = KICAD_SHARE / "symbols" / f"{lib}.kicad_sym"
+    path = (HW / "lib" / "ppa.kicad_sym") if lib == "ppa" else (KICAD_SHARE / "symbols" / f"{lib}.kicad_sym")
     txt = path.read_text(encoding="utf-8")
     m = re.search(rf'\(symbol "{re.escape(name)}"\s', txt)
     assert m, f"Missing KiCad symbol {sym_id}"
@@ -54,20 +54,20 @@ def test_every_placed_part_has_lcsc():
             assert p.lcsc.startswith("C") and p.lcsc[1:].isdigit(), k
 
 
-@pytest.mark.parametrize("key", [k for k, p in PARTS.items() if p.footprint and not p.footprint.startswith("ppa:")])
-def test_standard_footprints_exist(key):
+@pytest.mark.parametrize("key", [k for k, p in PARTS.items() if p.footprint])
+def test_footprints_exist(key):
     assert _fp_file(PARTS[key].footprint).is_file(), PARTS[key].footprint
 
 
-@pytest.mark.parametrize("key", [k for k, p in PARTS.items() if p.symbol and not p.symbol.startswith("ppa:")])
-def test_standard_symbols_exist(key):
+@pytest.mark.parametrize("key", [k for k, p in PARTS.items() if p.symbol])
+def test_symbols_exist(key):
     pins = _symbol_pin_numbers(PARTS[key].symbol)
     assert pins, f"No pins parsed for {PARTS[key].symbol}"
 
 
-def test_standard_component_pin_numbers_match_kicad_symbols():
+def test_all_component_pin_numbers_match_kicad_symbols():
     for c in design.COMPONENTS:
-        if not c.symbol or c.symbol.startswith("ppa:"):
+        if not c.symbol:
             continue
         sym_pins = _symbol_pin_numbers(c.symbol)
         missing = set(c.pins) - sym_pins

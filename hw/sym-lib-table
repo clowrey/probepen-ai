@@ -1,0 +1,4 @@
+(sym_lib_table
+	(version 7)
+	(lib (name "ppa") (type "KiCad") (uri "${KIPRJMOD}/lib/ppa.kicad_sym") (options "") (descr "ProbePen-AI custom symbols"))
+)

@@ -226,10 +226,10 @@ COMPONENTS: list[Comp] = [
     C("C7", "c_1u_0402", {"1": "+3V0_REF", "2": "AGND"}, block="power"),
     C("C62", "c_100n_0402", {"1": "+3V0_REF", "2": "AGND"}, block="power"),
 
-    # LM2776DBVR SOT-23-6: 1=VOUT, 2=C1-, 3=GND, 4=VIN, 5=EN, 6=C1+ (TI SNVS956B)
+    # LM2776DBVR SOT-23-6: 1=VOUT, 2=GND, 3=VIN, 4=EN, 5=C1+, 6=C1- (TI SNVS956B)
     C("U11", "lm2776", {
-        "1": "-3V3_RAW", "2": "LM2776_C1N", "3": "AGND",
-        "4": "+3V3_ANA", "5": "+3V3_ANA", "6": "LM2776_C1P",
+        "1": "-3V3_RAW", "2": "AGND", "3": "+3V3_ANA",
+        "4": "+3V3_ANA", "5": "LM2776_C1P", "6": "LM2776_C1N",
     }, block="power"),
     C("C8", "c_4u7_0603", {"1": "+3V3_ANA", "2": "AGND"}, block="power"),
     C("C9", "c_1u_0402", {"1": "LM2776_C1P", "2": "LM2776_C1N"}, block="power"),

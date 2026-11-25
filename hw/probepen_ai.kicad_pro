@@ -1,0 +1,598 @@
+{
+  "meta": {
+    "filename": "probepen_ai.kicad_pro",
+    "version": 3
+  },
+  "board": {
+    "design_settings": {
+      "rules": {
+        "min_clearance": 0.127,
+        "min_copper_edge_clearance": 0.3,
+        "min_hole_clearance": 0.25,
+        "min_hole_to_hole": 0.25,
+        "min_through_hole_diameter": 0.3,
+        "min_track_width": 0.127,
+        "min_via_annular_width": 0.1,
+        "min_via_diameter": 0.45,
+        "min_silk_clearance": 0.0,
+        "solder_mask_to_copper_clearance": 0.0,
+        "use_height_for_length_calcs": true
+      },
+      "rule_severities": {
+        "hole_to_hole": "error"
+      },
+      "track_widths": [
+        0.0,
+        0.15,
+        0.2,
+        0.25,
+        0.4,
+        0.6
+      ],
+      "via_dimensions": [
+        {
+          "diameter": 0.0,
+          "drill": 0.0
+        },
+        {
+          "diameter": 0.45,
+          "drill": 0.25
+        },
+        {
+          "diameter": 0.6,
+          "drill": 0.3
+        }
+      ]
+    }
+  },
+  "net_settings": {
+    "classes": [
+      {
+        "name": "Default",
+        "clearance": 0.15,
+        "track_width": 0.2,
+        "via_diameter": 0.45,
+        "via_drill": 0.25,
+        "microvia_diameter": 0.3,
+        "microvia_drill": 0.1,
+        "diff_pair_width": 0.25,
+        "diff_pair_gap": 0.15,
+        "diff_pair_via_gap": 0.25,
+        "wire_width": 6,
+        "bus_width": 12,
+        "line_style": 0,
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 2147483647
+      },
+      {
+        "name": "LV",
+        "clearance": 0.15,
+        "track_width": 0.2,
+        "via_diameter": 0.45,
+        "via_drill": 0.25,
+        "microvia_diameter": 0.3,
+        "microvia_drill": 0.1,
+        "diff_pair_width": 0.25,
+        "diff_pair_gap": 0.15,
+        "diff_pair_via_gap": 0.25,
+        "wire_width": 6,
+        "bus_width": 12,
+        "line_style": 0,
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 1
+      },
+      {
+        "name": "POWER",
+        "clearance": 0.15,
+        "track_width": 0.4,
+        "via_diameter": 0.45,
+        "via_drill": 0.25,
+        "microvia_diameter": 0.3,
+        "microvia_drill": 0.1,
+        "diff_pair_width": 0.25,
+        "diff_pair_gap": 0.15,
+        "diff_pair_via_gap": 0.25,
+        "wire_width": 6,
+        "bus_width": 12,
+        "line_style": 0,
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 2
+      },
+      {
+        "name": "ANALOG",
+        "clearance": 0.2,
+        "track_width": 0.2,
+        "via_diameter": 0.45,
+        "via_drill": 0.25,
+        "microvia_diameter": 0.3,
+        "microvia_drill": 0.1,
+        "diff_pair_width": 0.25,
+        "diff_pair_gap": 0.15,
+        "diff_pair_via_gap": 0.25,
+        "wire_width": 6,
+        "bus_width": 12,
+        "line_style": 0,
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 3
+      },
+      {
+        "name": "USB",
+        "clearance": 0.15,
+        "track_width": 0.25,
+        "via_diameter": 0.45,
+        "via_drill": 0.25,
+        "microvia_diameter": 0.3,
+        "microvia_drill": 0.1,
+        "diff_pair_width": 0.25,
+        "diff_pair_gap": 0.15,
+        "diff_pair_via_gap": 0.25,
+        "wire_width": 6,
+        "bus_width": 12,
+        "line_style": 0,
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 4
+      },
+      {
+        "name": "HIGHSPEED",
+        "clearance": 0.15,
+        "track_width": 0.15,
+        "via_diameter": 0.45,
+        "via_drill": 0.25,
+        "microvia_diameter": 0.3,
+        "microvia_drill": 0.1,
+        "diff_pair_width": 0.25,
+        "diff_pair_gap": 0.15,
+        "diff_pair_via_gap": 0.25,
+        "wire_width": 6,
+        "bus_width": 12,
+        "line_style": 0,
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 5
+      }
+    ],
+    "meta": {
+      "version": 5
+    },
+    "net_colors": {},
+    "netclass_assignments": {},
+    "netclass_patterns": [
+      {
+        "netclass": "POWER",
+        "pattern": "/+1V1_CORE"
+      },
+      {
+        "netclass": "POWER",
+        "pattern": "/+3V0_REF"
+      },
+      {
+        "netclass": "POWER",
+        "pattern": "/+3V3_ANA"
+      },
+      {
+        "netclass": "POWER",
+        "pattern": "/+3V3_DIG"
+      },
+      {
+        "netclass": "POWER",
+        "pattern": "/+3V3_POD"
+      },
+      {
+        "netclass": "POWER",
+        "pattern": "/+5V_ANA_IN"
+      },
+      {
+        "netclass": "POWER",
+        "pattern": "/+5V_VBUS"
+      },
+      {
+        "netclass": "POWER",
+        "pattern": "/-1V8_ANA"
+      },
+      {
+        "netclass": "POWER",
+        "pattern": "/-3V3_RAW"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/ADC_AIN"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADC_CLK"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADC_CLK_MCU"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADC_D0"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADC_D0_MCU"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADC_D1"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADC_D1_MCU"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADC_D2"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADC_D2_MCU"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADC_D3"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADC_D3_MCU"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADC_D4"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADC_D4_MCU"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADC_D5"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADC_D5_MCU"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADC_D6"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADC_D6_MCU"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADC_D7"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADC_D7_MCU"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADC_D8"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADC_D8_MCU"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADC_D9"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADC_D9_MCU"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/ADC_MODE"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/ADC_OTR"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/ADC_REFBF"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/ADC_REFTF"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/ADC_STBY"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/ADC_VREF"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/AFE_DC_SENSE"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/AFE_GAIN_10X"
+      },
+      {
+        "netclass": "POWER",
+        "pattern": "/AGND"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/BOOT_KEY"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/BTN_ASK_AI_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/BTN_MODE_N"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/COMP_INN"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/COMP_OUT"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/COMP_THR_DAC"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/COMP_THR_MID"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/COMP_THR_PWM"
+      },
+      {
+        "netclass": "POWER",
+        "pattern": "/GND"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/HV_MID"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/LCD_BLK_GATE_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/LCD_BLK_SW"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/LCD_CS_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/LCD_DC"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/LCD_LEDA"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/LCD_MOSI"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/LCD_RST_N"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/LCD_SCK"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/LED1_DIN"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/LED_CASCADE"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/LED_DATA_MCU"
+      },
+      {
+        "netclass": "POWER",
+        "pattern": "/LED_VDD"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/LM2776_C1N"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/LM2776_C1P"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/POD_CH0"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/POD_CH0_PROT"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/POD_CH0_RAW"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/POD_CH1"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/POD_CH1_PROT"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/POD_CH1_RAW"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/POD_CH2"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/POD_CH2_PROT"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/POD_CH2_RAW"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/POD_CH3"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/POD_CH3_PROT"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/POD_CH3_RAW"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/PROBE_TIP"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/QSPI_SS_N"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/REF_0V25"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/REF_1V00"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/REF_MID"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/RUN_N"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/SWCLK"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/SWDIO"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/TPS_FB"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/U4_FB_10X"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/U4_FB_1X"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/U4_INN"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/U4_INP"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/USB_CC1"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/USB_CC2"
+      },
+      {
+        "netclass": "USB",
+        "pattern": "/USB_CONN_DM"
+      },
+      {
+        "netclass": "USB",
+        "pattern": "/USB_CONN_DP"
+      },
+      {
+        "netclass": "USB",
+        "pattern": "/USB_DM"
+      },
+      {
+        "netclass": "USB",
+        "pattern": "/USB_DP"
+      },
+      {
+        "netclass": "POWER",
+        "pattern": "/VBUS_RAW"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/VBUS_SENSE"
+      },
+      {
+        "netclass": "POWER",
+        "pattern": "/VREG_AVDD"
+      },
+      {
+        "netclass": "POWER",
+        "pattern": "/VREG_LX"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/V_ADC"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/V_BUF"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/V_DIV"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/XIN"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/XOUT_RAW"
+      },
+      {
+        "netclass": "LV",
+        "pattern": "/XOUT_XTAL"
+      }
+    ]
+  },
+  "sheets": [
+    [
+      "67c4f75f-8ee7-5c00-9910-ae0f699fb5cc",
+      "Root"
+    ]
+  ],
+  "text_variables": {}
+}

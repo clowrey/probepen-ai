@@ -1,0 +1,110 @@
+(footprint "C_Trimmer_Knowles_JZ100_4.5x3.2mm"
+	(version 20260206)
+	(generator "pcbnew")
+	(generator_version "10.0")
+	(layer "F.Cu")
+	(descr "Knowles Voltronics JZ100 2-10 pF SMD trimmer capacitor, 4.5x3.2 mm")
+	(property "Reference" "REF**"
+		(at 0 -3.2 0)
+		(layer "F.SilkS")
+		(uuid "0f3eacdf-bcda-4224-ba5a-57561416a643")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(property "Value" "C_Trimmer_Knowles_JZ100_4.5x3.2mm"
+		(at 0 3.2 0)
+		(layer "F.Fab")
+		(uuid "dd25c2eb-9cd6-4a33-9df3-246166ffa355")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "d6121acd-9ba8-49d9-a27c-dc2560390723")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "8cf1dba8-826a-4ca7-a271-393671f6c031")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
+	(fp_line
+		(start -0.75 -2.25)
+		(end 0.75 -2.25)
+		(stroke
+			(width 0.12)
+			(type default)
+		)
+		(layer "F.SilkS")
+		(uuid "7e554101-9d6f-40cb-8862-faebb62500ee")
+	)
+	(fp_line
+		(start -0.75 2.25)
+		(end 0.75 2.25)
+		(stroke
+			(width 0.12)
+			(type default)
+		)
+		(layer "F.SilkS")
+		(uuid "c5d519df-2ca9-428a-a680-241afde6bab4")
+	)
+	(fp_rect
+		(start -3 -2.35)
+		(end 3 2.35)
+		(stroke
+			(width 0.05)
+			(type default)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "683a3c3f-1b6a-4715-84ff-663a67584ba1")
+	)
+	(fp_rect
+		(start -2.25 -1.6)
+		(end 2.25 1.6)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "771a423d-caf1-4b4d-967c-4f5810ff506d")
+	)
+	(pad "1" smd roundrect
+		(at -1.875 0)
+		(size 1.75 4)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.08)
+		(thermal_bridge_angle 45)
+		(uuid "73ee0d66-ae96-4713-a9c0-6e2fd1f63ddb")
+	)
+	(pad "2" smd roundrect
+		(at 1.875 0)
+		(size 1.75 4)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.08)
+		(thermal_bridge_angle 45)
+		(uuid "27650b96-d70c-4278-af43-e12377560392")
+	)
+	(embedded_fonts no)
+)
