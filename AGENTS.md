@@ -45,7 +45,7 @@ Work in stages, and get each one passing before the next:
 - Printed parts: screws self-tap into the plastic (M3 → 2.8 mm pilot hole). No heat-set inserts.
 - No AI or Claude/Gemini attribution in commits, PRs or files.
 - Commit and push finished work to `main` without asking.
-- Keep the repo private. Don't commit IP addresses, site names, personal paths or secrets.
+- The repo is public. Don't commit IP addresses, site names, personal paths, emails or secrets. Commit as `Chester <6935928+clowrey@users.noreply.github.com>` (set in this repo's git config).
 - Edit the generator scripts, not the generated KiCad files.
 
 ## Tools in this WSL (Ubuntu) environment
