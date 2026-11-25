@@ -1,8 +1,8 @@
 """Part catalogue: one entry per distinct orderable part.
 
-Every LCSC code, library type (Basic vs Extended), package, and datasheet reference was verified
-against JLCPCB's live catalog and official component datasheets. `per_board` is enforced against
-`hw/design.py` by `tests/test_design.py`.
+Every LCSC code, library type (Basic / Preferred Extended / Extended), package, and datasheet
+reference was verified against JLCPCB's live catalog and official component datasheets.
+`per_board` is enforced against `hw/design.py` by `tests/test_design.py`.
 """
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ _LIST = [
         "MS9280", mpn="MS9280", basic=False, per_board=1,
         extra={
             "datasheet": "https://www.lcsc.com/datasheet/lcsc_datasheet_2310071001_Hangzhou-Ruimeng-Tech-MS9280_C1509021.pdf",
-            "notes": "Hangzhou Ruimeng MS9280 V1.3, 10-bit 35 MSPS, 2.7-5.5 V; low stock (5 pcs); pins 5-12 drop-in for AD9280ARSZRL (C130297)",
+            "notes": "Hangzhou Ruimeng MS9280 V1.3, 10-bit output (7.8 ENOB), 35 MSPS, 2.7-5.5 V; low stock (5 pcs); pins 5-12 drop-in for AD9280ARSZRL (C130297)",
         },
     ),
     Part(
@@ -123,12 +123,13 @@ _LIST = [
         },
     ),
     Part(
-        "usblc6", "C7519", "Power_Protection:USBLC6-2SC6",
+        "srv05_4", "C7420376", "Power_Protection:SRV05-4",
         "Package_TO_SOT_SMD:SOT-23-6",
-        "USBLC6-2SC6", mpn="USBLC6-2SC6", basic=False, per_board=3,
+        "SRV05-4", mpn="SRV05-4", basic=False, per_board=2,
         extra={
-            "datasheet": "https://www.lcsc.com/datasheet/lcsc_datasheet_2410121836_STMicroelectronics-USBLC6-2SC6_C7519.pdf",
-            "notes": "ST USBLC6-2 (Doc ID 11265 Rev 5), 3.5 pF max ESD protection",
+            "preferred": True,
+            "datasheet": "https://wmsc.lcsc.com/wmsc/upload/file/pdf/v2/lcsc/2407101112_hongjiacheng-SRV05-4_C7420376.pdf",
+            "notes": "Hongjiacheng SRV05-4 (Rev 2.2), 4-ch 1 pF 5 V ESD array (Preferred $0 fee); D1 USB-C, D2 4-ch pod",
         },
     ),
     # --- Diodes, FET, LEDs --------------------------------------------------------------------
@@ -179,10 +180,10 @@ _LIST = [
         extra={"notes": "200 mA, 450 mOhm DCR, isolates analog +5V rail"},
     ),
     Part(
-        "xtal_12m", "C20625731", "Device:Crystal_GND24",
+        "xtal_12m", "C9002", "Device:Crystal_GND24",
         "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm",
-        "12MHz", mpn="ABM8-272-T3", basic=False, per_board=1,
-        extra={"notes": "Abracon ABM8-272-T3 (RP2350 hardware guide crystal: 12.000 MHz, CL=10 pF, ESR<=50 ohm, +/-30 ppm)"},
+        "12MHz", mpn="X322512MSB4SI", basic=True, per_board=1,
+        extra={"notes": "YXC 12.000 MHz, CL=20 pF, ESR<=80 ohm, +/-10 ppm (Basic $0 fee); paired with 33 pF load caps"},
     ),
     Part(
         "fpc_8p", "C293338", "Connector_Generic_MountingPin:Conn_01x08_MountingPin",
@@ -226,49 +227,35 @@ _LIST = [
     Part(
         "ptc_500ma", "C20978", "Device:Polyfuse_Small",
         "Fuse:Fuse_0805_2012Metric",
-        "500mA PTC", mpn="SMD0805P050TF", basic=False, per_board=1,
-        extra={"notes": "500 mA hold / 1 A trip, 6 V, 0805 resettable PTC fuse on USB VBUS"},
+        "500mA PTC", mpn="SMD0805P050TF", basic=False, per_board=2,
+        extra={"notes": "500 mA hold / 1 A trip, 6 V, 0805 resettable PTC fuse (shared on VBUS and side pod +3V3)"},
     ),
-    Part(
-        "ptc_100ma", "C70048", "Device:Polyfuse_Small",
-        "Fuse:Fuse_0603_1608Metric",
-        "100mA PTC", mpn="SMD0603-010-24V", basic=False, per_board=1,
-        extra={"notes": "100 mA hold / 300 mA trip, 24 V, 0603 resettable PTC fuse on side pod +3V3"},
-    ),
-    Part(
-        "c_trim", "C3273292", "Device:C_Trim",
-        "ppa:C_Trimmer_Knowles_JZ100_4.5x3.2mm",
-        "2-10pF", mpn="JZ100", basic=False, per_board=1,
-        extra={
-            "datasheet": "https://www.lcsc.com/datasheet/lcsc_datasheet_2404031010_Knowles-JZ100_C3273292.pdf",
-            "notes": "Knowles Voltronics JZ100, 2.0-10.0 pF, 125 V DC, 4.5x3.2 mm SMD trimmer capacitor",
-        },
-    ),
-    # --- Resistors (precision 0.1% thin-film, HV 0805, Basic 0402/0603) -----------------------
+    # --- Resistors (all Basic 1% 100 ppm/C or Preferred $0 fee) ------------------------------
     Part("r_470k_0805", "C17709", "Device:R", _R0805, "470k 1%", per_board=2, mpn="0805W8F4703T5E", basic=True,
          extra={"volts": 150, "mw": 125, "notes": "Two in series = 940k, 300 V combined working voltage"}),
-    Part("r_39k2_01", "C861369", "Device:R", _R0603, "39.2k 0.1%", per_board=1, mpn="RT0603BRD0739K2L", basic=False),
-    Part("r_1k00_01", "C110776", "Device:R", _R0603, "1.00k 0.1%", per_board=1, mpn="RT0603BRD071KL", basic=False),
-    Part("r_500r_01", "C6207671", "Device:R", _R0603, "500R 0.1%", per_board=1, mpn="RT0603BRD07500RL", basic=False),
-    Part("r_5k00_01", "C2828621", "Device:R", _R0603, "5.00k 0.1%", per_board=1, mpn="AR03BTCX5001", basic=False),
-    Part("r_20k0_01", "C723637", "Device:R", _R0603, "20.0k 0.1%", per_board=1, mpn="RT0603BRD0720KL", basic=False),
-    Part("r_7k50_01", "C728597", "Device:R", _R0603, "7.50k 0.1%", per_board=1, mpn="RT0603BRD077K5L", basic=False),
-    Part("r_2k50_01", "C3013546", "Device:R", _R0603, "2.50k 0.1%", per_board=1, mpn="AR03BTCX2501N", basic=False),
+    Part("r_39k_0603", "C23153", "Device:R", _R0603, "39k 1%", per_board=1, mpn="0603WAF3902T5E", basic=True),
+    Part("r_2k_0402", "C4109", "Device:R", _R0402, "2k 1%", per_board=1, mpn="0402WGF2001TCE", basic=True),
+    Part("r_20k_0402", "C25765", "Device:R", _R0402, "20k 1%", per_board=2, mpn="0402WGF2002TCE", basic=True),
+    Part("r_15k_0402", "C25756", "Device:R", _R0402, "15k 1%", per_board=1, mpn="0402WGF1502TCE", basic=True),
     Part("r_0r_0603", "C21189", "Device:R", _R0603, "0R", per_board=1, mpn="0603WAF0000T5E", basic=True),
-    Part("r_27r_0402", "C25100", "Device:R", _R0402, "27R", per_board=3, mpn="0402WGF270JTCE", basic=False),
+    Part("r_27r_0603", "C25190", "Device:R", _R0603, "27R", per_board=3, mpn="0603WAF270JT5E", basic=False,
+         extra={"preferred": True}),
     Part("r_33r_0402", "C25105", "Device:R", _R0402, "33R", per_board=13, mpn="0402WGF330JTCE", basic=True),
     Part("r_100r_0402", "C25076", "Device:R", _R0402, "100R", per_board=1, mpn="0402WGF1000TCE", basic=True),
     Part("r_220r_0402", "C25091", "Device:R", _R0402, "220R", per_board=5, mpn="0402WGF2200TCE", basic=True),
-    Part("r_1k_0402", "C11702", "Device:R", _R0402, "1k", per_board=2, mpn="0402WGF1001TCE", basic=True),
+    Part("r_1k_0402", "C11702", "Device:R", _R0402, "1k", per_board=3, mpn="0402WGF1001TCE", basic=True),
     Part("r_5k1_0402", "C25905", "Device:R", _R0402, "5.1k", per_board=2, mpn="0402WGF5101TCE", basic=True),
-    Part("r_10k_0402", "C25744", "Device:R", _R0402, "10k", per_board=10, mpn="0402WGF1002TCE", basic=True),
+    Part("r_10k_0402", "C25744", "Device:R", _R0402, "10k", per_board=13, mpn="0402WGF1002TCE", basic=True),
     Part("r_47k_0402", "C25792", "Device:R", _R0402, "47k", per_board=1, mpn="0402WGF4702TCE", basic=True),
     Part("r_49k9_0603", "C23184", "Device:R", _R0603, "49.9k", per_board=1, mpn="0603WAF4992T5E", basic=True),
     Part("r_100k_0402", "C25741", "Device:R", _R0402, "100k", per_board=3, mpn="0402WGF1003TCE", basic=True),
-    # --- Capacitors (Basic C0G/X7R/X5R where available) ---------------------------------------
-    Part("c_1p_0603", "C115062", "Device:C", _C0603, "1pF C0G", per_board=1, mpn="CC0603BRNPO9BN1R0", basic=False),
-    Part("c_4p7_0402", "C1569", "Device:C", _C0402, "4.7pF C0G", per_board=1, mpn="0402CG4R7C500NT", basic=False),
-    Part("c_15p_0402", "C1548", "Device:C", _C0402, "15pF C0G", per_board=3, mpn="0402CG150J500NT", basic=True),
+    # --- Capacitors (Basic or Preferred $0 fee) -----------------------------------------------
+    Part("c_1p_0402", "C1550", "Device:C", _C0402, "1pF C0G", per_board=1, mpn="0402CG1R0C500NT", basic=False,
+         extra={"preferred": True, "notes": "50 V rated C0G across R1+R2"}),
+    Part("c_4p7_0402", "C1569", "Device:C", _C0402, "4.7pF C0G", per_board=1, mpn="0402CG4R7C500NT", basic=False,
+         extra={"preferred": True}),
+    Part("c_22p_0402", "C1555", "Device:C", _C0402, "22pF C0G", per_board=1, mpn="0402CG220J500NT", basic=True),
+    Part("c_33p_0402", "C1562", "Device:C", _C0402, "33pF C0G", per_board=2, mpn="0402CG330J500NT", basic=True),
     Part("c_47p_0402", "C1567", "Device:C", _C0402, "47pF C0G", per_board=1, mpn="0402CG470J500NT", basic=True),
     Part("c_10n_0402", "C15195", "Device:C", _C0402, "10nF", per_board=1, mpn="CL05B103KB5NNNC", basic=True),
     Part("c_100n_0402", "C1525", "Device:C", _C0402, "100nF", per_board=39, mpn="CL05B104KO5NNNC", basic=True),

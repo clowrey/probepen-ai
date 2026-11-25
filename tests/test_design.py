@@ -64,30 +64,39 @@ def test_rp2354b_pin_completeness():
 
 
 def test_reference_string_math():
-    """R7=20.0k, R8=7.50k, R9=2.50k from +3V0_REF (3.000 V) -> 1.000 V and 0.250 V."""
-    r7, r8, r9 = 20.0e3, 7.50e3, 2.50e3
+    """40k (R7A+R7B) + 15k (R8) + 5k (R9A||R9B) from +3V0_REF (3.000 V) -> 1.000 V and 0.250 V."""
+    r7 = 20.0e3 + 20.0e3
+    r8 = 15.0e3
+    r9 = 1.0 / (1.0 / 10.0e3 + 1.0 / 10.0e3)
     vref = 3.000
     rtot = r7 + r8 + r9
     v_1v00 = vref * (r8 + r9) / rtot
     v_0v25 = vref * r9 / rtot
     assert abs(v_1v00 - 1.000) < 1e-6
     assert abs(v_0v25 - 0.250) < 1e-6
-    assert PARTS[design.comp("R7").part].value == "20.0k 0.1%"
-    assert PARTS[design.comp("R8").part].value == "7.50k 0.1%"
-    assert PARTS[design.comp("R9").part].value == "2.50k 0.1%"
-    assert design.pin_net("R7", "1") == "+3V0_REF"
-    assert design.pin_net("R7", "2") == "REF_1V00"
+    assert PARTS[design.comp("R7A").part].value == "20k 1%"
+    assert PARTS[design.comp("R7B").part].value == "20k 1%"
+    assert PARTS[design.comp("R8").part].value == "15k 1%"
+    assert PARTS[design.comp("R9A").part].value == "10k"
+    assert PARTS[design.comp("R9B").part].value == "10k"
+    assert design.pin_net("R7A", "1") == "+3V0_REF"
+    assert design.pin_net("R7A", "2") == "REF_MID"
+    assert design.pin_net("R7B", "1") == "REF_MID"
+    assert design.pin_net("R7B", "2") == "REF_1V00"
     assert design.pin_net("R8", "1") == "REF_1V00"
     assert design.pin_net("R8", "2") == "REF_0V25"
-    assert design.pin_net("R9", "1") == "REF_0V25"
-    assert design.pin_net("R9", "2") == "AGND"
+    assert design.pin_net("R9A", "1") == "REF_0V25"
+    assert design.pin_net("R9A", "2") == "AGND"
+    assert design.pin_net("R9B", "1") == "REF_0V25"
+    assert design.pin_net("R9B", "2") == "AGND"
 
 
 def test_afe_gain_and_tps72301_math():
-    # Stage 2 gains: 1x (500R / 1.00k = 0.500), 10x (5.00k / 1.00k = 5.000)
-    assert PARTS[design.comp("R4").part].value == "1.00k 0.1%"
-    assert PARTS[design.comp("R5").part].value == "500R 0.1%"
-    assert PARTS[design.comp("R6").part].value == "5.00k 0.1%"
+    # Stage 2 gains: 1x (1k / 2k = 0.500), 10x (10k / 2k = 5.000)
+    assert PARTS[design.comp("R4").part].value == "2k 1%"
+    assert PARTS[design.comp("R5").part].value == "1k"
+    assert PARTS[design.comp("R6").part].value == "10k"
+    assert design.comp("CT1").dnp is True
     # TPS72301 negative regulator: -1.186 * (1 + 49.9k / 100k) = -1.778 V
     v_neg = -1.186 * (1.0 + 49.9 / 100.0)
     assert -1.80 <= v_neg <= -1.75
@@ -128,9 +137,12 @@ def test_tlv3501_and_usb_cc_and_esd():
     # USB CC1/CC2 5.1k pulldowns
     assert {design.pin_net("R10", "1"), design.pin_net("R10", "2")} == {"USB_CC1", "GND"}
     assert {design.pin_net("R11", "1"), design.pin_net("R11", "2")} == {"USB_CC2", "GND"}
-    # Side pod ESD clamps D2/D3 referenced to +5V_VBUS for 5V-tolerant inputs
+    # USB-C ESD (D1) referenced to VBUS_RAW; side pod 4-ch ESD (D2) referenced to +5V_VBUS
+    assert design.pin_net("D1", "5") == "VBUS_RAW"
     assert design.pin_net("D2", "5") == "+5V_VBUS"
-    assert design.pin_net("D3", "5") == "+5V_VBUS"
+    assert {design.pin_net("D2", p) for p in ("1", "3", "4", "6")} == {
+        "POD_CH0_PROT", "POD_CH1_PROT", "POD_CH2_PROT", "POD_CH3_PROT",
+    }
 
 
 def test_power_rails_have_sources_and_test_pads():

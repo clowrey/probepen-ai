@@ -27,6 +27,7 @@ def _norm(c: dict) -> dict:
         "lcsc": (c.get("urlSuffix") or "").split("/")[-1],
         "stock": int(c.get("stockCount") or 0),
         "lib": c.get("componentLibraryType") or "",  # "base" = Basic, "expand" = Extended
+        "preferred": bool(c.get("preferredComponentFlag")),
         "prices": prices,
         "datasheet": c.get("dataManualUrl") or c.get("dataManualOfficialLink") or "",
         "describe": c.get("describe") or c.get("componentSpecificationEn") or "",

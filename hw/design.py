@@ -198,14 +198,15 @@ COMPONENTS: list[Comp] = [
         "A8": "NC", "B8": "NC",
     }, block="usb"),
     C("F1", "ptc_500ma", {"1": "VBUS_RAW", "2": "+5V_VBUS"}, block="usb"),
-    C("D1", "usblc6", {
+    # SRV05-4: 1=IO1, 2=VN (GND), 3=IO2, 4=IO3, 5=VP, 6=IO4
+    C("D1", "srv05_4", {
         "1": "USB_CONN_DP", "2": "GND", "3": "USB_CONN_DM",
-        "4": "USB_CONN_DM", "5": "VBUS_RAW", "6": "USB_CONN_DP",
+        "4": "NC", "5": "VBUS_RAW", "6": "NC",
     }, block="usb"),
     C("R10", "r_5k1_0402", {"1": "USB_CC1", "2": "GND"}, block="usb"),
     C("R11", "r_5k1_0402", {"1": "USB_CC2", "2": "GND"}, block="usb"),
-    C("R12", "r_27r_0402", {"1": "USB_CONN_DP", "2": "USB_DP"}, block="usb"),
-    C("R13", "r_27r_0402", {"1": "USB_CONN_DM", "2": "USB_DM"}, block="usb"),
+    C("R12", "r_27r_0603", {"1": "USB_CONN_DP", "2": "USB_DP"}, block="usb"),
+    C("R13", "r_27r_0603", {"1": "USB_CONN_DM", "2": "USB_DM"}, block="usb"),
     C("C1", "c_100n_0402", {"1": "VBUS_RAW", "2": "GND"}, block="usb"),
 
     # ---- Power Tree: +3V3_DIG, +3V3_ANA, +3V0_REF, -3V3_RAW, -1V8_ANA (power) ---------------
@@ -279,11 +280,11 @@ COMPONENTS: list[Comp] = [
     C("C28", "c_100n_0402", {"1": "+1V1_CORE", "2": "GND"}, block="mcu"),
     C("C29", "c_100n_0402", {"1": "+3V0_REF", "2": "AGND"}, block="mcu"),
 
-    # 12 MHz crystal (ABM8-272-T3, CL=10 pF -> 2*(10 - 2.5 stray) = 15 pF load caps)
+    # 12 MHz crystal (X322512MSB4SI, CL=20 pF -> 2*(20 - 3.5 stray) = 33 pF load caps)
     C("Y1", "xtal_12m", {"1": "XIN", "2": "GND", "3": "XOUT_XTAL", "4": "GND"}, block="mcu"),
     C("R20", "r_1k_0402", {"1": "XOUT_RAW", "2": "XOUT_XTAL"}, block="mcu"),
-    C("C30", "c_15p_0402", {"1": "XIN", "2": "GND"}, block="mcu"),
-    C("C31", "c_15p_0402", {"1": "XOUT_XTAL", "2": "GND"}, block="mcu"),
+    C("C30", "c_33p_0402", {"1": "XIN", "2": "GND"}, block="mcu"),
+    C("C31", "c_33p_0402", {"1": "XOUT_XTAL", "2": "GND"}, block="mcu"),
 
     # BOOTSEL (hold MODE while plugging USB-C), RUN pull-up, SWD test pads
     C("R21", "r_1k_0402", {"1": "QSPI_SS_N", "2": "BOOT_KEY"}, block="mcu"),
@@ -296,13 +297,16 @@ COMPONENTS: list[Comp] = [
     _tp("TP_GND1", "GND", "mcu"),
 
     # ---- Analog Front End (afe) --------------------------------------------------------------
+    # All AFE resistors use JLC Basic 1% 100 ppm/C parts (software 2-point self-calibration)
     C("J2", "m3_boss", {"1": "PROBE_TIP"}, block="afe"),
     C("R1", "r_470k_0805", {"1": "PROBE_TIP", "2": "HV_MID"}, block="afe"),
     C("R2", "r_470k_0805", {"1": "HV_MID", "2": "V_DIV"}, block="afe"),
-    C("C32", "c_1p_0603", {"1": "PROBE_TIP", "2": "V_DIV"}, block="afe"),
-    C("R3", "r_39k2_01", {"1": "V_DIV", "2": "AGND"}, block="afe"),
-    C("C33", "c_15p_0402", {"1": "V_DIV", "2": "AGND"}, block="afe"),
-    C("CT1", "c_trim", {"1": "V_DIV", "2": "AGND"}, block="afe"),
+    C("C32", "c_1p_0402", {"1": "PROBE_TIP", "2": "V_DIV"}, block="afe"),
+    C("R3", "r_39k_0603", {"1": "V_DIV", "2": "AGND"}, block="afe"),
+    C("C33", "c_22p_0402", {"1": "V_DIV", "2": "AGND"}, block="afe"),
+    C("CT1", None, {"1": "V_DIV", "2": "AGND"}, value="2-10pF DNP",
+      symbol="Device:C_Trim", footprint="ppa:C_Trimmer_Knowles_JZ100_4.5x3.2mm",
+      dnp=True, block="afe"),
     # BAV199 SOT-23: 1=A1 (-1V8_ANA), 2=K2 (+3V3_ANA), 3=K1_A2 (V_DIV)
     C("D4", "bav199", {"1": "-1V8_ANA", "2": "+3V3_ANA", "3": "V_DIV"}, block="afe"),
 
@@ -311,13 +315,15 @@ COMPONENTS: list[Comp] = [
     C("C34", "c_100n_0402", {"1": "+3V3_ANA", "2": "AGND"}, block="afe"),
     C("C35", "c_100n_0402", {"1": "AGND", "2": "-1V8_ANA"}, block="afe"),
 
-    # Precision reference string: +3V0_REF (3.000 V) -> 1.000 V -> 0.250 V -> AGND
-    # 20.0k + 7.50k + 2.50k = 30.0k => 100 uA => REF_1V00 = 1.000 V, REF_0V25 = 0.250 V
-    C("R7", "r_20k0_01", {"1": "+3V0_REF", "2": "REF_1V00"}, block="afe"),
+    # Reference string using Basic 1% parts: 40k (20k+20k) + 15k + 5k (10k||10k) = 60.0k (50 uA)
+    # -> exact nominal REF_1V00 = 1.000 V and REF_0V25 = 0.250 V from +3V0_REF (3.000 V)
+    C("R7A", "r_20k_0402", {"1": "+3V0_REF", "2": "REF_MID"}, block="afe"),
+    C("R7B", "r_20k_0402", {"1": "REF_MID", "2": "REF_1V00"}, block="afe"),
     C("C36", "c_100n_0402", {"1": "REF_1V00", "2": "AGND"}, block="afe"),
-    C("R8", "r_7k50_01", {"1": "REF_1V00", "2": "REF_0V25"}, block="afe"),
+    C("R8", "r_15k_0402", {"1": "REF_1V00", "2": "REF_0V25"}, block="afe"),
     C("C37", "c_100n_0402", {"1": "REF_0V25", "2": "AGND"}, block="afe"),
-    C("R9", "r_2k50_01", {"1": "REF_0V25", "2": "AGND"}, block="afe"),
+    C("R9A", "r_10k_0402", {"1": "REF_0V25", "2": "AGND"}, block="afe"),
+    C("R9B", "r_10k_0402", {"1": "REF_0V25", "2": "AGND"}, block="afe"),
 
     # U6: RS2227XN MSOP-10 dual DPDT/SPDT switch (1=V+, 2=S, 3=D+, 4=D-, 5=GND, 6=HSD1-, 7=HSD1+, 8=HSD2-, 9=HSD2+, 10=/OE)
     # S=0 (1x): D+=REF_1V00, D-=U4_FB_1X. S=1 (10x): D+=REF_0V25, D-=U4_FB_10X.
@@ -329,12 +335,12 @@ COMPONENTS: list[Comp] = [
     C("R23", "r_10k_0402", {"1": "AFE_GAIN_10X", "2": "GND"}, block="afe"),
 
     # U4: OPA356 #2 inverting level shifter/gain stage (V+=+3V3_ANA, V-=AGND)
-    # 1x: V_ADC = 1.500 V - 0.5*V_BUF; 10x: V_ADC = 1.500 V - 5.0*V_BUF (both 1.000..2.000 V)
+    # R4=2k, R5=1k, R6=10k -> 1x: 1.500 V - 0.5*V_BUF; 10x: 1.500 V - 5.0*V_BUF (both 1.000..2.000 V)
     C("U4", "opa356", {"1": "V_ADC", "2": "AGND", "3": "U4_INP", "4": "U4_INN", "5": "+3V3_ANA"}, block="afe"),
     C("C39", "c_100n_0402", {"1": "+3V3_ANA", "2": "AGND"}, block="afe"),
-    C("R4", "r_1k00_01", {"1": "V_BUF", "2": "U4_INN"}, block="afe"),
-    C("R5", "r_500r_01", {"1": "U4_INN", "2": "U4_FB_1X"}, block="afe"),
-    C("R6", "r_5k00_01", {"1": "U4_INN", "2": "U4_FB_10X"}, block="afe"),
+    C("R4", "r_2k_0402", {"1": "V_BUF", "2": "U4_INN"}, block="afe"),
+    C("R5", "r_1k_0402", {"1": "U4_INN", "2": "U4_FB_1X"}, block="afe"),
+    C("R6", "r_10k_0402", {"1": "U4_INN", "2": "U4_FB_10X"}, block="afe"),
     C("C40", "c_4p7_0402", {"1": "U4_INN", "2": "V_ADC"}, block="afe"),
     C("R24", "r_10k_0402", {"1": "V_ADC", "2": "AFE_DC_SENSE"}, block="afe"),
     C("C41", "c_10n_0402", {"1": "AFE_DC_SENSE", "2": "AGND"}, block="afe"),
@@ -402,22 +408,18 @@ COMPONENTS: list[Comp] = [
     }, block="logic"),
     C("C55", "c_100n_0402", {"1": "+3V3_DIG", "2": "GND"}, block="logic"),
 
-    # Side 4-channel logic pod: JST-SH 6P + 100 mA PTC + 220R + USBLC6 (VBUS=+5V_VBUS) + SN74LV4T125
+    # Side 4-channel logic pod: JST-SH 6P + shared PTC + 220R + SRV05-4 (VP=+5V_VBUS) + SN74LV4T125
     C("J3", "jst_sh6", {
         "1": "GND", "2": "+3V3_POD",
         "3": "POD_CH0_RAW", "4": "POD_CH1_RAW", "5": "POD_CH2_RAW", "6": "POD_CH3_RAW",
         "MP": "GND",
     }, block="logic"),
-    C("F2", "ptc_100ma", {"1": "+3V3_DIG", "2": "+3V3_POD"}, block="logic"),
+    C("F2", "ptc_500ma", {"1": "+3V3_DIG", "2": "+3V3_POD"}, block="logic"),
     C("C56", "c_100n_0402", {"1": "+3V3_POD", "2": "GND"}, block="logic"),
     *[C(f"R{43 + i}", "r_220r_0402", {"1": f"POD_CH{i}_RAW", "2": f"POD_CH{i}_PROT"}, block="logic") for i in range(4)],
-    C("D2", "usblc6", {
+    C("D2", "srv05_4", {
         "1": "POD_CH0_PROT", "2": "GND", "3": "POD_CH1_PROT",
-        "4": "POD_CH1_PROT", "5": "+5V_VBUS", "6": "POD_CH0_PROT",
-    }, block="logic"),
-    C("D3", "usblc6", {
-        "1": "POD_CH2_PROT", "2": "GND", "3": "POD_CH3_PROT",
-        "4": "POD_CH3_PROT", "5": "+5V_VBUS", "6": "POD_CH2_PROT",
+        "4": "POD_CH2_PROT", "5": "+5V_VBUS", "6": "POD_CH3_PROT",
     }, block="logic"),
     C("U8", "lv4t125", {
         "1": "GND", "2": "POD_CH0_PROT", "3": "POD_CH0",
@@ -433,7 +435,7 @@ COMPONENTS: list[Comp] = [
     # AO3401A SOT-23: 1=G, 2=S, 3=D
     C("Q1", "ao3401a", {"1": "LCD_BLK_GATE_N", "2": "+3V3_DIG", "3": "LCD_BLK_SW"}, block="lcd"),
     C("R47", "r_47k_0402", {"1": "+3V3_DIG", "2": "LCD_BLK_GATE_N"}, block="lcd"),
-    C("R48", "r_27r_0402", {"1": "LCD_BLK_SW", "2": "LCD_LEDA"}, block="lcd"),
+    C("R48", "r_27r_0603", {"1": "LCD_BLK_SW", "2": "LCD_LEDA"}, block="lcd"),
     C("J4", "fpc_8p", {
         "1": "LCD_LEDA", "2": "GND", "3": "LCD_RST_N", "4": "LCD_DC",
         "5": "LCD_MOSI", "6": "LCD_SCK", "7": "+3V3_DIG", "8": "LCD_CS_N",
@@ -459,9 +461,9 @@ COMPONENTS: list[Comp] = [
 
 
 def _sort_key(c: Comp) -> tuple[str, int, str]:
-    m = re.match(r"^([A-Za-z]+)(\d+)$", c.ref)
+    m = re.match(r"^([A-Za-z]+)(\d+)([A-Za-z]*)$", c.ref)
     if m:
-        return (m.group(1), int(m.group(2)), "")
+        return (m.group(1), int(m.group(2)), m.group(3))
     return (c.ref, 0, c.ref)
 
 
@@ -498,7 +500,7 @@ for _n in NETS:
         NETCLASS[_n] = "USB"
     elif _n in (
         "PROBE_TIP", "HV_MID", "V_DIV", "V_BUF", "U4_INP", "U4_INN",
-        "U4_FB_1X", "U4_FB_10X", "V_ADC", "ADC_AIN", "REF_1V00", "REF_0V25",
+        "U4_FB_1X", "U4_FB_10X", "V_ADC", "ADC_AIN", "REF_MID", "REF_1V00", "REF_0V25",
         "ADC_VREF", "ADC_REFTF", "ADC_REFBF", "ADC_MODE", "AFE_DC_SENSE",
         "COMP_INN", "TPS_FB", "LM2776_C1P", "LM2776_C1N",
     ):

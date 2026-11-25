@@ -86,3 +86,7 @@ def test_all_parts_in_stock_for_prototype(key):
     assert p.basic == (info["lib"] == "base"), (
         f"{key} ({p.lcsc}): basic={p.basic} but JLC lib={info['lib']}"
     )
+    if p.extra.get("preferred"):
+        assert info["preferred"], (
+            f"{key} ({p.lcsc}): marked preferred in parts.py but JLCPCB preferred={info['preferred']}"
+        )
