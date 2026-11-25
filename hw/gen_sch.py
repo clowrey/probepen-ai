@@ -362,12 +362,12 @@ def build() -> str:
 
 
 NETCLASS_RULES = {  # class: (track width, clearance within the class), mm
-    "Default": (0.2, 0.15),
-    "LV": (0.2, 0.15),
-    "POWER": (0.4, 0.15),
-    "ANALOG": (0.2, 0.13),
-    "USB": (0.25, 0.15),
-    "HIGHSPEED": (0.15, 0.15),
+    "Default": (0.2, 0.092),
+    "LV": (0.2, 0.092),
+    "POWER": (0.4, 0.092),
+    "ANALOG": (0.2, 0.092),
+    "USB": (0.25, 0.092),
+    "HIGHSPEED": (0.15, 0.092),
 }
 
 
@@ -399,14 +399,14 @@ def write_project():
         "board": {
             "design_settings": {
                 "rules": {
-                    "min_clearance": 0.127,
+                    "min_clearance": 0.092,
                     "min_copper_edge_clearance": 0.3,
                     "min_hole_clearance": 0.25,
                     "min_hole_to_hole": 0.25,
                     "min_through_hole_diameter": 0.2,
-                    "min_track_width": 0.127,
+                    "min_track_width": 0.092,
                     "min_via_annular_width": 0.1,
-                    "min_via_diameter": 0.45,
+                    "min_via_diameter": 0.40,
                     "min_silk_clearance": 0.0,
                     "solder_mask_to_copper_clearance": 0.0,
                     "use_height_for_length_calcs": True,

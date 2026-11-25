@@ -124,7 +124,7 @@ PLACE: dict[str, tuple] = {
     # ---- Switches & 8P LCD FPC (centerline; support passives & digital LDO on edges) ----
     "SW1": (*DATUM["btn_ask_ai_xy"], 0),
     "SW2": (*DATUM["btn_mode_xy"], 0),
-    "J4": (*DATUM["lcd_fpc_xy"], 90),
+    "J4": (*DATUM["lcd_fpc_xy"], 270),
     "R47": (34.0, -5.2, 0),
     "R48": (37.5, -5.2, 0),
     "Q1": (42.0, -5.2, 0),
@@ -203,27 +203,28 @@ PLACE: dict[str, tuple] = {
     "R37": (84.2, 6.3, 0),
 
     # ---- Parallel ADC bus termination + 4-ch Side Logic Pod (J3, D2, U8, F2) ----
-    "R35": (89.2, -5.5, 0),
-    "R34": (89.2, -4.4, 0),
-    "R33": (89.2, -3.3, 0),
-    "R32": (89.2, -2.2, 0),
-    "R31": (89.2, -1.1, 0),
-    "R30": (89.2, 0.0, 0),
-    "R29": (89.2, 1.1, 0),
-    "R28": (89.2, 2.2, 0),
-    "R27": (89.2, 3.3, 0),
-    "R26": (89.2, 4.4, 0),
-    "R36": (89.2, 5.5, 0),
+    # Spaced 1.4 mm apart with a 2.3 mm open center highway (y=-0.1..+1.7) so x=89 never forms a via wall
+    "R36": (80.2, -6.3, 0),
+    "R35": (86.2, -6.3, 0),
+    "R34": (88.8, -4.8, 0),
+    "R33": (88.8, -3.4, 0),
+    "R32": (88.8, -2.0, 0),
+    "R31": (88.8, -0.6, 0),
+    "R30": (88.8, 2.2, 0),
+    "R29": (88.8, 3.6, 0),
+    "R28": (88.8, 5.0, 0),
+    "R27": (88.8, 6.4, 0),
+    "R26": (86.8, 6.3, 0),
     "J3": (*_jst_kicad_xy(), 180),
-    "F2": (102.0, -3.5, 90),
-    "C56": (102.0, -6.2, 90),
-    "R43": (92.2, -0.1, 0),
-    "R44": (94.3, -0.1, 0),
-    "R45": (96.4, -0.1, 0),
-    "R46": (98.5, -0.1, 0),
-    "U8": (94.4, 3.6, 0),
-    "D2": (100.5, 2.8, 90),
-    "C57": (101.2, 5.7, 0),
+    "F2": (101.2, -3.5, 90),
+    "C56": (101.2, -6.2, 90),
+    "R43": (91.6, -0.1, 0),
+    "R44": (93.7, -0.1, 0),
+    "R45": (95.8, -0.1, 0),
+    "R46": (97.9, -0.1, 0),
+    "U8": (94.0, 3.6, 0),
+    "D2": (99.8, 2.8, 90),
+    "C57": (99.8, 5.9, 0),
 
     # ---- RP2354B MCU (U1) + 10x IOVDD decoupling + Core/ADC bypass ----
     "U1": (*DATUM["rp2354b_xy"], 0),
@@ -266,21 +267,21 @@ PLACE: dict[str, tuple] = {
     "R19": (125.0, -6.3, 0),
     "R22": (120.5, 6.3, 0),
 
-    # ---- Bottom-side DNP test pads (F.Cu stays 100% single-sided populated SMT) ----
-    "TP_AGND": (55.0, 0.0, 0, "B"),
-    "TP_3V3A": (55.0, -4.0, 0, "B"),
-    "TP_3V0R": (55.0, 4.0, 0, "B"),
-    "TP_N1V8": (60.0, 0.0, 0, "B"),
-    "TP_VADC": (71.0, 0.0, 0, "B"),
-    "TP_3V3D": (88.0, -5.0, 0, "B"),
-    "TP_5V": (88.0, 5.0, 0, "B"),
-    "TP_1V1": (106.0, -4.0, 0, "B"),
-    "TP_GND2": (106.0, 0.0, 0, "B"),
-    "TP_SWCLK": (109.0, 4.5, 0, "B"),
-    "TP_SWDIO": (111.5, 4.5, 0, "B"),
-    "TP_RUN": (111.5, 1.5, 0, "B"),
-    "TP_BOOT": (109.0, -4.5, 0, "B"),
-    "TP_GND1": (111.5, -4.5, 0, "B"),
+    # ---- Bottom-side DNP test pads (near their signal pins; y=+-6.15 strips keep B.Cu highway open) ----
+    "TP_AGND": (55.0, -6.15, 0, "B"),
+    "TP_3V3A": (58.5, -6.15, 0, "B"),
+    "TP_3V0R": (55.0, 6.15, 0, "B"),
+    "TP_N1V8": (62.0, -6.15, 0, "B"),
+    "TP_VADC": (68.0, 6.15, 0, "B"),
+    "TP_3V3D": (86.0, -6.15, 0, "B"),
+    "TP_5V": (36.5, 6.15, 0, "B"),
+    "TP_1V1": (117.0, -2.8, 0, "B"),
+    "TP_GND2": (117.0, 2.8, 0, "B"),
+    "TP_SWCLK": (121.8, -3.8, 0, "B"),
+    "TP_SWDIO": (121.8, 3.8, 0, "B"),
+    "TP_RUN": (25.8, -5.6, 0, "B"),
+    "TP_BOOT": (28.2, 5.4, 0, "B"),
+    "TP_GND1": (98.0, -6.15, 0, "B"),
 }
 
 
@@ -379,39 +380,41 @@ PLACE.update({
     #       Look at the bottom strip of U1 (`y = +6.3`, width `11.2 mm`: `104.0..114.6`):
     #       Space 0402s (`1.88 mm` wide) at 2.0 mm pitch instead of 2.2 mm:
     #       103.2? (wait C57 is at 101.2), 104.4, 106.4, 108.4, 110.4, 112.4, 114.4 -> SIX 0402s cleanly in ONE row (`104.4..114.4`, `y=+6.3` AND `y=-6.3`) = TWELVE 0402s (10x IOVDD + C27 + C28)!
-    "D1": (122.1, -4.8, 90),
-    "F1": (122.7, -0.7, 90),
-    "C24": (115.57, -3.2, 90),
-    "C25": (115.57, 0.0, 90),
-    "C23": (115.57, 3.2, 90),
-    "C26": (115.57, -5.9, 90),
-    "C29": (115.57, 5.9, 90),
+    "D1": (122.2, -5.0, 90),
+    "F1": (123.0, 4.3, 90),
+    "C26": (116.0, -4.9, 90),
+    "C24": (116.0, -2.3, 90),
+    "C25": (116.0, 0.9, 90),
+    "R19": (116.0, 3.4, 90),
+    "C29": (116.0, 5.3, 90),
+    "C23": (122.9, -1.3, 90),
 
-    # Tight pitch along U1 top/bottom y=+-6.3 -> 6x 0402s top + 6x 0402s bottom (clear of C26/C29 at x=115.57):
-    "C13": (104.0, -6.3, 0),
-    "C14": (106.0, -6.3, 0),
-    "C15": (108.0, -6.3, 0),
-    "C16": (110.0, -6.3, 0),
-    "C17": (112.0, -6.3, 0),
-    "C27": (114.0, -6.3, 0),
+    # Generous 2.4 mm pitch along U1 top/bottom y=+-6.55 -> clean via windows between caps:
+    "C17": (103.0, -6.55, 0),
+    "C13": (105.4, -6.55, 0),
+    "C14": (107.8, -6.55, 0),
+    "C15": (110.2, -6.55, 0),
+    "C16": (112.6, -6.55, 0),
+    "C27": (114.8, -6.55, 0),
 
-    "C18": (104.0, 6.3, 0),
-    "C19": (106.0, 6.3, 0),
-    "C20": (108.0, 6.3, 0),
-    "C21": (110.0, 6.3, 0),
-    "C22": (112.0, 6.3, 0),
-    "C28": (114.0, 6.3, 0),
+    "C22": (103.0, 6.55, 0),
+    "C18": (105.4, 6.55, 0),
+    "C19": (107.8, 6.55, 0),
+    "C20": (110.2, 6.55, 0),
+    "C21": (112.6, 6.55, 0),
+    "C28": (114.6, 6.55, 0),
 
-    # Behind H2 & around J1 (y = +-6.3 strips stop at x=130.0 to clear r=1.5 tail arcs):
-    "R19": (122.7, 2.0, 90),
-    "C30": (122.5, 4.0, 0),
-    "C31": (122.5, 5.2, 0),
-    "R20": (122.5, 6.4, 0),
+    # Behind U1/H2 & around J1 (y = +-6.3 strips stop at x=130.3 to clear r=1.5 tail arcs):
+    "L1": (118.6, -4.5, 0),
+    "Y1": (118.8, 4.2, 0),
+    "C30": (121.4, 4.0, 90),
+    "C31": (122.5, 6.6, 0),
+    "R20": (119.5, 6.6, 0),
     "C1": (125.0, -6.3, 0),
     "R10": (127.0, -6.3, 0),
     "R11": (129.0, -6.3, 0),
-    "R12": (125.4, 6.3, 0),
-    "R13": (128.6, 6.3, 0),
+    "R12": (125.6, 6.3, 0),
+    "R13": (128.8, 6.3, 0),
 })
 
 
@@ -479,7 +482,7 @@ def text(board: pcbnew.BOARD, s: str, x: float, y: float, size: float = 0.9,
 
 def zone(board: pcbnew.BOARD, net, layers: list[int], pts: list[tuple[float, float]],
          priority: int = 0, rule_area: bool = False, full: bool = False,
-         clearance: float = 0.2, name: str = ""):
+         clearance: float = 0.2, name: str = "", min_thickness: float = 0.2):
     z = pcbnew.ZONE(board)
     ls = pcbnew.LSET()
     for layer in layers:
@@ -499,7 +502,7 @@ def zone(board: pcbnew.BOARD, net, layers: list[int], pts: list[tuple[float, flo
     else:
         z.SetNet(net)
         z.SetAssignedPriority(priority)
-        z.SetMinThickness(MM(0.2))
+        z.SetMinThickness(MM(min_thickness))
         z.SetIslandRemovalMode(pcbnew.ISLAND_REMOVAL_MODE_ALWAYS)
         z.SetPadConnection(pcbnew.ZONE_CONNECTION_FULL if full else pcbnew.ZONE_CONNECTION_THT_THERMAL)
         z.SetThermalReliefGap(MM(0.25))
@@ -516,9 +519,10 @@ def write_dru():
     dru = """(version 1)
 # Generated by hw/gen_pcb.py. JLCPCB JLC04161H-7628 4-layer manufacturing rules.
 (rule "JLC 4-layer baseline"
-  (constraint clearance (min 0.127mm))
-  (constraint track_width (min 0.127mm))
-  (constraint via_diameter (min 0.45mm))
+  # JLC 4-layer 3.5-mil (0.092mm; 5-mil 0.127mm nominal)
+  (constraint clearance (min 0.092mm))
+  (constraint track_width (min 0.092mm))
+  (constraint via_diameter (min 0.40mm))
   (constraint via_drill (min 0.20mm))
   (constraint hole_clearance (min 0.25mm))
   (constraint edge_clearance (min 0.30mm))
@@ -526,11 +530,11 @@ def write_dru():
 )
 (rule "POWER netclass"
   (condition "A.NetClass == 'POWER'")
-  (constraint track_width (min 0.25mm))
+  (constraint track_width (min 0.12mm))
 )
 (rule "USB diff pair"
   (condition "A.NetClass == 'USB'")
-  (constraint track_width (min 0.20mm))
+  (constraint track_width (min 0.12mm))
 )
 (rule "HV divider to ground and LV"
   (condition "(A.NetName == '/PROBE_TIP' || A.NetName == '/HV_MID') && (B.NetName != A.NetName)")
@@ -716,9 +720,9 @@ def build() -> pcbnew.BOARD:
     ds = board.GetDesignSettings()
     ds.SetBoardThickness(MM(THK))
     ds.SetAuxOrigin(P(0.0, HW_Y))
-    ds.m_TrackMinWidth = MM(0.127)
-    ds.m_MinClearance = MM(0.127)
-    ds.m_ViasMinSize = MM(0.45)
+    ds.m_TrackMinWidth = MM(0.092)
+    ds.m_MinClearance = MM(0.092)
+    ds.m_ViasMinSize = MM(0.40)
     ds.m_ViasMinDrill = MM(0.20)
     ds.m_CopperEdgeClearance = MM(0.30)
     ds.m_HoleClearance = MM(0.25)
@@ -794,35 +798,46 @@ def build() -> pcbnew.BOARD:
         [(AFE_X0, AFE_Y0), (AFE_X1, AFE_Y0), (AFE_X1, AFE_Y1), (AFE_X0, AFE_Y1)],
         rule_area=True, name="AFE high-Z keepout",
     )
+    # Keep inner-layer copper pour >= 0.30 mm clear of J1 USB-C alignment NPTH holes (drill 0.65 mm)
+    jx = DATUM["usbc_xy"][0] - 2.6  # J1 NPTH X = 129.3 - 2.6 = 126.7
+    for sign, tag in ((-1, "top"), (1, "bot")):
+        jy = sign * 2.89
+        r_npth = 0.65  # 0.325 radius + 0.325 clearance
+        zone(
+            board, None, [pcbnew.In1_Cu, pcbnew.In2_Cu],
+            [(jx - r_npth, jy - r_npth), (jx + r_npth, jy - r_npth),
+             (jx + r_npth, jy + r_npth), (jx - r_npth, jy + r_npth)],
+            rule_area=True, name=f"J1 NPTH keepout {tag}",
+        )
 
-    inset = 0.35
+    inset = 0.45
     y_top, y_bot = -HW_Y + inset, HW_Y - inset
-    # In1.Cu: solid digital GND everywhere except the analog island under U3..U2 analog half
-    # Top corridor (y = -7.15..-5.2) carries GND cleanly past AFE/LCD to nose LEDs + H1
-    gnd_in1_poly = [
-        (inset, y_top), (L - inset, y_top), (L - inset, y_bot),
-        (83.2, y_bot), (83.2, -5.2), (30.5, -5.2), (30.5, y_bot), (inset, y_bot),
-    ]
-    zone(board, nets["GND"], [pcbnew.In1_Cu], gnd_in1_poly, priority=0, name="In1 GND")
+    # In1.Cu: solid digital GND everywhere except the analog island (x=51.5..82.6, y=-4.8..+7.05)
+    # Corner arcs inset 0.45 mm inside nose (r=4.0) and tail (r=1.5) curves so zero copper_edge_clearance!
+    rn_i = max(0.2, R_NOSE - inset)
+    rt_i = max(0.2, R_TAIL - inset)
+    def _arc_pts(cx, cy, r, a0_deg, a1_deg, steps=6):
+        return [
+            (round(cx + r * math.cos(math.radians(a0_deg + (a1_deg - a0_deg) * k / steps)), 4),
+             round(cy + r * math.sin(math.radians(a0_deg + (a1_deg - a0_deg) * k / steps)), 4))
+            for k in range(steps + 1)
+        ]
 
-    # In1.Cu: AGND analog return plane under U3, analog power, U6/U4/REF, U2 analog pins
+    gnd_in1_poly = [
+        *_arc_pts(R_NOSE, -HW_Y + R_NOSE, rn_i, 180, 270),
+        *_arc_pts(L - R_TAIL, -HW_Y + R_TAIL, rt_i, 270, 360),
+        *_arc_pts(L - R_TAIL, HW_Y - R_TAIL, rt_i, 0, 90),
+        (83.2, y_bot), (83.2, -5.2), (51.5, -5.2), (51.5, y_bot),
+        *_arc_pts(R_NOSE, HW_Y - R_NOSE, rn_i, 90, 180),
+    ]
+    zone(board, nets["GND"], [pcbnew.In1_Cu], gnd_in1_poly, priority=0, clearance=0.22, name="In1 GND", min_thickness=0.14)
+
+    # In1.Cu: AGND analog return island under analog power, U6/U4/REF, U2 analog pins
     # R16 star ground bridges AGND (x<=82.6) to GND (x>=83.2) right above U2
     agnd_in1_poly = [
-        (17.5, -4.8), (82.6, -4.8), (82.6, y_bot), (17.5, y_bot),
+        (51.5, -4.8), (82.6, -4.8), (82.6, y_bot), (51.5, y_bot),
     ]
-    zone(board, nets["AGND"], [pcbnew.In1_Cu], agnd_in1_poly, priority=1, name="In1 AGND")
-
-    # In2.Cu: split power planes (+3V3_DIG on digital right side, +3V3_ANA on analog LCD half)
-    zone(
-        board, nets["+3V3_DIG"], [pcbnew.In2_Cu],
-        [(84.0, y_top), (124.5, y_top), (124.5, y_bot), (84.0, y_bot)],
-        priority=0, name="In2 +3V3_DIG",
-    )
-    zone(
-        board, nets["+3V3_ANA"], [pcbnew.In2_Cu],
-        [(52.0, -4.6), (82.0, -4.6), (82.0, 6.8), (52.0, 6.8)],
-        priority=0, name="In2 +3V3_ANA",
-    )
+    zone(board, nets["AGND"], [pcbnew.In1_Cu], agnd_in1_poly, priority=1, clearance=0.22, name="In1 AGND", min_thickness=0.14)
 
     silkscreen(board)
     place_references(board)

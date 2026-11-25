@@ -20,8 +20,8 @@ PCB = {
     "lcd_glass_x": (50.0, 78.0),         # FP-096H09A 13.5 x 27.95mm IPS LCD glass
     "lcd_glass_width": 13.5,
     "ms9280_xy": (83.0, 0.0),            # MS9280 SSOP-28 ADC
-    "side_jst_xy": (96.0, 4.1),          # 6P JST-SH right-angle side logic pod (CAD Y-up)
-    "rp2354b_xy": (109.0, 0.0),          # RP2354B QFN-80 (10x10mm)
-    "mount_hole_rear_xy": (119.0, 0.0),  # M2 mounting hole #2
+    "side_jst_xy": (95.0, 4.1),          # 6P JST-SH right-angle side logic pod (CAD Y-up)
+    "rp2354b_xy": (109.2, 0.0),          # RP2354B QFN-80 (10x10mm)
+    "mount_hole_rear_xy": (119.6, 0.0),  # M2 mounting hole #2
     "usbc_xy": (129.3, 0.0),             # 16P USB-C receptacle (1 mm tail overhang past X=132)
 }
