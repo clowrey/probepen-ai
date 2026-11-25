@@ -1,0 +1,5 @@
+Item,Spec,Qty per board,Notes
+IPS Display,FP-096H09A 0.96in 80x160 ST7735S 8P FPC,1,Mates to J4 Molex 503480-0800
+Probe Tip,M3 stainless steel pogo/needle tip,1,Threads into J2 SMD M3 boss
+Logic Pod Cable,JST-SH 6P SHR-06V-S-B + micro-grabber harness,1,Plugs into J3
+Case Fasteners,M2 x 6 mm self-tapping pan head screw,2,Self-taps into 1.7 mm case bosses
