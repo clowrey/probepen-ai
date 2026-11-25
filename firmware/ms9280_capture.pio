@@ -1,0 +1,11 @@
+; RP2354B PIO0 High-Speed 50MSPS Capture for MS9280
+; Run RP2354B clk_sys at 200 MHz -> PIO clkdiv = 2.0 (100 MHz state machine)
+; 2 cycles per loop = 50.0 MSPS clock on side-set pin (GPIO8), 8-bit sample on GPIO0..7!
+
+.program ms9280_capture
+.side_set 1
+
+.wrap_target
+    nop         side 1   ; Rising edge of ADC_CLK (MS9280 latches next pipeline sample)
+    in pins, 8  side 0   ; Falling edge of ADC_CLK + shift D0..D7 into ISR (autopush @ 32 bits -> DMA!)
+.wrap
