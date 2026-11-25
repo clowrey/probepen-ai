@@ -301,3 +301,7 @@ The automated test suite (`151 passed` offline; `pytest` without `-m "not net"` 
 | `firmware/` | RP2354B PIO programs, CMake build, headers (`include/`), and C11 sources (`src/`) |
 | `docs/` | Image/diagram generator scripts (`docs/make_images.py`, `docs/case_views.py`, `docs/block_diagram.py`) and `docs/img/` |
 | `tests/` | `pytest` verification across hardware, exports, CAD case fit, and firmware |
+
+## Licence
+
+GPL-3.0: hardware design files, CAD, firmware and scripts alike. See [LICENSE](LICENSE).
