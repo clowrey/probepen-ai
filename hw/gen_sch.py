@@ -365,7 +365,7 @@ NETCLASS_RULES = {  # class: (track width, clearance within the class), mm
     "Default": (0.2, 0.15),
     "LV": (0.2, 0.15),
     "POWER": (0.4, 0.15),
-    "ANALOG": (0.2, 0.2),
+    "ANALOG": (0.2, 0.13),
     "USB": (0.25, 0.15),
     "HIGHSPEED": (0.15, 0.15),
 }
@@ -403,7 +403,7 @@ def write_project():
                     "min_copper_edge_clearance": 0.3,
                     "min_hole_clearance": 0.25,
                     "min_hole_to_hole": 0.25,
-                    "min_through_hole_diameter": 0.3,
+                    "min_through_hole_diameter": 0.2,
                     "min_track_width": 0.127,
                     "min_via_annular_width": 0.1,
                     "min_via_diameter": 0.45,
