@@ -1,0 +1,27 @@
+; 4-channel Logic Pod synchronous/oversampled capture (RP2354B PIO1)
+; Hardware pins (matches hw/design.py GPIO):
+;   IN base = GPIO17..GPIO20 (POD_CH0..POD_CH3, 4 bits)
+; Packs 8 x 4-bit samples per 32-bit RX FIFO word (autopush @ 32 bits).
+
+.program pod_capture
+
+.wrap_target
+    in pins, 4
+.wrap
+
+% c-sdk {
+#include "hardware/pio.h"
+
+static inline void pod_capture_program_init(PIO pio, uint sm, uint offset, float clkdiv) {
+    pio_sm_config c = pod_capture_program_get_default_config(offset);
+    for (uint pin = 17; pin < 21; ++pin) {
+        pio_gpio_init(pio, pin);
+    }
+    pio_sm_set_consecutive_pindirs(pio, sm, 17, 4, false);
+    sm_config_set_in_pins(&c, 17);
+    sm_config_set_in_shift(&c, true, true, 32);
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
+    sm_config_set_clkdiv(&c, clkdiv);
+    pio_sm_init(pio, sm, offset, &c);
+}
+%}
