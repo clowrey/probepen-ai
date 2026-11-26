@@ -292,6 +292,7 @@ PWR_FLAGS = [
     "+5V_ANA_IN",
     "+1V1_CORE",
     "VREG_AVDD",
+    "ADC_AVDD",
     "GND",
     "AGND",
 ]

@@ -27,44 +27,45 @@ static afe_cal_t g_cal;
 static void hal_init_peripherals(void) {
 #ifdef PICO_RP2350
     stdio_init_all();
-    gpio_init(PIN_ADC_STBY);
-    gpio_set_dir(PIN_ADC_STBY, GPIO_OUT);
-    gpio_put(PIN_ADC_STBY, 0);
+    /* AD9288 S1/S2 = 1/1: both channels running, outputs aligned */
+    gpio_init(PIN_ADC_S1);
+    gpio_set_dir(PIN_ADC_S1, GPIO_OUT);
+    gpio_put(PIN_ADC_S1, 1);
+    gpio_init(PIN_ADC_S2);
+    gpio_set_dir(PIN_ADC_S2, GPIO_OUT);
+    gpio_put(PIN_ADC_S2, 1);
 
-    gpio_init(PIN_AFE_GAIN_10X);
-    gpio_set_dir(PIN_AFE_GAIN_10X, GPIO_OUT);
-    gpio_put(PIN_AFE_GAIN_10X, 0);
+    /* Gain switches: high = low-gain (+/-26 V) range, the safe default */
+    gpio_init(PIN_CH1_GAIN_LO);
+    gpio_set_dir(PIN_CH1_GAIN_LO, GPIO_OUT);
+    gpio_put(PIN_CH1_GAIN_LO, 1);
+    gpio_init(PIN_CH2_GAIN_LO);
+    gpio_set_dir(PIN_CH2_GAIN_LO, GPIO_OUT);
+    gpio_put(PIN_CH2_GAIN_LO, 1);
 
-    gpio_init(PIN_BTN_ASK_AI_N);
-    gpio_set_dir(PIN_BTN_ASK_AI_N, GPIO_IN);
-    gpio_pull_up(PIN_BTN_ASK_AI_N);
-
-    gpio_init(PIN_BTN_MODE_N);
-    gpio_set_dir(PIN_BTN_MODE_N, GPIO_IN);
-    gpio_pull_up(PIN_BTN_MODE_N);
+    static const uint8_t buttons[] = {PIN_BTN_ASK_AI_N, PIN_BTN_MODE_N, PIN_BTN_UP_N, PIN_BTN_DOWN_N};
+    for (unsigned i = 0; i < sizeof buttons; ++i) {
+        gpio_init(buttons[i]);
+        gpio_set_dir(buttons[i], GPIO_IN);
+        gpio_pull_up(buttons[i]);
+    }
 
     gpio_init(PIN_LCD_BLK_GATE_N);
     gpio_set_dir(PIN_LCD_BLK_GATE_N, GPIO_OUT);
     gpio_put(PIN_LCD_BLK_GATE_N, 0);
 
     adc_init();
-    adc_gpio_init(PIN_AFE_DC_SENSE);
-    adc_gpio_init(PIN_COMP_THR_ADC);
+    adc_gpio_init(PIN_CH1_DC_SENSE);
+    adc_gpio_init(PIN_CH2_DC_SENSE);
     adc_gpio_init(PIN_VBUS_SENSE);
 
-    gpio_set_function(PIN_COMP_THR_PWM, GPIO_FUNC_PWM);
-    uint slice = pwm_gpio_to_slice_num(PIN_COMP_THR_PWM);
-    pwm_set_wrap(slice, 1000u);
-    pwm_set_gpio_level(PIN_COMP_THR_PWM, logic_thr_mv_to_pwm_level(1400u, 1000u, 3300.0f));
-    pwm_set_enabled(slice, true);
-
-    spi_init(spi0, 24000000u);
+    spi_init(spi1, 24000000u);
     gpio_set_function(PIN_LCD_SCK, GPIO_FUNC_SPI);
     gpio_set_function(PIN_LCD_MOSI, GPIO_FUNC_SPI);
 #else
     (void)PIN_ADC_CLK;
-    (void)PIN_ADC_OTR;
-    (void)PIN_ADC_STBY;
+    (void)PIN_ADC_S1;
+    (void)PIN_ADC_S2;
     (void)PIN_POD_CH0;
     (void)PIN_LCD_CS_N;
     (void)PIN_LCD_DC;
@@ -72,8 +73,10 @@ static void hal_init_peripherals(void) {
     (void)PIN_LCD_BLK_GATE_N;
     (void)PIN_BTN_ASK_AI_N;
     (void)PIN_BTN_MODE_N;
-    (void)PIN_AFE_GAIN_10X;
-    (void)PIN_AFE_DC_SENSE;
+    (void)PIN_CH1_GAIN_LO;
+    (void)PIN_CH2_GAIN_LO;
+    (void)PIN_CH1_DC_SENSE;
+    (void)PIN_CH2_DC_SENSE;
     (void)PIN_VBUS_SENSE;
 #endif
 }

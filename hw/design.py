@@ -41,50 +41,39 @@ class Comp:
 
 
 # ---- RP2354B GPIO allocation -----------------------------------------------------------------
-# Each RP2350/RP2354 PIO block has a 32-GPIO window (GPIOBASE = 0 covers GPIO0..31, or 16 covers
-# GPIO16..47). Keeping AD9288 D0A..D7A (GPIO0..7), D0B..D7B (GPIO8..15), CLK (GPIO16), and
-# POD_CH0..3 (GPIO18..21) inside GPIO0..31 lets one 2-instruction PIO0 loop sample
-# BOTH 8-bit channels simultaneously into 32-bit DMA words at up to 80 MSPS!
-# RP2354B ADC0..ADC7 live on GPIO40..47 (CH1_DC_SENSE = ADC0, VBUS = ADC2, CH2_DC_SENSE = ADC3).
+# U1 is placed rotated -90 deg (regulator / USB side toward the tail), so its pins 16..48 face the
+# ADC. One PIO block sees 32 consecutive GPIOs (GPIOBASE = 16 covers GPIO16..47): a 2-instruction
+# `in pins, 32` loop captures both AD9288 channels in one word per sample, clocked by side-set.
+#   word bits  0..7  = GPIO16..23 = ADCA_D7..D0 (bit-reversed: byte = __rbit(word) >> 24)
+#   word bits 16..23 = GPIO32..39 = ADCB_D0..D7
+# The pin order follows the board so the two 8-bit buses reach the MCU without crossing.
+# RP2354B ADC0..ADC7 are GPIO40..47 (not 5 V tolerant): DC sense and VBUS sense. Buttons: GPIO4..7.
+# POD_CH0..3 sit on 5 V tolerant GPIO0..3, the pins facing the side header (PIO1, GPIOBASE = 0).
 GPIO = {
-    "ADCA_D0": 0,
-    "ADCA_D1": 1,
-    "ADCA_D2": 2,
-    "ADCA_D3": 3,
-    "ADCA_D4": 4,
-    "ADCA_D5": 5,
-    "ADCA_D6": 6,
-    "ADCA_D7": 7,
-    "ADCB_D0": 8,
-    "ADCB_D1": 9,
-    "ADCB_D2": 10,
-    "ADCB_D3": 11,
-    "ADCB_D4": 12,
-    "ADCB_D5": 13,
-    "ADCB_D6": 14,
-    "ADCB_D7": 15,
-    "ADC_CLK": 16,
-    "CH1_GAIN_LO": 18,
-    "CH2_GAIN_LO": 19,
-    "BTN_MODE_N": 20,
-    "BTN_UP_N": 21,
-    "BTN_DOWN_N": 22,
-    "BTN_ASK_AI_N": 23,
-    "LCD_DC": 24,
+    "POD_CH0": 0,
+    "POD_CH1": 1,
+    "POD_CH2": 2,
+    "POD_CH3": 3,
+    "BTN_DOWN_N": 4,
+    "BTN_UP_N": 5,
+    "BTN_MODE_N": 6,
+    "BTN_ASK_AI_N": 7,
+    "ADC_S1": 12,
+    "ADC_S2": 13,
+    "LCD_BLK_GATE_N": 14,
+    **{f"ADCA_D{i}": 23 - i for i in range(8)},
+    "ADC_CLK": 24,
     "LCD_CS_N": 25,
-    "LCD_SCK": 26,
-    "LCD_MOSI": 27,
-    "LCD_RST_N": 28,
-    "LCD_BLK_GATE_N": 29,
-    "ADC_S1": 31,
-    "ADC_S2": 32,
-    "POD_CH0": 36,
-    "POD_CH1": 37,
-    "POD_CH2": 38,
-    "POD_CH3": 39,
-    "CH1_DC_SENSE": 40,   # ADC0
+    "LCD_SCK": 26,        # SPI1 SCK
+    "LCD_MOSI": 27,       # SPI1 TX
+    "LCD_DC": 28,
+    "LCD_RST_N": 29,
+    "CH1_GAIN_LO": 30,
+    "CH2_GAIN_LO": 31,
+    **{f"ADCB_D{i}": 32 + i for i in range(8)},
+    "CH2_DC_SENSE": 40,   # ADC0
+    "CH1_DC_SENSE": 41,   # ADC1
     "VBUS_SENSE": 42,     # ADC2
-    "CH2_DC_SENSE": 43,   # ADC3
 }
 
 # RP2354B QFN-80 pin -> GPIO number (RP2350 Datasheet Table 1674, QFN-80 column)
@@ -103,32 +92,8 @@ RP2354B_GPIO_PIN: dict[str, int] = {
     "55": 44, "56": 45, "57": 46, "58": 47,
 }
 
-_GPIO_NET_BY_NUM = {
-    **{GPIO[f"ADCA_D{i}"]: f"ADCA_D{i}" for i in range(8)},
-    **{GPIO[f"ADCB_D{i}"]: f"ADCB_D{i}" for i in range(8)},
-    GPIO["ADC_CLK"]: "ADC_CLK_MCU",
-    GPIO["POD_CH0"]: "POD_CH0",
-    GPIO["POD_CH1"]: "POD_CH1",
-    GPIO["POD_CH2"]: "POD_CH2",
-    GPIO["POD_CH3"]: "POD_CH3",
-    GPIO["BTN_ASK_AI_N"]: "BTN_ASK_AI_N",
-    GPIO["LCD_DC"]: "LCD_DC",
-    GPIO["LCD_CS_N"]: "LCD_CS_N",
-    GPIO["LCD_SCK"]: "LCD_SCK",
-    GPIO["LCD_MOSI"]: "LCD_MOSI",
-    GPIO["LCD_RST_N"]: "LCD_RST_N",
-    GPIO["LCD_BLK_GATE_N"]: "LCD_BLK_GATE_N",
-    GPIO["ADC_S1"]: "ADC_S1",
-    GPIO["ADC_S2"]: "ADC_S2",
-    GPIO["CH1_GAIN_LO"]: "CH1_GAIN_LO",
-    GPIO["CH2_GAIN_LO"]: "CH2_GAIN_LO",
-    GPIO["BTN_MODE_N"]: "BTN_MODE_N",
-    GPIO["BTN_UP_N"]: "BTN_UP_N",
-    GPIO["BTN_DOWN_N"]: "BTN_DOWN_N",
-    GPIO["CH1_DC_SENSE"]: "CH1_DC_SENSE",
-    GPIO["VBUS_SENSE"]: "VBUS_SENSE",
-    GPIO["CH2_DC_SENSE"]: "CH2_DC_SENSE",
-}
+_GPIO_NET_NAME = {"ADC_CLK": "ADC_CLK_MCU"}
+_GPIO_NET_BY_NUM = {num: _GPIO_NET_NAME.get(name, name) for name, num in GPIO.items()}
 
 
 def _rp2354b_pins() -> dict[str, str]:
@@ -150,7 +115,7 @@ def _rp2354b_pins() -> dict[str, str]:
         "33": "SWCLK",
         "34": "SWDIO",
         "35": "RUN_N",
-        "59": "+3V0_REF",   # ADC_AVDD (3.000 V >= 2.97 V min for full ADC spec)
+        "59": "ADC_AVDD",   # +3V0_REF through R23 (3.000 V >= 2.97 V min for full ADC spec)
         "61": "VREG_AVDD",
         "62": "GND",        # VREG_PGND
         "63": "VREG_LX",
@@ -241,7 +206,8 @@ COMPONENTS: list[Comp] = [
 
     # ---- MCU Core: RP2354B, decoupling, crystal, BOOTSEL, RUN, SWD (mcu) ---------------------
     C("U1", "rp2354b", _rp2354b_pins(), block="mcu"),
-    # Consolidated 4-layer plane decoupling: 4x 100nF (C14..C17) around U1 edges + C23 4.7uF
+    # IOVDD decoupling: 4x 100nF (C14..C17) outside the bus fan-outs + C23 4.7uF at VREG_VIN; the
+    # other IOVDD pins reach the +3V3 plane through vias inside the pad ring
     *[C(f"C{14 + i}", "c_100n_0402", {"1": "+3V3_DIG", "2": "GND"}, block="mcu") for i in range(4)],
     # Core buck regulator (VREG_VIN, VREG_AVDD RC filter, L1 3.3uH, +1V1_CORE caps, ADC_AVDD)
     C("C23", "c_4u7_0402", {"1": "+3V3_DIG", "2": "GND"}, block="mcu"),
@@ -250,14 +216,18 @@ COMPONENTS: list[Comp] = [
     C("L1", "l_3u3", {"1": "VREG_LX", "2": "+1V1_CORE"}, block="mcu"),
     C("C25", "c_4u7_0402", {"1": "+1V1_CORE", "2": "GND"}, block="mcu"),
     C("C26", "c_100n_0402", {"1": "+1V1_CORE", "2": "GND"}, block="mcu"),
-    C("C27", "c_100n_0402", {"1": "+1V1_CORE", "2": "GND"}, block="mcu"),
-    C("C29", "c_100n_0402", {"1": "+3V0_REF", "2": "AGND"}, block="mcu"),
+    C("C28", "c_100n_0402", {"1": "+1V1_CORE", "2": "GND"}, block="mcu"),
+    # ADC_AVDD: the 3.000 V reference through its own 33R + 1uF/100nF filter, so the MCU's ADC
+    # supply current does not ride on the front-end reference
+    C("R23", "r_33r_0402", {"1": "+3V0_REF", "2": "ADC_AVDD"}, block="mcu"),
+    C("C29", "c_100n_0402", {"1": "ADC_AVDD", "2": "GND"}, block="mcu"),
+    C("C20", "c_1u_0402", {"1": "ADC_AVDD", "2": "GND"}, block="mcu"),
 
-    # 12 MHz crystal (X322512MSB4SI, CL=20 pF -> 2*(20 - 3.5 stray) = 33 pF load caps)
+    # 12 MHz 2520 crystal (CL = 10 pF -> 2 * (10 - 2.5 stray) = 15 pF load caps), 1k on XOUT
     C("Y1", "xtal_12m", {"1": "XIN", "2": "GND", "3": "XOUT_XTAL", "4": "GND"}, block="mcu"),
     C("R20", "r_1k_0402", {"1": "XOUT_RAW", "2": "XOUT_XTAL"}, block="mcu"),
-    C("C30", "c_33p_0402", {"1": "XIN", "2": "GND"}, block="mcu"),
-    C("C31", "c_33p_0402", {"1": "XOUT_XTAL", "2": "GND"}, block="mcu"),
+    C("C30", "c_15p_0402", {"1": "XIN", "2": "GND"}, block="mcu"),
+    C("C31", "c_15p_0402", {"1": "XOUT_XTAL", "2": "GND"}, block="mcu"),
 
     # BOOTSEL (hold MODE while plugging USB-C), RUN pull-up, SWD test pads
     C("R21", "r_1k_0402", {"1": "QSPI_SS_N", "2": "BOOT_KEY"}, block="mcu"),
@@ -273,12 +243,19 @@ COMPONENTS: list[Comp] = [
     # Nose 3-in-1 connector: WAGO 2060-453 SMD (default) + DNP KF250NH-3.81-3P + 14x2.8 mm F/B pads
     C("J5", "wago_2060_3p", {"1": "CH1_TIP", "2": "AGND", "3": "CH2_TIP"}, block="afe"),
 
-    # Shared 1.000 V mid-rail / ADC ~AINx reference (+3V0_REF * 1k / (2k + 1k) = 1.000 V)
-    C("R7", "r_2k_0402", {"1": "+3V0_REF", "2": "REF_1V00"}, block="afe"),
-    C("R8", "r_1k_0402", {"1": "REF_1V00", "2": "AGND"}, block="afe"),
-    C("C36", "c_1u_0402", {"1": "REF_1V00", "2": "AGND"}, block="afe"),
+    # Shared mid-scale reference REF_MID for the gain-stage pivots and the ADC ~AINx pins. It is
+    # set equal to the dividers' resting voltage (tip at 0 V) so 0 V in sits at ADC mid-scale:
+    #   divider rest  = 3.000 * (51k || 940k) / (100k + 51k || 940k)   = 0.9781 V
+    #   REF_MID       = 3.000 * 1k / (2k + 33R + 33R + 1k)             = 0.9785 V
+    C("R7", "r_2k_0402", {"1": "+3V0_REF", "2": "REF_T1"}, block="afe"),
+    C("R7B", "r_33r_0402", {"1": "REF_T1", "2": "REF_T2"}, block="afe"),
+    C("R7C", "r_33r_0402", {"1": "REF_T2", "2": "REF_MID"}, block="afe"),
+    C("R8", "r_1k_0402", {"1": "REF_MID", "2": "AGND"}, block="afe"),
+    C("C36", "c_1u_0402", {"1": "REF_MID", "2": "AGND"}, block="afe"),
+    C("C37A", "c_100n_0402", {"1": "REF_MID", "2": "AGND"}, block="adc"),
+    C("C37B", "c_100n_0402", {"1": "REF_MID", "2": "AGND"}, block="adc"),
 
-    # Channel 1 & 2 single-supply Level-Shifted HV Dividers (940k + 100k//51k -> 1/28.83, V0=0.978 V)
+    # Channel 1 & 2 single-supply level-shifted HV dividers (940k + 100k//51k -> 1/28.83, rest 0.978 V)
     C("R1", "r_470k_0805", {"1": "CH1_TIP", "2": "CH1_HV_MID"}, block="afe"),
     C("R2", "r_470k_0805", {"1": "CH1_HV_MID", "2": "CH1_VDIV"}, block="afe"),
     C("C32", "c_1p_0402", {"1": "CH1_TIP", "2": "CH1_VDIV"}, block="afe"),
@@ -308,54 +285,57 @@ COMPONENTS: list[Comp] = [
     }, block="afe"),
     C("C34", "c_100n_0402", {"1": "+3V3_ANA", "2": "AGND"}, block="afe"),
 
-    # U4: Shared Dual RS8752XM inverting 2-gain PGA around REF_1V00 + U6 74LVC2G66DP gain switch
-    # High Gain (switch OFF): Rf=1.5k / Rg=510R = 2.941x (~+/-5.0 V full scale)
-    # Low Gain  (switch ON):  Rf=(1.5k || 226R)/510R = 0.385x (~+/-38.4 V full scale)
+    # U4: Shared Dual RS8752XM inverting 2-gain PGA around REF_MID + U6 74LVC2G66DP gain switch
+    # High gain (switch off): Rf = 1.5k / Rg = 510R = 2.941x          -> +/-5.0 V at the tip
+    # Low gain  (switch on):  Rf = 1.5k || (330R + 6R) = 274R, 0.538x -> +/-27 V at the tip
+    # The input buffer accepts 0.05..2.2 V at CHx_VDIV, i.e. -26.8 V..+35.2 V at the tip, so the
+    # low range is usable to about +/-26 V.
     C("U4", "rs8752", {
-        "1": "CH1_OUT", "2": "CH1_INV", "3": "REF_1V00", "4": "AGND",
-        "5": "REF_1V00", "6": "CH2_INV", "7": "CH2_OUT", "8": "+3V3_ANA",
+        "1": "CH1_OUT", "2": "CH1_INV", "3": "REF_MID", "4": "AGND",
+        "5": "REF_MID", "6": "CH2_INV", "7": "CH2_OUT", "8": "+3V3_ANA",
     }, block="afe"),
     C("C39", "c_100n_0402", {"1": "+3V3_ANA", "2": "AGND"}, block="afe"),
 
     C("R4A", "r_510r_0402", {"1": "CH1_VBUF", "2": "CH1_INV"}, block="afe"),
     C("R5A", "r_1k5_0402", {"1": "CH1_INV", "2": "CH1_OUT"}, block="afe"),
     C("C40A", "c_4p7_0402", {"1": "CH1_INV", "2": "CH1_OUT"}, block="afe"),
-    C("R6A", "r_220r_0402", {"1": "CH1_INV", "2": "CH1_SW_LO"}, block="afe"),
+    C("R6A", "r_330r_0402", {"1": "CH1_INV", "2": "CH1_SW_LO"}, block="afe"),
     C("R24", "r_10k_0402", {"1": "CH1_OUT", "2": "CH1_DC_SENSE"}, block="afe"),
-    C("C41", "c_10n_0402", {"1": "CH1_DC_SENSE", "2": "AGND"}, block="afe"),
+    C("C41", "c_10n_0402", {"1": "CH1_DC_SENSE", "2": "GND"}, block="mcu"),   # at the MCU ADC pin
     _tp("TP_CH1", "CH1_OUT", "afe"),
 
     C("R4B", "r_510r_0402", {"1": "CH2_VBUF", "2": "CH2_INV"}, block="afe"),
     C("R5B", "r_1k5_0402", {"1": "CH2_INV", "2": "CH2_OUT"}, block="afe"),
     C("C40B", "c_4p7_0402", {"1": "CH2_INV", "2": "CH2_OUT"}, block="afe"),
-    C("R6B", "r_220r_0402", {"1": "CH2_INV", "2": "CH2_SW_LO"}, block="afe"),
+    C("R6B", "r_330r_0402", {"1": "CH2_INV", "2": "CH2_SW_LO"}, block="afe"),
     C("R24B", "r_10k_0402", {"1": "CH2_OUT", "2": "CH2_DC_SENSE"}, block="afe"),
-    C("C41B", "c_10n_0402", {"1": "CH2_DC_SENSE", "2": "AGND"}, block="afe"),
+    C("C41B", "c_10n_0402", {"1": "CH2_DC_SENSE", "2": "GND"}, block="mcu"),  # at the MCU ADC pin
     _tp("TP_CH2", "CH2_OUT", "afe"),
-    _tp("TP_REF1V", "REF_1V00", "afe"),
+    _tp("TP_REFM", "REF_MID", "afe"),
 
-    # U6: Nexperia 74LVC2G66DP dual independent SPST gain switch (1E=pin7 CH1, 2E=pin3 CH2)
+    # U6: Nexperia 74LVC2G66DP dual independent SPST gain switch (1E=pin7 CH1, 2E=pin3 CH2).
+    # The switches are bilateral, so Y/Z are assigned to suit the layout (the OUT pin is the one nearer U4).
     C("U6", "lvc2g66", {
         "1": "CH1_SW_LO", "2": "CH1_OUT", "3": "CH2_GAIN_LO", "4": "AGND",
-        "5": "CH2_SW_LO", "6": "CH2_OUT", "7": "CH1_GAIN_LO", "8": "+3V3_ANA",
+        "5": "CH2_OUT", "6": "CH2_SW_LO", "7": "CH1_GAIN_LO", "8": "+3V3_ANA",
     }, block="afe"),
 
     # ---- Dual High-Speed ADC: AD9288BSTZ-80 / MXT2088 LQFP-48 DNP (user hand-solder) (adc) -
     C("R25A", "r_33r_0402", {"1": "CH1_OUT", "2": "ADCA_INP"}, block="adc"),
-    C("C42", "c_22p_0402", {"1": "ADCA_INP", "2": "AGND"}, block="adc"),
+    C("C42", "c_100p_0402", {"1": "ADCA_INP", "2": "AGND"}, block="adc"),  # 33R x 100pF = 48 MHz
     C("R25B", "r_33r_0402", {"1": "CH2_OUT", "2": "ADCB_INP"}, block="adc"),
-    C("C42B", "c_22p_0402", {"1": "ADCB_INP", "2": "AGND"}, block="adc"),
+    C("C42B", "c_100p_0402", {"1": "ADCB_INP", "2": "AGND"}, block="adc"),
     C("U2", None, {
         "1": "AGND",      # GND (analog side)
         "2": "ADCA_INP",  # AINA
-        "3": "REF_1V00",  # ~AINA (single-ended mid-scale reference)
+        "3": "REF_MID",  # ~AINA (single-ended mid-scale reference)
         "4": "AGND",      # DFS (0 = offset binary)
         "5": "ADC_VREF",  # REFINA
         "6": "ADC_VREF",  # REFOUT (1.25 V internal ref -> REFINA/REFINB = 1.024 Vpp diff span)
         "7": "ADC_VREF",  # REFINB
         "8": "ADC_S1",    # S1
         "9": "ADC_S2",    # S2
-        "10": "REF_1V00", # ~AINB (single-ended mid-scale reference)
+        "10": "REF_MID", # ~AINB (single-ended mid-scale reference)
         "11": "ADCB_INP", # AINB
         "12": "AGND",     # GND (analog side)
         "13": "+3V3_ANA", # VD
@@ -405,9 +385,11 @@ COMPONENTS: list[Comp] = [
     C("C47", "c_100n_0402", {"1": "+3V3_ANA", "2": "AGND"}, block="adc"),
     C("C49", "c_100n_0402", {"1": "+3V3_ANA", "2": "AGND"}, block="adc"),
     C("C52A", "c_100n_0402", {"1": "+3V3_DIG", "2": "GND"}, block="adc"),
+    C("C52B", "c_100n_0402", {"1": "+3V3_DIG", "2": "GND"}, block="adc"),
+    C("C52C", "c_100n_0402", {"1": "+3V3_DIG", "2": "GND"}, block="adc"),
 
     # ---- 6-Pin Bidirectional GPIO Expansion Header (logic) ----------------------------------
-    # JST-SH 6P + shared PTC + 220R + SRV05-4 (VP=+5V_VBUS) direct to 5V-tolerant GPIO36..39
+    # JST-SH 6P + shared PTC + 220R + SRV05-4 (VP=+5V_VBUS) direct to 5V-tolerant GPIO0..3
     C("J3", "jst_sh6", {
         "1": "GND", "2": "+3V3_POD",
         "3": "POD_CH0_RAW", "4": "POD_CH1_RAW", "5": "POD_CH2_RAW", "6": "POD_CH3_RAW",
@@ -439,12 +421,14 @@ COMPONENTS: list[Comp] = [
     C("SW2", "button", {"1": "BTN_MODE_N", "2": "GND", "3": "GND", "4": "GND"}, value="MODE", block="ui"),
     C("SW3", "button", {"1": "BTN_UP_N", "2": "GND", "3": "GND", "4": "GND"}, value="UP", block="ui"),
     C("SW4", "button", {"1": "BTN_DOWN_N", "2": "GND", "3": "GND", "4": "GND"}, value="DOWN", block="ui"),
-    # Always-on DC +5V white worklight LEDs on B.Cu nose tip (220R ~8-9 mA each; DNP hand-solder)
-    C("R51A", "r_220r_0402", {"1": "+5V_VBUS", "2": "LED1_A"}, block="ui"),
-    C("R51B", "r_220r_0402", {"1": "+5V_VBUS", "2": "LED2_A"}, block="ui"),
-    C("LED1", None, {"1": "GND", "2": "LED1_A"}, value="XL-3806UWC DNP",
+    # Always-on DC white worklight LEDs on B.Cu nose tip (220R ~8-9 mA each; DNP hand-solder).
+    # They are fed from the filtered analog 5 V and return to AGND: a constant current, so no
+    # digital supply or ground has to run under the high-impedance input section.
+    C("R51A", "r_220r_0402", {"1": "+5V_ANA_IN", "2": "LED1_A"}, block="ui"),
+    C("R51B", "r_220r_0402", {"1": "+5V_ANA_IN", "2": "LED2_A"}, block="ui"),
+    C("LED1", None, {"1": "AGND", "2": "LED1_A"}, value="XL-3806UWC DNP",
       symbol="Device:LED", footprint="ppa:LED_Side_XL3806_3.8x1.0mm", dnp=True, block="ui"),
-    C("LED2", None, {"1": "GND", "2": "LED2_A"}, value="XL-3806UWC DNP",
+    C("LED2", None, {"1": "AGND", "2": "LED2_A"}, value="XL-3806UWC DNP",
       symbol="Device:LED", footprint="ppa:LED_Side_XL3806_3.8x1.0mm", dnp=True, block="ui"),
 ]
 
@@ -481,7 +465,7 @@ NETCLASS: dict[str, str] = {}
 for _n in NETS:
     if _n in (
         "VBUS_RAW", "+5V_VBUS", "+5V_ANA_IN", "+3V3_DIG", "+3V3_ANA", "+3V3_POD",
-        "+3V0_REF", "+1V1_CORE", "VREG_AVDD", "VREG_LX",
+        "+3V0_REF", "+1V1_CORE", "VREG_AVDD", "VREG_LX", "ADC_AVDD",
         "GND", "AGND",
     ):
         NETCLASS[_n] = "POWER"
@@ -492,7 +476,7 @@ for _n in NETS:
         "CH1_DC_SENSE", "ADCA_INP",
         "CH2_TIP", "CH2_HV_MID", "CH2_VDIV", "CH2_VBUF", "CH2_INV", "CH2_OUT", "CH2_SW_LO",
         "CH2_DC_SENSE", "ADCB_INP",
-        "REF_1V00", "ADC_VREF",
+        "REF_MID", "REF_T1", "REF_T2", "ADC_VREF",
     ):
         NETCLASS[_n] = "ANALOG"
     elif _n.startswith(("ADCA_D", "ADCB_D", "ADC_CLK", "ADC_ENC")) or _n in ("LCD_SCK", "LCD_MOSI"):

@@ -514,6 +514,10 @@
         "pattern": "/ADCB_INP"
       },
       {
+        "netclass": "POWER",
+        "pattern": "/ADC_AVDD"
+      },
+      {
         "netclass": "HIGHSPEED",
         "pattern": "/ADC_CLK_MCU"
       },
@@ -715,7 +719,15 @@
       },
       {
         "netclass": "ANALOG",
-        "pattern": "/REF_1V00"
+        "pattern": "/REF_MID"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/REF_T1"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/REF_T2"
       },
       {
         "netclass": "LV",

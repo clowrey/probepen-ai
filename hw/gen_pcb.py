@@ -103,146 +103,141 @@ def _jst_kicad_xy() -> tuple[float, float]:
 
 
 PLACE: dict[str, tuple] = {
-    # ---- Block 1 (x = 0..29): Nose 3-in-1 terminal, front worklight LEDs & HV AFE dividers -
+    # ---- Nose (x = 0..31): 3-in-1 terminal, worklight LEDs, HV dividers and their shunt parts
     "J5":   (*DATUM["nose_term_xy"], 0),
     "LED1": (*DATUM["led_top_xy"], 270, "B"),
     "LED2": (*DATUM["led_bot_xy"], 270, "B"),
-    "R51A": (26.2, -7.2, 270),
-    "R51B": (28.8, -7.2, 270),
     "R1":   (19.3, -2.4, 0),
     "R2":   (23.0, -2.4, 0),
     "C32":  (22.4, -4.1, 0),
-    "R3":   (26.2, -5.3, 0),
-    "R3U":  (26.2, -4.0, 0),
     "C33":  (26.2, -2.7, 0),
+    "R3U":  (26.2, -4.0, 0),
+    "R3":   (26.2, -5.3, 0),
+    "D4":   (29.3, -4.4, 0),
     "R1B":  (19.3, 2.4, 0),
     "R2B":  (23.0, 2.4, 0),
     "C32B": (22.4, 4.1, 0),
-    "R3B":  (26.2, 5.3, 0),
-    "R3UB": (26.2, 4.0, 0),
     "C33B": (26.2, 2.7, 0),
+    "R3UB": (26.2, 4.0, 0),
+    "R3B":  (26.2, 5.3, 0),
+    "D4B":  (29.3, 4.4, 0),
     "CT1":  (21.2, -3.5, 0, "B"),
     "CT2":  (21.2, 3.5, 0, "B"),
-
-    # ---- Block 2 (x = 29..53): Front M2 NPTH, clamps, RS8752 buffer, power tree & Buttons ---
-    "D4":   (29.2, -4.3, 0),
     "H1":   (*DATUM["mount_hole_front_xy"], 0),
-    "D4B":  (29.2, 4.3, 0),
 
-    # +3V3_DIG LDO & FB1 aligned along north power rail (y = -7.2, all 0 deg)
-    "C2":   (31.6, -7.2, 0),
-    "U9":   (35.3, -6.9, 0),
-    "C3":   (39.0, -7.2, 0),
-    "FB1":  (42.0, -7.2, 0),
+    # ---- Input buffer (x = 33): U3 turned so both inputs face the nose and both outputs the tail
+    "U3":   (33.6, 0.0, 270),
+    "C34":  (36.0, 1.3, 90),
 
-    # Shared dual RS8752XM input buffer (A=CH1, B=CH2)
-    "U3":   (35.0, 0.0, 0),
-    "C34":  (35.0, -3.4, 0),
+    # ---- Analog supply and reference (x = 36..60, north strip; buttons own the south strip) ----
+    "R51A": (36.6, -7.6, 0),
+    "R51B": (36.6, -6.4, 0),
+    "FB1":  (39.8, -7.3, 0),
+    "C4":   (43.2, -7.3, 0),
+    "U10":  (46.9, -6.3, 0),
+    "C5":   (50.6, -7.3, 0),
+    "U5": (54.3, -6.3, 0),
+    "C7": (57.3, -7.3, 0),
+    "R7": (59.4, -7.3, 0),
+    "R7B": (59.4, -6.1, 0),
+    "R7C": (59.4, -4.9, 0),
+    "R8": (61.6, -6.1, 0),
+    "C36": (61.6, -7.3, 0),
 
-    # Analog power tree & 1.000 V reference in crisp aligned columns
-    "C4":   (41.8, -4.5, 0),
-    "U10":  (41.8, -1.8, 0),
-    "C5":   (41.8, 1.2, 0),
-    "U5":   (46.8, -1.8, 0),
-    "C7":   (46.8, 1.2, 0),
-    "R7":   (51.2, -3.4, 0),
-    "R8":   (51.2, -2.0, 180),
-
-    # 4 side-actuated buttons (clean south strip, RP2354B internal pull-ups)
     "SW1":  (*DATUM["btn_ask_ai_xy"], 180),
     "SW2":  (*DATUM["btn_mode_xy"], 180),
     "SW3":  (*DATUM["btn_up_xy"], 180),
     "SW4":  (*DATUM["btn_down_xy"], 180),
 
-    # Analog test pads spaced cleanly for silkscreen legibility
-    "TP_3V3A":  (45.8, -7.3, 0),
-    "TP_AGND":  (49.8, -7.3, 0),
-    "TP_3V0R":  (53.4, -7.3, 0),
-    "TP_REF1V": (57.0, -7.3, 0),
-    "TP_CH1":   (69.0, -7.3, 0),
-    "TP_CH2":   (69.0, 4.6, 0),
+    "TP_3V3A":  (40.0, -3.6, 0),
+    "TP_AGND":  (43.4, -3.6, 0),
+    "TP_3V0R":  (51.0, -3.6, 0),
+    "TP_REFM":  (57.4, -3.4, 0),
+    "TP_CH1":   (72.8, -6.9, 0),
+    "TP_CH2":   (72.8, 6.9, 0),
 
-    # ---- Block 3 (x = 56..76): Shared RS8752XM 2-Gain Inverting PGA & 74LVC2G66DP Switch ----
-    "R4A":  (56.5, -3.6, 0),
-    "R5A":  (56.5, -2.2, 0),
-    "C40A": (56.5, -0.8, 0),
-    "C40B": (56.5, 0.8, 0),
-    "R5B":  (56.5, 2.2, 0),
-    "R4B":  (56.5, 3.6, 0),
+    # ---- Gain stage (x = 63..72): U4 + U6 turned like U3, feedback parts stacked on the pins ----
+    "U4":   (65.0, 0.0, 270),
+    "C39":  (67.3, 1.3, 90),
+    "R4A":  (63.5, -3.9, 0),
+    "R5A":  (65.65, -3.9, 0),
+    "C40A": (65.65, -5.0, 0),
+    "R6A":  (65.65, -6.1, 0),
+    "R4B":  (62.85, 3.9, 0),
+    "R5B":  (65.0, 3.9, 0),
+    "C40B": (65.0, 5.0, 0),
+    "R6B":  (65.0, 6.1, 0),
+    "U6":   (70.3, 0.0, 270),
+    "R24":  (69.2, -6.9, 0),
+    "R24B": (69.2, 6.9, 0),
 
-    "U4":   (62.2, 0.0, 0),
-    "C39":  (62.2, -3.6, 0),
-
-    "R6A":  (66.5, -2.2, 0),
-    "R6B":  (66.5, 2.2, 0),
-
-    "U6":   (70.8, 0.0, 0),
-
-    "R24":  (75.2, -4.8, 0),
-    "C41":  (75.2, -3.6, 180),
-    "R25A": (75.2, -2.4, 0),
-    "C42":  (75.2, -1.2, 180),
-    "C36":  (75.2, 0.0, 180),
-    "C42B": (75.2, 1.2, 180),
-    "R25B": (75.2, 2.4, 0),
-    "C41B": (75.2, 3.6, 180),
-    "R24B": (75.2, 4.8, 0),
-
-    # ---- Block 4 (x = 78.6..92.0): Centered AD9288 (U2 DNP), Star Ground, J4 LCD on B.Cu --
+    # ---- ADC (x = 73..90): input filters and reference caps at its pins, star ground beside it --
+    "R25A": (74.2, -2.9, 0),
+    "C42":  (74.2, -4.1, 180),
+    "C37A": (74.2, -1.6, 180),
+    "C44":  (74.2, -0.3, 180),
+    "C37B": (74.2, 1.6, 180),
+    "R25B": (74.2, 2.9, 0),
+    "C42B": (74.2, 4.1, 180),
     "U2":   (*DATUM["ad9288_xy"], 0),
-    "C44":  (78.6, -0.9, 0),
-    "C46":  (82.0, -6.8, 0),
-    "C47":  (78.6, 3.0, 0),
-    "R16":  (85.0, -7.2, 0),
-    "C52A": (87.4, -7.0, 0),
-    "C49":  (91.0, -0.35, 90),
-    "R36A": (91.4, -3.6, 180),
-    "R36B": (91.4, 3.1, 180),
+    "C46":  (77.4, -5.6, 0),
+    "R36A": (77.4, -6.8, 0),
+    "C47":  (77.4, 5.6, 0),
+    "R36B": (77.4, 6.8, 0),
+    "C52A": (79.6, -6.2, 0),
+    "C52B": (79.6, 6.2, 0),
+    "C49":  (88.0, -0.5, 90),
+    "C52C": (88.0, 2.0, 90),
+    "R16":  (88.4, -3.4, 90),
     "J4":   (*DATUM["lcd_fpc_xy"], 180, "B"),
 
-    # ---- Block 5 (x = 90.0..97.0): LCD Backlight PWM & BOOTSEL (open center for ADC bus) ----
-    "R48":  (90.2, -7.2, 180),
-    "Q1":   (93.8, -7.05, 180),
-    "R47":  (96.8, -7.2, 0),
-    "C58":  (91.0, 7.6, 0),
-    "D6":   (95.4, 7.75, 180),
+    # LCD backlight switch and LCD supply cap, south-west of the ADC
+    "R48": (116.5, 2.75, 0),
+    "Q1": (115.2, 6.4, 0),
+    "R47": (109.4, -6.8, 0),
+    "C58":  (79.6, 7.9, 0),
 
-    # ---- Block 6 (x = 99.5..113.0): RP2354B MCU (U1) & tight edge decoupling -------------
-    "U1":   (*DATUM["rp2354b_xy"], 0),
-    "R21":  (99.7, -7.2, 180),
-    "C17":  (104.0, -7.2, 0),
-    "C23":  (107.6, -7.2, 0),
+    # ---- MCU (x = 93..113): crystal on the ADC side at pins 30/31, regulator on the tail side ---
+    "Y1": (94.2, 0.0, 180),
+    "C30": (94.5, -2.2, 0),
+    "C31": (92.9, 2.3, 0),
+    "R20": (95.0, 2.3, 180),
+    "R22": (93.8, 3.7, 0),
+    "U1":   (*DATUM["rp2354b_xy"], 270),
+    "C14": (107.40, -6.8, 0),
+    "C15": (103.40, -6.8, 0),
+    "C16": (107.60, 6.75, 0),
+    "C17": (111.7, -3.4, 0),
+    "C26": (105.40, -6.8, 0),
+    "C28": (105.70, 6.75, 0),
+    "C20": (109.50, 7.9, 0),
+    "C29": (109.50, 6.75, 0),
+    "R23": (111.60, 7.9, 0),
+    "C41": (107.60, 7.9, 0),
+    "C41B": (105.70, 7.9, 0),
+    # Core regulator, copied from the owner's proven RP2354B layout (offsets from U1's centre)
+    "C23": (111.20, 3.0, 270),
+    "C25": (112.20, 3.0, 270),
+    "L1": (113.80, 3.0, 90),
+    "C24": (111.65, 5.6, 270),
+    "R19": (112.70, 5.6, 270),
+    "R21": (111.7, -1.8, 0),
+    "D6": (113.6, -3.95, 90),
+    "R13": (116.50, 1.1, 0),
+    "R12": (116.50, -0.4, 0),
 
-    "C14":  (98.9, 7.8, 0),
-    "C26":  (102.9, 7.9, 0),
-    "R22":  (107.2, 7.3, 180),
-    "C15":  (109.8, 7.3, 0),
-
-    "L1":   (113.0, -3.2, 270),
-    "C25":  (114.8, -2.2, 270),
-    "C29":  (110.9, -2.6, 270),
-    "C24":  (109.6, -7.4, 0),
-    "R19":  (109.6, -6.1, 180),
-    "C16":  (113.2, 5.0, 0),
-    "C27":  (113.2, 6.2, 0),
-    "R20":  (113.8, 7.5, 0),
-
-    # ---- Block 7 (x = 114.5..138): 6P Header (J3), XTAL (Y1), Rear H2, USB ESD & USB-C ----
-    "R12":  (112.4, -7.4, 180),
-    "R13":  (112.4, -5.8, 180),
+    # ---- Tail (x = 113..138): side header + protection, digital LDO, USB protection, USB-C -----
     "J3":   (*_jst_kicad_xy(), 180),
-    "R46":  (116.5, -0.8, 180),
-    "R45":  (116.5, 0.4, 180),
-    "R44":  (116.5, 1.6, 180),
-    "R43":  (116.5, 2.8, 180),
-    "D2":   (120.4, 0.4, 90),
-    "F2":   (116.5, 4.8, 0),
-    "C56":  (116.5, 6.4, 180),
-
-    "Y1":   (121.6, 4.7, 0),
-    "C30":  (120.4, 7.05, 0),
-    "C31":  (122.8, 7.05, 180),
-
+    "R46": (119.10, -0.8, 180),
+    "R45": (119.10, 0.4, 180),
+    "R44": (119.10, 1.6, 180),
+    "R43": (119.10, 2.8, 180),
+    "D2": (123.00, 0.4, 90),
+    "F2": (118.9, 4.8, 0),
+    "C56": (121.5, 3.4, 0),
+    "C3":   (119.4, 7.0, 0),
+    "U9":   (123.2, 5.7, 180),
+    "C2":   (127.0, 7.0, 0),
     "H2":   (*DATUM["mount_hole_rear_xy"], 0),
     "D1":   (127.6, -6.9, 0),
     "F1":   (131.8, -6.9, 0),
@@ -252,18 +247,18 @@ PLACE: dict[str, tuple] = {
     "J1":   (*DATUM["usbc_xy"], 90),
     "R17":  (131.6, 7.0, 0),
     "R18":  (134.0, 7.0, 0),
-    "C12":  (129.6, 7.2, 270),
+    "C12":  (129.9, 7.2, 270),
 
-    # ---- Bottom-side DNP test pads (STRICTLY outside x = 32.0..80.0 LCD glass/FPC!) -------
-    "TP_5V":    (25.2, -7.4, 0, "B"),
-    "TP_GND1":  (90.5, -7.75, 0, "B"),
-    "TP_3V3D":  (118.5, -7.75, 0, "B"),
-    "TP_BOOT":  (99.5, -7.75, 0, "B"),
-    "TP_RUN":   (113.2, 3.5, 0, "B"),
-    "TP_1V1":   (114.6, -4.0, 0, "B"),
-    "TP_GND2":  (115.0, 1.5, 0, "B"),
-    "TP_SWCLK": (115.6, 6.4, 0, "B"),
-    "TP_SWDIO": (115.8, 4.0, 0, "B"),
+    # ---- Bottom-side DNP test pads (outside the LCD glass / FPC, x = 32..80) -------------------
+    "TP_5V": (122.8, 6.5, 0, "B"),
+    "TP_GND1": (84.0, 7.6, 0, "B"),
+    "TP_3V3D": (115.0, 6.5, 0, "B"),
+    "TP_BOOT": (120.2, 6.5, 0, "B"),
+    "TP_RUN": (120.2, -6.5, 0, "B"),
+    "TP_1V1": (117.6, 6.5, 0, "B"),
+    "TP_GND2": (122.8, -6.5, 0, "B"),
+    "TP_SWCLK": (115.0, -6.5, 0, "B"),
+    "TP_SWDIO": (117.6, -6.5, 0, "B"),
 }
 
 
@@ -589,7 +584,7 @@ def silkscreen(board: pcbnew.BOARD):
     # Short names next to each test pad on its own layer (analog on F, digital on B)
     tp_labels = {
         "TP_AGND": "AGND", "TP_3V3A": "3V3A", "TP_3V0R": "3V0R",
-        "TP_CH1": "CH1", "TP_CH2": "CH2", "TP_REF1V": "1V0",
+        "TP_CH1": "CH1", "TP_CH2": "CH2", "TP_REFM": "REF",
         "TP_3V3D": "3V3D", "TP_5V": "5V", "TP_1V1": "1V1",
         "TP_GND2": "GND", "TP_SWCLK": "SWCLK", "TP_SWDIO": "SWDIO", "TP_RUN": "RUN",
         "TP_BOOT": "BOOT", "TP_GND1": "GND",
@@ -741,28 +736,24 @@ def build() -> pcbnew.BOARD:
     ]
     zone(board, nets["GND"], [pcbnew.In1_Cu], gnd_in1_poly, priority=0, clearance=0.22, name="In1 GND", min_thickness=0.14)
 
-    # Analog island with north decoupling tab (x=69.5..85.0) for U2 analog pins & C46/C48/R16.1;
-    # digital GND/+3V3_DIG stay continuous via x<31, south bridge y=+4.1..+8.35, and x>83.4.
-    agnd_in1_poly = [
-        (31.0, -6.2), (69.5, -6.2), (69.5, -8.35), (85.0, -8.35),
-        (85.0, -5.8), (83.4, -5.8), (83.4, 4.1), (31.0, 4.1),
+    # Analog island: everything nose-side of the ADC's digital half, except the south strip that
+    # carries the buttons. AGND on In1.Cu, +3V3_ANA on In2.Cu, and AGND again as a pour on F.Cu and
+    # B.Cu. Digital GND / +3V3_DIG own the rest of the board, with GND pours on F.Cu and B.Cu.
+    isl_x1, isl_y1 = 83.2, 4.45
+    isl_xs = [1.0 + (TX1 - 1.0) * k / 12.0 for k in range(13)]
+    island = [
+        *[(round(x, 4), round(-half_width_at(x, margin=inset), 4)) for x in isl_xs],
+        (isl_x1, round(-HW_Y + inset, 4)), (isl_x1, isl_y1), (31.0, isl_y1), (31.0, round(HW_Y - inset, 4)),
+        *[(round(x, 4), round(half_width_at(x, margin=inset), 4)) for x in reversed(isl_xs)],
     ]
-    zone(board, nets["AGND"], [pcbnew.In1_Cu], agnd_in1_poly, priority=1, clearance=0.40, name="In1 AGND", min_thickness=0.14)
-
-    dig_xs = [23.0 + (TX1 - 23.0) * k / 5.0 for k in range(6)]
-    dig3v3_in4_poly = [
-        *[(round(x, 4), round(-half_width_at(x, margin=inset), 4)) for x in dig_xs],
-        (129.5, round(-HW_Y + inset, 4)),
-        (129.5, round(HW_Y - inset, 4)),
-        *[(round(x, 4), round(half_width_at(x, margin=inset), 4)) for x in reversed(dig_xs)],
-    ]
-    zone(board, nets["+3V3_DIG"], [pcbnew.In2_Cu], dig3v3_in4_poly, priority=0, clearance=0.22, name="In2 +3V3_DIG", min_thickness=0.14)
-
-    ana3v3_in4_poly = [
-        (31.0, -6.2), (69.5, -6.2), (69.5, -8.35), (85.0, -8.35),
-        (85.0, -5.8), (83.4, -5.8), (83.4, 4.1), (31.0, 4.1),
-    ]
-    zone(board, nets["+3V3_ANA"], [pcbnew.In2_Cu], ana3v3_in4_poly, priority=1, clearance=0.40, name="In2 +3V3_ANA", min_thickness=0.14)
+    zone(board, nets["AGND"], [pcbnew.In1_Cu], island, priority=1, clearance=0.40, name="In1 AGND", min_thickness=0.14)
+    zone(board, nets["+3V3_DIG"], [pcbnew.In2_Cu], gnd_in1_poly, priority=0, clearance=0.22, name="In2 +3V3_DIG", min_thickness=0.14)
+    ana_3v3 = [(AFE_X1, round(-HW_Y + inset, 4)), (isl_x1, round(-HW_Y + inset, 4)), (isl_x1, isl_y1),
+               (31.0, isl_y1), (31.0, round(HW_Y - inset, 4)), (AFE_X1, round(HW_Y - inset, 4))]
+    zone(board, nets["+3V3_ANA"], [pcbnew.In2_Cu], ana_3v3, priority=1, clearance=0.40, name="In2 +3V3_ANA", min_thickness=0.14)
+    for layer, tag in ((pcbnew.F_Cu, "F"), (pcbnew.B_Cu, "B")):
+        zone(board, nets["GND"], [layer], gnd_in1_poly, priority=0, clearance=0.20, name=f"{tag} GND pour", min_thickness=0.15)
+        zone(board, nets["AGND"], [layer], island, priority=1, clearance=0.25, name=f"{tag} AGND pour", min_thickness=0.15)
 
     silkscreen(board)
     place_references(board)

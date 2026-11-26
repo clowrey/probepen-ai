@@ -278,6 +278,8 @@ def add_routes(board: pcbnew.BOARD, routes: dict):
                 board.Add(item)
 
             def line(a, b):
+                if math.dist(a, b) < MM(0.02):
+                    return
                 t = pcbnew.PCB_TRACK(board)
                 t.SetStart(vec(a))
                 t.SetEnd(vec(b))
@@ -525,7 +527,7 @@ def place_plane_vias(board: pcbnew.BOARD) -> tuple[int, list[tuple[str, str, str
                 return False
         for onn, vx, vy, vr_o in via_obs:
             if is_via:
-                req = 0.56
+                req = 0.72
             elif onn == nn:
                 continue
             else:
@@ -632,7 +634,7 @@ def place_plane_vias(board: pcbnew.BOARD) -> tuple[int, list[tuple[str, str, str
                 return False
             if not _inside_board(vx, vy, 0.32 + vr):
                 return False
-            if any(math.hypot(vx - ox, vy - oy) < 0.56 for _, ox, oy, _ in loc_vias_all):
+            if any(math.hypot(vx - ox, vy - oy) < 0.72 for _, ox, oy, _ in loc_vias_all):
                 return False
             drill_margin = vdr + 0.26
             base_clr = 0.45 if nn in hv_nets else 0.11
@@ -794,7 +796,7 @@ def place_plane_vias(board: pcbnew.BOARD) -> tuple[int, list[tuple[str, str, str
                     # Via occupies all signal layers, drill cannot hit any drill, via-to-via >= 0.56 mm
                     if not point_clear(nn, via_sig_mask, vx, vy, vr + 0.01, check_drill=True, is_via=True):
                         continue
-                    if any(math.hypot(vx - ox, vy - oy) < 0.56 for _, ox, oy, _ in via_obs):
+                    if any(math.hypot(vx - ox, vy - oy) < 0.72 for _, ox, oy, _ in via_obs):
                         continue
                     if rad == 0.0 or seg_clear(nn, li, cx, cy, vx, vy, stub_w / 2.0):
                         chosen = (vx, vy)
