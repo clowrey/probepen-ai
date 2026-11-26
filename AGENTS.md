@@ -47,6 +47,8 @@ Work in stages, and get each one passing before the next:
 - Commit and push finished work to `main` without asking.
 - The repo is public. Don't commit IP addresses, site names, personal paths, emails or secrets. Commit as `Chester <6935928+clowrey@users.noreply.github.com>` (set in this repo's git config).
 - Edit the generator scripts, not the generated KiCad files.
+- PCB 2D previews: render a single combined image with all layers (F.Cu, In1.Cu, In2.Cu, B.Cu, silkscreen, Edge.Cuts) rather than separate per-layer images.
+- PCB 3D renders: crop tightly around the board (prefer transparent background cropped to the board bounding box, or minimal padding—never large empty blue background margins).
 
 ## Tools in this WSL (Ubuntu) environment
 - Python 3.14 and `uv` (`~/.local/bin/uv`). build123d is **not** installed: make a venv (`uv venv && uv pip install build123d pytest`).
