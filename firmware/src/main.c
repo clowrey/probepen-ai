@@ -65,19 +65,15 @@ static void hal_init_peripherals(void) {
     (void)PIN_ADC_CLK;
     (void)PIN_ADC_OTR;
     (void)PIN_ADC_STBY;
-    (void)PIN_COMP_OUT;
     (void)PIN_POD_CH0;
     (void)PIN_LCD_CS_N;
     (void)PIN_LCD_DC;
     (void)PIN_LCD_RST_N;
     (void)PIN_LCD_BLK_GATE_N;
-    (void)PIN_LED_DATA;
     (void)PIN_BTN_ASK_AI_N;
     (void)PIN_BTN_MODE_N;
     (void)PIN_AFE_GAIN_10X;
-    (void)PIN_COMP_THR_PWM;
     (void)PIN_AFE_DC_SENSE;
-    (void)PIN_COMP_THR_ADC;
     (void)PIN_VBUS_SENSE;
 #endif
 }

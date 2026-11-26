@@ -19,6 +19,6 @@
   (constraint track_width (min 0.12mm))
 )
 (rule "HV divider to ground and LV"
-  (condition "(A.NetName == '/PROBE_TIP' || A.NetName == '/HV_MID') && (B.NetName != A.NetName)")
+  (condition "(A.NetName == '/CH1_TIP' || A.NetName == '/CH1_HV_MID' || A.NetName == '/CH2_TIP' || A.NetName == '/CH2_HV_MID') && (B.NetName != A.NetName)")
   (constraint clearance (min 0.40mm))
 )

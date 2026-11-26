@@ -1,0 +1,130 @@
+(footprint "LED_Side_XL3806_3.8x1.0mm"
+	(version 20260206)
+	(generator "pcbnew")
+	(generator_version "10.0")
+	(layer "F.Cu")
+	(descr "XINGLIGHT XL-3806UWC 3.8x1.0x0.6 mm side-emitting white LED (1=K, 2=A, emits -Y at rot=0)")
+	(property "Reference" "REF**"
+		(at 0 1.35 0)
+		(layer "F.SilkS")
+		(uuid "f4270216-0b0b-4178-98fb-86b53f194b3b")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(property "Value" "LED_Side_XL3806_3.8x1.0mm"
+		(at 0 -1.35 0)
+		(layer "F.Fab")
+		(uuid "d81cc939-d04c-407d-b45b-db5d1bc45bc8")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "e127db5f-2ced-444c-ae53-1f35aba8191d")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "6a83c377-d3f5-4b97-9c0b-9db3fad75a93")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
+	(fp_line
+		(start -2.15 -0.45)
+		(end -2.15 0.45)
+		(stroke
+			(width 0.15)
+			(type default)
+		)
+		(layer "F.SilkS")
+		(uuid "66b93226-3126-4e87-903c-17b52eaffd47")
+	)
+	(fp_line
+		(start -1 -0.68)
+		(end 1 -0.68)
+		(stroke
+			(width 0.14)
+			(type default)
+		)
+		(layer "F.SilkS")
+		(uuid "0719d4c9-568f-42ba-862c-1a63212df335")
+	)
+	(fp_rect
+		(start -2.1 -0.7)
+		(end 2.1 0.7)
+		(stroke
+			(width 0.05)
+			(type default)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "a805eae1-6626-4d00-9273-203e34edabb6")
+	)
+	(fp_line
+		(start -1.9 -0.5)
+		(end 1.9 -0.5)
+		(stroke
+			(width 0.18)
+			(type default)
+		)
+		(layer "F.Fab")
+		(uuid "cef068f8-ebe4-47ae-a039-d98dfc68219f")
+	)
+	(fp_line
+		(start -1.55 -0.45)
+		(end -1.55 0.45)
+		(stroke
+			(width 0.15)
+			(type default)
+		)
+		(layer "F.Fab")
+		(uuid "6be15130-d2aa-4e9d-bc9e-9011be6e7da9")
+	)
+	(fp_rect
+		(start -1.9 -0.5)
+		(end 1.9 0.5)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "2809e33b-48cc-4b29-89ec-08ed7b7f50e5")
+	)
+	(pad "1" smd roundrect
+		(at -1.55 0)
+		(size 0.9 1)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.1)
+		(thermal_bridge_angle 45)
+		(uuid "a96d9a80-7080-4e70-840e-bd396536aa30")
+	)
+	(pad "2" smd roundrect
+		(at 1.55 0)
+		(size 0.9 1)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.1)
+		(thermal_bridge_angle 45)
+		(uuid "a37b82f7-4821-4540-95a6-607f1959faca")
+	)
+	(embedded_fonts no)
+)

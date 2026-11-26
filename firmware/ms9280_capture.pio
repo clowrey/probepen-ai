@@ -1,7 +1,7 @@
 ; MS9280 10-bit parallel ADC capture @ 35 MSPS (RP2354B PIO0)
 ; Hardware pins (matches hw/design.py GPIO):
-;   IN base  = GPIO0..GPIO9 (ADC_D0..ADC_D9, 10 bits)
-;   Sideset  = GPIO10       (ADC_CLK, active clock to MS9280)
+;   IN base  = GPIO5..GPIO14 (ADC_D9..ADC_D0, 10 bits, bit-reversed in software)
+;   Sideset  = GPIO3         (ADC_CLK, active clock to MS9280)
 ; Runs 1 sample every 2 PIO cycles: sysclk=140 MHz (clkdiv=2.0) -> 35 MSPS.
 
 .program ms9280_capture
@@ -18,14 +18,14 @@
 
 static inline void ms9280_capture_program_init(PIO pio, uint sm, uint offset, float clkdiv) {
     pio_sm_config c = ms9280_capture_program_get_default_config(offset);
-    for (uint pin = 0; pin < 10; ++pin) {
+    for (uint pin = 5; pin < 15; ++pin) {
         pio_gpio_init(pio, pin);
     }
-    pio_gpio_init(pio, 10);
-    pio_sm_set_consecutive_pindirs(pio, sm, 0, 10, false);
-    pio_sm_set_consecutive_pindirs(pio, sm, 10, 1, true);
-    sm_config_set_in_pins(&c, 0);
-    sm_config_set_sideset_pins(&c, 10);
+    pio_gpio_init(pio, 3);
+    pio_sm_set_consecutive_pindirs(pio, sm, 5, 10, false);
+    pio_sm_set_consecutive_pindirs(pio, sm, 3, 1, true);
+    sm_config_set_in_pins(&c, 5);
+    sm_config_set_sideset_pins(&c, 3);
     sm_config_set_in_shift(&c, false, true, 30);
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
     sm_config_set_clkdiv(&c, clkdiv);

@@ -1,5 +1,7 @@
 Item,Spec,Qty per board,Notes
-IPS Display,FP-096H09A 0.96in 80x160 ST7735S 8P FPC,1,Mates to J4 Molex 503480-0800
-Probe Tip,M3 stainless steel pogo/needle tip,1,Threads into J2 SMD M3 boss
-Logic Pod Cable,JST-SH 6P SHR-06V-S-B + micro-grabber harness,1,Plugs into J3
-Case Fasteners,M2 x 6 mm self-tapping pan head screw,2,Self-taps into 1.7 mm case bosses
+IPS Display,0.96in/1.14in 13P solder-on IPS LCD,1,Solders flat onto B.Cu J4 landing pads
+Probe Terminal / Tip,WAGO 2060-453 3P push-in or soldered dual-channel probes,1,Mounts on nose J5 pads
+Logic Pod Cable,JST-SH 6P SHR-06V-S-B + micro-grabber harness,1,Plugs into J3 (HC-SH1.0-6PWT)
+Dual 8-bit ADC,AD9288BSTZ-80 / MXT2088 LQFP-48,1,DNP on F.Cu U2; hand-soldered by user
+Front Worklight LEDs,XINGLIGHT XL-3806UWC side-view white LED,2,DNP on B.Cu nose tip LED1/LED2; hand-soldered by user
+Case Fasteners,M2 x 6 mm self-tapping pan head screw,2,Pass through PCB H1/H2 2.2 mm NPTH holes into 1.8 mm shell bosses

@@ -42,21 +42,12 @@ _LIST = [
         },
     ),
     Part(
-        "ms9280", "C1509021", "ppa:MS9280",
-        "Package_SO:SSOP-28_5.3x10.2mm_P0.65mm",
-        "MS9280", mpn="MS9280", basic=False, per_board=1,
+        "rs8752", "C255421", "ppa:RS8752",
+        "Package_SO:MSOP-8_3x3mm_P0.65mm",
+        "RS8752XM", mpn="RS8752XM", basic=False, per_board=2, rotation=90,
         extra={
-            "datasheet": "https://www.lcsc.com/datasheet/lcsc_datasheet_2310071001_Hangzhou-Ruimeng-Tech-MS9280_C1509021.pdf",
-            "notes": "Hangzhou Ruimeng MS9280 V1.3, 10-bit output (7.8 ENOB), 35 MSPS, 2.7-5.5 V; low stock (5 pcs); pins 5-12 drop-in for AD9280ARSZRL (C130297)",
-        },
-    ),
-    Part(
-        "opa356", "C183100", "Amplifier_Operational:OPA356xxDBV",
-        "Package_TO_SOT_SMD:SOT-23-5",
-        "OPA356AIDBVR", mpn="OPA356AIDBVR", basic=False, per_board=2,
-        extra={
-            "datasheet": "https://www.ti.com/lit/ds/symlink/opa356.pdf",
-            "notes": "TI OPA356 (SBOS222), 200 MHz CMOS RR-out, 3 pA bias, 2.5-5.5 V",
+            "datasheet": "https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_Jiangsu-RUNIC-Tech-RS8752XM_C255421.pdf",
+            "notes": "Runic RS8752XM dual 250 MHz 1 pA CMOS RR-out op-amp, unity-gain stable, Vcm=-0.2..V+-1.1 V, MSOP-8",
         },
     ),
     Part(
@@ -69,30 +60,12 @@ _LIST = [
         },
     ),
     Part(
-        "rs2227", "C255478", "ppa:RS2227XN",
-        "Package_SO:MSOP-10_3x3mm_P0.5mm",
-        "RS2227XN", mpn="RS2227XN", basic=False, per_board=1,
+        "lvc2g66", "C282354", "ppa:74LVC2G66",
+        "Package_SO:TSSOP-8_3x3mm_P0.65mm",
+        "74LVC2G66DP", mpn="74LVC2G66DP,125", basic=False, per_board=1, rotation=90,
         extra={
-            "datasheet": "https://www.lcsc.com/datasheet/lcsc_datasheet_2202251830_Jiangsu-RUNIC-Tech-RS2227XN_C255478.pdf",
-            "notes": "Runic RS2227 Rev B.1, DPDT 550 MHz, 1.8-5.5 V, Ron ~6 ohm typ, Con 7 pF",
-        },
-    ),
-    Part(
-        "tlv3501", "C193413", "Comparator:TLV3501AIDBV",
-        "Package_TO_SOT_SMD:SOT-23-6",
-        "TLV3501AIDBVR", mpn="TLV3501AIDBVR", basic=False, per_board=1,
-        extra={
-            "datasheet": "https://www.ti.com/lit/ds/symlink/tlv3501.pdf",
-            "notes": "TI TLV3501 (SBOS321E), 4.5 ns RR comparator, 2.7-5.5 V, pin 5=OUT, pin 6=SHDN",
-        },
-    ),
-    Part(
-        "lv4t125", "C90755", "ppa:SN74LV4T125",
-        "Package_SO:TSSOP-14_4.4x5mm_P0.65mm",
-        "SN74LV4T125PWR", mpn="SN74LV4T125PWR", basic=False, per_board=1,
-        extra={
-            "datasheet": "https://www.ti.com/lit/ds/symlink/sn74lv4t125.pdf",
-            "notes": "TI SN74LV4T125 (SCLS749C), 4-ch 5 V-tolerant level-shifting buffer, 1.6-5.5 V",
+            "datasheet": "https://www.lcsc.com/datasheet/lcsc_datasheet_2407241028_Nexperia-74LVC2G66DP-125_C282354.pdf",
+            "notes": "Nexperia 74LVC2G66DP dual independent 440 MHz 6 ohm SPST analog switch, TSSOP-8 (SOT505-2); 1E=pin7, 2E=pin3",
         },
     ),
     Part(
@@ -105,24 +78,6 @@ _LIST = [
         },
     ),
     Part(
-        "lm2776", "C69527", "Regulator_SwitchedCapacitor:LM2776",
-        "Package_TO_SOT_SMD:SOT-23-6",
-        "LM2776DBVR", mpn="LM2776DBVR", basic=False, per_board=1,
-        extra={
-            "datasheet": "https://www.ti.com/lit/ds/symlink/lm2776.pdf",
-            "notes": "TI LM2776 (SNVS956B), 200 mA switched-capacitor inverter, 2.7-5.5 V in -> -VIN out",
-        },
-    ),
-    Part(
-        "tps72301", "C34678", "Regulator_Linear:TPS72301DBV",
-        "Package_TO_SOT_SMD:SOT-23-5",
-        "TPS72301DBVR", mpn="TPS72301DBVR", basic=False, per_board=1,
-        extra={
-            "datasheet": "https://www.lcsc.com/datasheet/lcsc_datasheet_2410121941_Texas-Instruments-TPS72301DBVR_C34678.pdf",
-            "notes": "TI TPS72301 (SLVS346C), 200 mA negative LDO, Vref=-1.186 V, bipolar EN (active >+1.5 V or <-1.5 V)",
-        },
-    ),
-    Part(
         "srv05_4", "C7420376", "Power_Protection:SRV05-4",
         "Package_TO_SOT_SMD:SOT-23-6",
         "SRV05-4", mpn="SRV05-4", basic=False, per_board=2,
@@ -132,21 +87,15 @@ _LIST = [
             "notes": "Hongjiacheng SRV05-4 (Rev 2.2), 4-ch 1 pF 5 V ESD array (Preferred $0 fee); D1 USB-C, D2 4-ch pod",
         },
     ),
-    # --- Diodes, FET, LEDs --------------------------------------------------------------------
+    # --- Diodes, FET --------------------------------------------------------------------------
     Part(
         "bav199", "C40919", "ppa:BAV199",
         "Package_TO_SOT_SMD:SOT-23",
-        "BAV199", mpn="BAV199,215", basic=False, per_board=1,
+        "BAV199", mpn="BAV199,215", basic=False, per_board=2,
         extra={
             "datasheet": "https://www.lcsc.com/datasheet/lcsc_datasheet_2302141530_Nexperia-BAV199-215_C40919.pdf",
             "notes": "Nexperia BAV199 (2020-09-01), 3 pA typ leakage dual series diode: 1=A1, 2=K2, 3=K1_A2",
         },
-    ),
-    Part(
-        "d_1n4148ws", "C2128", "Diode:1N4148WS",
-        "Diode_SMD:D_SOD-323",
-        "1N4148WS", mpn="1N4148WS", basic=True, per_board=1,
-        extra={"notes": "Drops +5V_VBUS to ~4.3 V LED_VDD for WS2812B 3.3 V DIN threshold margin"},
     ),
     Part(
         "d_1n5819ws", "C191023", "Device:D_Schottky",
@@ -160,18 +109,15 @@ _LIST = [
         "AO3401A", mpn="AO3401A", basic=True, per_board=1,
         extra={"notes": "30 V 4 A P-MOSFET, 85 mOhm @ Vgs=-2.5 V, LCD backlight PWM switch"},
     ),
-    Part(
-        "ws2812b", "C52917434", "LED:WS2812B-2020",
-        "LED_SMD:LED_WS2812B-2020_PLCC4_2.0x2.0mm",
-        "WS2812B-2020-V6", mpn="WS2812B-2020-V6", basic=False, per_board=2,
-        extra={"notes": "Worldsemi WS2812B-2020-V6, 3.3-5.5 V, VIH=0.6*VDD; 1=DOUT, 2=VSS, 3=DIN, 4=VDD"},
-    ),
     # --- Magnetics, Crystal, Connectors, Switches, Mechanical, Protection ---------------------
     Part(
-        "l_3u3", "C48020", "Device:L",
-        "Inductor_SMD:L_Sunlord_SWPA3015S",
-        "3.3uH", mpn="SWPA3015S3R3MT", basic=False, per_board=1,
-        extra={"notes": "Sunlord 3x3x1.5 mm shielded power inductor, Isat=1.81 A, Irms=1.36 A, DCR=104 mOhm"},
+        "l_3u3", "C42411119", "Device:L",
+        "Inductor_SMD:L_Abracon_AOTA-B201610S",
+        "3.3uH", mpn="AOTA-B201610S3R3-101-T", basic=False, per_board=1,
+        extra={
+            "datasheet": "https://abracon.com/datasheets/AOTA-B201610S.pdf",
+            "notes": "Abracon 2016 (2.0x1.6x1.0 mm) molded inductor, 115 mOhm, 2.1 A Irms / 2.4 A Isat (RP2350 official)",
+        },
     ),
     Part(
         "fb_600r", "C1002", "Device:FerriteBead_Small",
@@ -186,42 +132,32 @@ _LIST = [
         extra={"notes": "YXC 12.000 MHz, CL=20 pF, ESR<=80 ohm, +/-10 ppm (Basic $0 fee); paired with 33 pF load caps"},
     ),
     Part(
-        "fpc_8p", "C293338", "Connector_Generic_MountingPin:Conn_01x08_MountingPin",
-        "ppa:Molex_503480-0800_1x08-1MP_P0.50mm_Horizontal",
-        "503480-0800", mpn="5034800800", basic=False, per_board=1,
-        extra={
-            "datasheet": "https://www.lcsc.com/datasheet/lcsc_datasheet_2406281007_MOLEX-5034800800_C293338.pdf",
-            "notes": "Molex 503480-0800 (SD-503480-001), 8P 0.5 mm BackFlip dual-contact FPC socket for FP-096H09A",
-        },
-    ),
-    Part(
         "usbc", "C165948", "Connector:USB_C_Receptacle_USB2.0_16P",
         "Connector_USB:USB_C_Receptacle_HRO_TYPE-C-31-M-12",
         "USB-C", mpn="TYPE-C-31-M-12", basic=False, per_board=1,
         extra={"notes": "HRO TYPE-C-31-M-12 16-pin USB 2.0 Type-C receptacle"},
     ),
     Part(
-        "jst_sh6", "C160405", "Connector_Generic_MountingPin:Conn_01x06_MountingPin",
+        "jst_sh6", "C53454624", "Connector_Generic_MountingPin:Conn_01x06_MountingPin",
         "Connector_JST:JST_SH_SM06B-SRSS-TB_1x06-1MP_P1.00mm_Horizontal",
-        "SM06B-SRSS-TB", mpn="SM06B-SRSS-TB(LF)(SN)", basic=False, per_board=1,
+        "SH1.0-6P", mpn="HC-SH1.0-6PWT", basic=False, per_board=1,
         extra={
-            "datasheet": "https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_JST-SM06B-SRSS-TB-LF-SN_C160405.pdf",
-            "notes": "JST SH 6-pin 1.0 mm horizontal right-angle SMD header for side logic pod",
+            "notes": "HCTL HC-SH1.0-6PWT 6-pin 1.0 mm horizontal right-angle SH SMD header (SM06B-SRSS-TB compatible)",
         },
     ),
     Part(
-        "button", "C318884", "Switch:SW_Push",
-        "Button_Switch_SMD:SW_Push_1P1T_XKB_TS-1187A",
-        "TS-1187A", mpn="TS-1187A-B-A-B", basic=True, per_board=2,
-        extra={"notes": "5.1x5.1 mm low-profile tactile switch (Ask AI and Mode/BOOTSEL)"},
+        "button", "C393942", "ppa:SW_Side_TS24CA",
+        "ppa:SW_Push_Side_TS24CA",
+        "TS24CA", mpn="TS24CA", basic=False, per_board=4, rotation=0,
+        extra={"notes": "SHOU HAN TS24CA 4.7x3.5x1.9 mm pure-SMD right-angle tactile switch (1.6 N, Ask AI / Mode / Up / Down)"},
     ),
     Part(
-        "m3_boss", "C5199990", "Connector_Generic:Conn_01x01",
-        "ppa:Wurth_9774030360R_M3",
-        "9774030360R", mpn="9774030360R", basic=False, per_board=1,
+        "wago_2060_3p", "C2765056", "Connector_Generic:Conn_01x03",
+        "ppa:Nose_WAGO2060_KF381_ProbePads",
+        "2060-453/998-404", mpn="2060-453/998-404", basic=False, per_board=1, rotation=0,
         extra={
-            "datasheet": "https://www.we-online.com/components/products/datasheet/9774030360R.pdf",
-            "notes": "Wurth WA-SMSI SMD M3 brass threaded spacer (3.0 mm H, 6.0 mm OD)",
+            "datasheet": "https://www.lcsc.com/datasheet/lcsc_datasheet_2106061734_WAGO-2060-453-998-404_C2765056.pdf",
+            "notes": "WAGO 2060 3P 4.0 mm SMD spring terminal (320 V / 9 A, 18-24 AWG, 4.5 mm H); footprint also has DNP 3.81 mm KF250NH THT + 14x2.8 mm via-stitched F/B probe pads",
         },
     ),
     Part(
@@ -231,37 +167,35 @@ _LIST = [
         extra={"notes": "500 mA hold / 1 A trip, 6 V, 0805 resettable PTC fuse (shared on VBUS and side pod +3V3)"},
     ),
     # --- Resistors (all Basic 1% 100 ppm/C or Preferred $0 fee) ------------------------------
-    Part("r_470k_0805", "C17709", "Device:R", _R0805, "470k 1%", per_board=2, mpn="0805W8F4703T5E", basic=True,
+    Part("r_470k_0805", "C17709", "Device:R", _R0805, "470k 1%", per_board=4, mpn="0805W8F4703T5E", basic=True,
          extra={"volts": 150, "mw": 125, "notes": "Two in series = 940k, 300 V combined working voltage"}),
-    Part("r_39k_0603", "C23153", "Device:R", _R0603, "39k 1%", per_board=1, mpn="0603WAF3902T5E", basic=True),
+    Part("r_51k_0402", "C25794", "Device:R", _R0402, "51k 1%", per_board=2, mpn="0402WGF5102TCE", basic=True),
+    Part("r_510r_0402", "C25123", "Device:R", _R0402, "510R 1%", per_board=2, mpn="0402WGF5100TCE", basic=True),
+    Part("r_1k5_0402", "C25867", "Device:R", _R0402, "1.5k 1%", per_board=2, mpn="0402WGF1501TCE", basic=True),
     Part("r_2k_0402", "C4109", "Device:R", _R0402, "2k 1%", per_board=1, mpn="0402WGF2001TCE", basic=True),
-    Part("r_20k_0402", "C25765", "Device:R", _R0402, "20k 1%", per_board=2, mpn="0402WGF2002TCE", basic=True),
-    Part("r_15k_0402", "C25756", "Device:R", _R0402, "15k 1%", per_board=1, mpn="0402WGF1502TCE", basic=True),
     Part("r_0r_0603", "C21189", "Device:R", _R0603, "0R", per_board=1, mpn="0603WAF0000T5E", basic=True),
     Part("r_27r_0603", "C25190", "Device:R", _R0603, "27R", per_board=3, mpn="0603WAF270JT5E", basic=False,
          extra={"preferred": True}),
-    Part("r_33r_0402", "C25105", "Device:R", _R0402, "33R", per_board=13, mpn="0402WGF330JTCE", basic=True),
-    Part("r_100r_0402", "C25076", "Device:R", _R0402, "100R", per_board=1, mpn="0402WGF1000TCE", basic=True),
-    Part("r_220r_0402", "C25091", "Device:R", _R0402, "220R", per_board=5, mpn="0402WGF2200TCE", basic=True),
+    Part("r_33r_0402", "C25105", "Device:R", _R0402, "33R", per_board=5, mpn="0402WGF330JTCE", basic=True),
+    Part("r_220r_0402", "C25091", "Device:R", _R0402, "220R", per_board=8, mpn="0402WGF2200TCE", basic=True),
     Part("r_1k_0402", "C11702", "Device:R", _R0402, "1k", per_board=3, mpn="0402WGF1001TCE", basic=True),
     Part("r_5k1_0402", "C25905", "Device:R", _R0402, "5.1k", per_board=2, mpn="0402WGF5101TCE", basic=True),
-    Part("r_10k_0402", "C25744", "Device:R", _R0402, "10k", per_board=13, mpn="0402WGF1002TCE", basic=True),
+    Part("r_10k_0402", "C25744", "Device:R", _R0402, "10k", per_board=3, mpn="0402WGF1002TCE", basic=True),
     Part("r_47k_0402", "C25792", "Device:R", _R0402, "47k", per_board=1, mpn="0402WGF4702TCE", basic=True),
-    Part("r_49k9_0603", "C23184", "Device:R", _R0603, "49.9k", per_board=1, mpn="0603WAF4992T5E", basic=True),
-    Part("r_100k_0402", "C25741", "Device:R", _R0402, "100k", per_board=3, mpn="0402WGF1003TCE", basic=True),
+    Part("r_100k_0402", "C25741", "Device:R", _R0402, "100k", per_board=4, mpn="0402WGF1003TCE", basic=True),
     # --- Capacitors (Basic or Preferred $0 fee) -----------------------------------------------
-    Part("c_1p_0402", "C1550", "Device:C", _C0402, "1pF C0G", per_board=1, mpn="0402CG1R0C500NT", basic=False,
+    Part("c_1p_0402", "C1550", "Device:C", _C0402, "1pF C0G", per_board=2, mpn="0402CG1R0C500NT", basic=False,
          extra={"preferred": True, "notes": "50 V rated C0G across R1+R2"}),
-    Part("c_4p7_0402", "C1569", "Device:C", _C0402, "4.7pF C0G", per_board=1, mpn="0402CG4R7C500NT", basic=False,
+    Part("c_4p7_0402", "C1569", "Device:C", _C0402, "4.7pF C0G", per_board=2, mpn="0402CG4R7C500NT", basic=False,
          extra={"preferred": True}),
-    Part("c_22p_0402", "C1555", "Device:C", _C0402, "22pF C0G", per_board=1, mpn="0402CG220J500NT", basic=True),
+    Part("c_22p_0402", "C1555", "Device:C", _C0402, "22pF C0G", per_board=4, mpn="0402CG220J500NT", basic=True),
     Part("c_33p_0402", "C1562", "Device:C", _C0402, "33pF C0G", per_board=2, mpn="0402CG330J500NT", basic=True),
-    Part("c_47p_0402", "C1567", "Device:C", _C0402, "47pF C0G", per_board=1, mpn="0402CG470J500NT", basic=True),
-    Part("c_10n_0402", "C15195", "Device:C", _C0402, "10nF", per_board=1, mpn="CL05B103KB5NNNC", basic=True),
-    Part("c_100n_0402", "C1525", "Device:C", _C0402, "100nF", per_board=39, mpn="CL05B104KO5NNNC", basic=True),
-    Part("c_1u_0402", "C52923", "Device:C", _C0402, "1uF", per_board=5, mpn="CL05A105KA5NQNC", basic=True),
-    Part("c_4u7_0603", "C19666", "Device:C", _C0603, "4.7uF", per_board=5, mpn="CL10A475KO8NNNC", basic=True),
-    Part("c_10u_0603", "C19702", "Device:C", _C0603, "10uF", per_board=6, mpn="CL10A106KP8NNNC", basic=True),
+    Part("c_10n_0402", "C15195", "Device:C", _C0402, "10nF", per_board=2, mpn="CL05B103KB5NNNC", basic=True),
+    Part("c_100n_0402", "C1525", "Device:C", _C0402, "100nF", per_board=16, mpn="CL05B104KO5NNNC", basic=True),
+    Part("c_1u_0402", "C52923", "Device:C", _C0402, "1uF", per_board=4, mpn="CL05A105KA5NQNC", basic=True),
+    Part("c_4u7_0402", "C23733", "Device:C", _C0402, "4.7uF", per_board=3, mpn="CL05A475MP5NRNC", basic=True,
+         extra={"notes": "Samsung 4.7uF 10V X5R 0402 Basic (compact RP2354B buck decoupling)"}),
+    Part("c_10u_0603", "C19702", "Device:C", _C0603, "10uF", per_board=4, mpn="CL10A106KP8NNNC", basic=True),
 ]
 
 PARTS: dict[str, Part] = {p.key: p for p in _LIST}

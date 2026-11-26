@@ -37,7 +37,7 @@ PCBA_SETUP = 8.24 + 0.99
 STENCIL = 1.55
 SMT_JOINT = 0.0017
 THT_JOINT = 0.0173
-PCB_FAB_4L = {10: 14.0, 20: 22.0, 30: 30.0, 50: 45.0, 100: 78.0}
+PCB_FAB_4L = {10: 14.0, 20: 21.0, 30: 28.0, 50: 42.0, 100: 74.0}
 SHIPPING = {10: 20.0, 20: 25.0, 30: 30.0, 50: 40.0, 100: 60.0}
 
 
@@ -127,10 +127,12 @@ def accessories() -> None:
     with open(OUT / "accessories.csv", "w", newline="", encoding="utf8") as f:
         w = csv.writer(f)
         w.writerow(["Item", "Spec", "Qty per board", "Notes"])
-        w.writerow(["IPS Display", "FP-096H09A 0.96in 80x160 ST7735S 8P FPC", 1, "Mates to J4 Molex 503480-0800"])
-        w.writerow(["Probe Tip", "M3 stainless steel pogo/needle tip", 1, "Threads into J2 SMD M3 boss"])
-        w.writerow(["Logic Pod Cable", "JST-SH 6P SHR-06V-S-B + micro-grabber harness", 1, "Plugs into J3"])
-        w.writerow(["Case Fasteners", "M2 x 6 mm self-tapping pan head screw", 2, "Self-taps into 1.7 mm case bosses"])
+        w.writerow(["IPS Display", "0.96in/1.14in 13P solder-on IPS LCD", 1, "Solders flat onto B.Cu J4 landing pads"])
+        w.writerow(["Probe Terminal / Tip", "WAGO 2060-453 3P push-in or soldered dual-channel probes", 1, "Mounts on nose J5 pads"])
+        w.writerow(["Logic Pod Cable", "JST-SH 6P SHR-06V-S-B + micro-grabber harness", 1, "Plugs into J3 (HC-SH1.0-6PWT)"])
+        w.writerow(["Dual 8-bit ADC", "AD9288BSTZ-80 / MXT2088 LQFP-48", 1, "DNP on F.Cu U2; hand-soldered by user"])
+        w.writerow(["Front Worklight LEDs", "XINGLIGHT XL-3806UWC side-view white LED", 2, "DNP on B.Cu nose tip LED1/LED2; hand-soldered by user"])
+        w.writerow(["Case Fasteners", "M2 x 6 mm self-tapping pan head screw", 2, "Pass through PCB H1/H2 2.2 mm NPTH holes into 1.8 mm shell bosses"])
 
 
 def joints() -> tuple[int, int]:
@@ -162,14 +164,15 @@ def cost(groups: dict[str, list[str]], offline: bool = False) -> None:
     per_board = {k: len(v) for k, v in groups.items()}
     extended = sorted(
         k for k in groups
-        if (info.get(k) and info[k]["lib"] != "base") or (not info.get(k) and not PARTS[k].basic)
+        if (info.get(k) and info[k]["lib"] != "base" and not info[k].get("preferred"))
+        or (not info.get(k) and not PARTS[k].basic and not PARTS[k].extra.get("preferred"))
     )
     smt, tht = joints()
 
     lines = [
         f"# ProbePen-AI: cost estimate ({date.today().isoformat()})\n",
         "Parts prices are live from JLC when online; fees, 4-layer PCB fabrication, and shipping are estimates.\n",
-        f"- Board: {L:.0f} x {W:.0f} mm, 4-layer JLC04161H-7628",
+        f"- Board: {L:.0f} x {W:.1f} mm, 4-layer JLC04161H-7628",
         f"- Unique placed parts: {len(groups)}; Extended parts: {len(extended)} (${EXTENDED_FEE:.2f} each per order)",
         f"- Joints per board: {smt} SMT, {tht} through-hole\n",
         "| Boards | Parts | Extended fees | Setup + stencil | Joints | PCB 4L (est.) | Shipping (est.) | Total | Per board |",

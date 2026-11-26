@@ -12,16 +12,19 @@ SYM = LIB / "ppa.kicad_sym"
 PRETTY = LIB / "ppa.pretty"
 
 CUSTOM_SYMBOLS = {  # symbol -> footprint (ppa: or standard KiCad)
-    "MS9280": "Package_SO:SSOP-28_5.3x10.2mm_P0.65mm",
-    "RS2227XN": "Package_SO:MSOP-10_3x3mm_P0.5mm",
-    "SN74LV4T125": "Package_SO:TSSOP-14_4.4x5mm_P0.65mm",
+    "AD9288": "Package_QFP:LQFP-48_7x7mm_P0.5mm",
+    "RS8752": "Package_SO:MSOP-8_3x3mm_P0.65mm",
+    "74LVC2G66": "Package_SO:TSSOP-8_3x3mm_P0.65mm",
     "RT9013-33GB": "Package_TO_SOT_SMD:SOT-23-5",
     "BAV199": "Package_TO_SOT_SMD:SOT-23",
+    "SW_Side_TS24CA": "ppa:SW_Push_Side_TS24CA",
 }
 CUSTOM_FOOTPRINTS = [
-    "Molex_503480-0800_1x08-1MP_P0.50mm_Horizontal",
-    "Wurth_9774030360R_M3",
+    "LCD_FPC_13P_P0.70mm_Solder",
+    "SW_Push_Side_TS24CA",
+    "Nose_WAGO2060_KF381_ProbePads",
     "C_Trimmer_Knowles_JZ100_4.5x3.2mm",
+    "LED_Side_XL3806_3.8x1.0mm",
 ]
 
 
@@ -75,23 +78,26 @@ def test_custom_symbol_pinouts_match_datasheets():
         blk = _sym_block(name)
         return dict(re.findall(r'\(name "([^"]+)"[^\n]*\n\s*\(number "(\d+)"', blk))
 
-    ms = pin_map("MS9280")
-    assert ms["AVSS"] == "1" and ms["DRVDD"] == "2" and ms["OTR"] == "13" and ms["DRVSS"] == "14"
-    assert ms["CLK"] == "15" and ms["STBY"] == "17" and ms["REFSENSE"] == "18" and ms["MODE"] == "23"
-    assert ms["VREF"] == "26" and ms["AIN"] == "27" and ms["AVDD"] == "28"
-    for i in range(10):
-        assert ms[f"D{i}"] == str(3 + i)
+    ad = pin_map("AD9288")
+    assert ad["AINA"] == "2" and ad["~{AINA}"] == "3" and ad["DFS"] == "4"
+    assert ad["REFINA"] == "5" and ad["REFOUT"] == "6" and ad["REFINB"] == "7"
+    assert ad["S1"] == "8" and ad["S2"] == "9"
+    assert ad["~{AINB}"] == "10" and ad["AINB"] == "11"
+    assert ad["ENCB"] == "14" and ad["ENCA"] == "47"
+    for i in range(8):
+        assert ad[f"D{i}A"] == str(37 + i)
+        assert ad[f"D{i}B"] == str(24 - i)
 
-    rs = pin_map("RS2227XN")
-    assert rs == {
-        "V+": "1", "S": "2", "D+": "3", "D-": "4", "GND": "5",
-        "HSD1-": "6", "HSD1+": "7", "HSD2-": "8", "HSD2+": "9", "~{OE}": "10",
+    rs87 = pin_map("RS8752")
+    assert rs87 == {
+        "OUTA": "1", "-INA": "2", "+INA": "3", "V-": "4",
+        "+INB": "5", "-INB": "6", "OUTB": "7", "V+": "8",
     }
 
-    lv = pin_map("SN74LV4T125")
-    assert lv == {
-        "1~{OE}": "1", "1A": "2", "1Y": "3", "2~{OE}": "4", "2A": "5", "2Y": "6", "GND": "7",
-        "3Y": "8", "3A": "9", "3~{OE}": "10", "4Y": "11", "4A": "12", "4~{OE}": "13", "VCC": "14",
+    sw = pin_map("74LVC2G66")
+    assert sw == {
+        "1Y": "1", "1Z": "2", "2E": "3", "GND": "4",
+        "2Y": "5", "2Z": "6", "1E": "7", "VCC": "8",
     }
 
     rt = pin_map("RT9013-33GB")

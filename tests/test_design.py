@@ -60,46 +60,58 @@ def test_rp2354b_pin_completeness():
         c for c in design.COMPONENTS
         if c.part == "c_100n_0402" and c.block == "mcu" and set(c.pins.values()) == {"+3V3_DIG", "GND"}
     ]
-    assert len(iovdd_caps) == 10  # 8x IOVDD + USB_OTP_VDD + QSPI_IOVDD
+    assert len(iovdd_caps) == 4  # Consolidated 4-layer plane decoupling across U1 edges
 
 
 def test_reference_string_math():
-    """40k (R7A+R7B) + 15k (R8) + 5k (R9A||R9B) from +3V0_REF (3.000 V) -> 1.000 V and 0.250 V."""
-    r7 = 20.0e3 + 20.0e3
-    r8 = 15.0e3
-    r9 = 1.0 / (1.0 / 10.0e3 + 1.0 / 10.0e3)
-    vref = 3.000
-    rtot = r7 + r8 + r9
-    v_1v00 = vref * (r8 + r9) / rtot
-    v_0v25 = vref * r9 / rtot
+    """2k (R7) + 1k (R8) from +3V0_REF (3.000 V) -> 1.000 V shared THS4521 VOCM."""
+    r7, r8 = 2.0e3, 1.0e3
+    v_1v00 = 3.000 * r8 / (r7 + r8)
     assert abs(v_1v00 - 1.000) < 1e-6
-    assert abs(v_0v25 - 0.250) < 1e-6
-    assert PARTS[design.comp("R7A").part].value == "20k 1%"
-    assert PARTS[design.comp("R7B").part].value == "20k 1%"
-    assert PARTS[design.comp("R8").part].value == "15k 1%"
-    assert PARTS[design.comp("R9A").part].value == "10k"
-    assert PARTS[design.comp("R9B").part].value == "10k"
-    assert design.pin_net("R7A", "1") == "+3V0_REF"
-    assert design.pin_net("R7A", "2") == "REF_MID"
-    assert design.pin_net("R7B", "1") == "REF_MID"
-    assert design.pin_net("R7B", "2") == "REF_1V00"
+    assert PARTS[design.comp("R7").part].value == "2k 1%"
+    assert PARTS[design.comp("R8").part].value == "1k"
+    assert design.pin_net("R7", "1") == "+3V0_REF"
+    assert design.pin_net("R7", "2") == "REF_1V00"
     assert design.pin_net("R8", "1") == "REF_1V00"
-    assert design.pin_net("R8", "2") == "REF_0V25"
-    assert design.pin_net("R9A", "1") == "REF_0V25"
-    assert design.pin_net("R9A", "2") == "AGND"
-    assert design.pin_net("R9B", "1") == "REF_0V25"
-    assert design.pin_net("R9B", "2") == "AGND"
+    assert design.pin_net("R8", "2") == "AGND"
 
 
-def test_afe_gain_and_tps72301_math():
-    # Stage 2 gains: 1x (1k / 2k = 0.500), 10x (10k / 2k = 5.000)
-    assert PARTS[design.comp("R4").part].value == "2k 1%"
-    assert PARTS[design.comp("R5").part].value == "1k"
-    assert PARTS[design.comp("R6").part].value == "10k"
+def test_afe_gain_and_single_supply_math():
+    # Single-supply level-shifted divider: R1+R2=940k, R_up=100k (+3V0_REF), R_dn=51k (AGND)
+    r_up, r_dn = 100.0, 51.0
+    r_th = (r_up * r_dn) / (r_up + r_dn)
+    div_ratio = r_th / (940.0 + r_th)
+    r_par_940 = (r_dn * 940.0) / (r_dn + 940.0)
+    v0 = 3.000 * r_par_940 / (r_up + r_par_940)
+    assert 0.96 <= v0 <= 1.00
+    assert v0 + 30.0 * div_ratio < 2.15
+    assert v0 - 27.0 * div_ratio > 0.0
+
+    # 2 gain ranges via inverting RS8752XM (Rg=510R, Rf_hi=1.5k) + 74LVC2G66DP (Ron=6R, Rf_lo=220R)
+    g_hi = 1500.0 / 510.0
+    rf_lo_eff = (1500.0 * (220.0 + 6.0)) / (1500.0 + 220.0 + 6.0)
+    g_lo = rf_lo_eff / 510.0
+    v_fs_lo = 0.512 / g_lo / div_ratio
+    v_fs_hi = 0.512 / g_hi / div_ratio
+    assert 36.0 <= v_fs_lo <= 40.0
+    assert 4.7 <= v_fs_hi <= 5.3
+
+    for rup, rdn, rg, rf, rlo in (
+        ("R3U", "R3", "R4A", "R5A", "R6A"),
+        ("R3UB", "R3B", "R4B", "R5B", "R6B"),
+    ):
+        assert PARTS[design.comp(rup).part].value == "100k"
+        assert PARTS[design.comp(rdn).part].value == "51k 1%"
+        assert PARTS[design.comp(rg).part].value == "510R 1%"
+        assert PARTS[design.comp(rf).part].value == "1.5k 1%"
+        assert PARTS[design.comp(rlo).part].value == "220R"
     assert design.comp("CT1").dnp is True
-    # TPS72301 negative regulator: -1.186 * (1 + 49.9k / 100k) = -1.778 V
-    v_neg = -1.186 * (1.0 + 49.9 / 100.0)
-    assert -1.80 <= v_neg <= -1.75
+    assert design.comp("CT2").dnp is True
+    # Single-supply clamps to AGND / +3V3_ANA, and AD9288 ~AINx tied to REF_1V00
+    assert design.comp("D4").pins == {"1": "AGND", "2": "+3V3_ANA", "3": "CH1_VDIV"}
+    assert design.comp("D4B").pins == {"1": "AGND", "2": "+3V3_ANA", "3": "CH2_VDIV"}
+    assert design.pin_net("U2", "3") == "REF_1V00"
+    assert design.pin_net("U2", "10") == "REF_1V00"
     # RP2354B ADC_AVDD >= 2.97 V for full ADC spec (+3V0_REF = 3.000 V)
     assert design.pin_net("U1", "59") == "+3V0_REF"
 
@@ -108,17 +120,36 @@ def test_pio_and_adc_gpio_windows():
     gpios = list(design.GPIO.values())
     assert len(gpios) == len(set(gpios)), "Duplicate GPIO numbers"
     assert all(0 <= g <= 47 for g in gpios)
-    # MS9280 data + clock + flags + comparator + 4-ch pod all within GPIO0..31 (PIO GPIOBASE=0)
-    for name in (
-        "ADC_D0", "ADC_D1", "ADC_D2", "ADC_D3", "ADC_D4",
-        "ADC_D5", "ADC_D6", "ADC_D7", "ADC_D8", "ADC_D9",
-        "ADC_CLK", "ADC_OTR", "ADC_STBY",
-        "COMP_OUT", "POD_CH0", "POD_CH1", "POD_CH2", "POD_CH3",
-    ):
+    # AD9288 16-bit dual data bus (D0A..D7A=0..7, D0B..D7B=8..15), CLK in GPIO0..31 (PIO0)
+    for i in range(8):
+        assert design.GPIO[f"ADCA_D{i}"] == i
+        assert design.GPIO[f"ADCB_D{i}"] == 8 + i
+    for name in ("ADC_CLK", "ADC_S1"):
         assert 0 <= design.GPIO[name] <= 31, (name, design.GPIO[name])
+    # Bidirectional 5V-tolerant expansion pins GPIO36..39 (usable with PIO1 via GPIOBASE=16)
+    for i in range(4):
+        assert design.GPIO[f"POD_CH{i}"] == 36 + i
+        assert 16 <= design.GPIO[f"POD_CH{i}"] < 40
     # RP2354B ADC0..ADC7 are GPIO40..47
-    for name in ("AFE_DC_SENSE", "COMP_THR_ADC", "VBUS_SENSE"):
+    for name in ("CH1_DC_SENSE", "VBUS_SENSE", "CH2_DC_SENSE"):
         assert 40 <= design.GPIO[name] <= 47, (name, design.GPIO[name])
+
+
+def test_buttons_and_lcd_pinout():
+    for sw, net in (
+        ("SW1", "BTN_ASK_AI_N"),
+        ("SW2", "BTN_MODE_N"),
+        ("SW3", "BTN_UP_N"),
+        ("SW4", "BTN_DOWN_N"),
+    ):
+        assert design.comp(sw).pins == {"1": net, "2": "GND", "3": "GND", "4": "GND"}
+    j4 = design.comp("J4")
+    assert j4.dnp is True
+    assert j4.pins == {
+        "1": "NC", "2": "NC", "3": "LCD_MOSI", "4": "LCD_SCK",
+        "5": "LCD_DC", "6": "LCD_RST_N", "7": "LCD_CS_N", "8": "GND",
+        "9": "NC", "10": "+3V3_DIG", "11": "GND", "12": "LCD_LEDA", "13": "GND",
+    }
 
 
 def test_bootsel_diode_polarity():
@@ -128,12 +159,7 @@ def test_bootsel_diode_polarity():
     assert {design.pin_net("R21", "1"), design.pin_net("R21", "2")} == {"QSPI_SS_N", "BOOT_KEY"}
 
 
-def test_tlv3501_and_usb_cc_and_esd():
-    u7 = design.comp("U7")
-    assert u7.pins == {
-        "1": "COMP_INN", "2": "GND", "3": "COMP_THR_DAC",
-        "4": "+3V3_DIG", "5": "COMP_OUT", "6": "GND",
-    }
+def test_usb_cc_and_esd():
     # USB CC1/CC2 5.1k pulldowns
     assert {design.pin_net("R10", "1"), design.pin_net("R10", "2")} == {"USB_CC1", "GND"}
     assert {design.pin_net("R11", "1"), design.pin_net("R11", "2")} == {"USB_CC2", "GND"}
@@ -141,7 +167,7 @@ def test_tlv3501_and_usb_cc_and_esd():
     assert design.pin_net("D1", "5") == "VBUS_RAW"
     assert design.pin_net("D2", "5") == "+5V_VBUS"
     assert {design.pin_net("D2", p) for p in ("1", "3", "4", "6")} == {
-        "POD_CH0_PROT", "POD_CH1_PROT", "POD_CH2_PROT", "POD_CH3_PROT",
+        "POD_CH0_RAW", "POD_CH1_RAW", "POD_CH2_RAW", "POD_CH3_RAW",
     }
 
 
@@ -151,24 +177,25 @@ def test_power_rails_have_sources_and_test_pads():
         "+3V3_DIG": "U9",
         "+3V3_ANA": "U10",
         "+3V0_REF": "U5",
-        "-3V3_RAW": "U11",
-        "-1V8_ANA": "U12",
         "+1V1_CORE": "L1",
-        "LED_VDD": "D5",
     }
     for net, src in expected_sources.items():
         refs = {r for r, _ in design.NETS[net]}
         assert src in refs, (net, src, refs)
-    for tp in ("TP_5V", "TP_3V3D", "TP_3V3A", "TP_3V0R", "TP_N1V8", "TP_1V1", "TP_AGND", "TP_GND2", "TP_VADC"):
+    for tp in ("TP_5V", "TP_3V3D", "TP_3V3A", "TP_3V0R", "TP_1V1", "TP_AGND", "TP_GND2", "TP_CH1", "TP_CH2", "TP_REF1V"):
         assert tp in {c.ref for c in design.COMPONENTS}, tp
 
 
-def test_lm2776_pinout():
-    assert design.comp("U11").pins == {
-        "1": "-3V3_RAW",
-        "2": "AGND",
-        "3": "+3V3_ANA",
-        "4": "+3V3_ANA",
-        "5": "LM2776_C1P",
-        "6": "LM2776_C1N",
+def test_rs8752_and_74lvc2g66_pinouts():
+    assert design.comp("U3").pins == {
+        "1": "CH1_VBUF", "2": "CH1_VBUF", "3": "CH1_VDIV", "4": "AGND",
+        "5": "CH2_VDIV", "6": "CH2_VBUF", "7": "CH2_VBUF", "8": "+3V3_ANA",
+    }
+    assert design.comp("U4").pins == {
+        "1": "CH1_OUT", "2": "CH1_INV", "3": "REF_1V00", "4": "AGND",
+        "5": "REF_1V00", "6": "CH2_INV", "7": "CH2_OUT", "8": "+3V3_ANA",
+    }
+    assert design.comp("U6").pins == {
+        "1": "CH1_SW_LO", "2": "CH1_OUT", "3": "CH2_GAIN_LO", "4": "AGND",
+        "5": "CH2_SW_LO", "6": "CH2_OUT", "7": "CH1_GAIN_LO", "8": "+3V3_ANA",
     }

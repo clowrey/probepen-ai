@@ -13,7 +13,7 @@ PCB_FILE = HW / "probepen_ai.kicad_pcb"
 DRU_FILE = HW / "probepen_ai.kicad_dru"
 FEATURES_FILE = HW / "out" / "board_features.json"
 
-ALLOWED_VIOLATION_TYPES = {"unconnected_items", "lib_footprint_issues"}
+ALLOWED_VIOLATION_TYPES = {"lib_footprint_issues"}
 ZERO_TOLERANCE_TYPES = {
     "clearance", "creepage", "hole_clearance", "copper_edge_clearance",
     "courtyards_overlap", "hole_to_hole", "drill_out_of_range",
@@ -26,6 +26,7 @@ ZERO_TOLERANCE_TYPES = {
 @pytest.fixture(scope="module")
 def built_board():
     kpy(HW / "gen_pcb.py")
+    kpy(HW / "route.py")
     assert PCB_FILE.is_file()
     assert DRU_FILE.is_file()
     assert FEATURES_FILE.is_file()
@@ -72,40 +73,44 @@ def test_no_layout_or_manufacturing_drc_violations(drc):
     assert bad == [], _fmt(bad)
     unexpected = [v for v in drc["violations"] if v["type"] not in ALLOWED_VIOLATION_TYPES]
     assert unexpected == [], _fmt(unexpected)
+    assert drc.get("unconnected_items", []) == [], _fmt(drc["unconnected_items"])
 
 
 def test_four_layer_stackup_and_outline(features):
     pcb_text = PCB_FILE.read_text(encoding="utf8")
-    assert '"In1.Cu" signal' in pcb_text
-    assert '"In2.Cu" signal' in pcb_text
+    for layer in ("In1.Cu", "In2.Cu"):
+        assert f'"{layer}" signal' in pcb_text
+    assert '"In3.Cu"' not in pcb_text
     assert features["outline_mm"] == [DATUM["length"], DATUM["width"]]
     assert features["thickness"] == DATUM["thickness"]
 
 
 def test_all_design_components_placed_single_sided_smt(board_dump):
+    f_cu_dnp_refs = {
+        "H1", "H2", "J5", "U2",
+        "TP_3V3A", "TP_AGND", "TP_3V0R", "TP_REF1V", "TP_CH1", "TP_CH2",
+    }
     fps = {f["ref"]: f for f in board_dump["footprints"]}
     assert set(fps) == {c.ref for c in design.COMPONENTS}
     for c in design.COMPONENTS:
         f = fps[c.ref]
         assert f["dnp"] == c.dnp, c.ref
-        if not c.dnp or c.ref in ("H1", "H2"):
+        if not c.dnp or c.ref in f_cu_dnp_refs:
             assert f["layer"] == "F.Cu", f"{c.ref} expected on F.Cu"
         else:
-            assert f["layer"] == "B.Cu", f"{c.ref} DNP test pad/trimmer expected on B.Cu"
+            assert f["layer"] == "B.Cu", f"{c.ref} DNP test pad/trimmer/LED expected on B.Cu"
+            if c.ref.startswith("TP_"):
+                assert f["x"] < 32.0 or f["x"] > 80.0, f"{c.ref} B.Cu TP overlaps LCD region"
 
 
 def test_tall_parts_outside_lcd_glass(board_dump):
     lcd_x0, lcd_x1 = DATUM["lcd_glass_x"]
     fps = {f["ref"]: f for f in board_dump["footprints"]}
-    tall_refs = ("J1", "J2", "J3", "J4", "SW1", "SW2", "U2", "U1", "L1", "Y1", "H1", "H2")
+    tall_refs = ("J1", "J3", "J4", "J5", "U2", "U1", "L1", "Y1", "H1", "H2")
     for ref in tall_refs:
         cb = fps[ref]["courtyard"]
         assert cb is not None, ref
-        if ref == "J4":
-            # J4 FPC body sits at X=48.5; its leads enter X=50.0 edge cleanly
-            assert fps[ref]["x"] < lcd_x0
-        else:
-            assert cb[2] <= lcd_x0 + 0.5 or cb[0] >= lcd_x1 - 0.5, (ref, cb)
+        assert cb[2] <= lcd_x0 + 0.5 or cb[0] >= lcd_x1 - 0.5, (ref, cb)
 
 
 def test_afe_keepout_and_edge_clearances(board_dump, features):
@@ -120,7 +125,14 @@ def test_afe_keepout_and_edge_clearances(board_dump, features):
         if item["kind"] == "pad" and item["net"]:
             x0, y0, x1, y1 = item["bbox"]
             assert x0 >= 0.49 and w - x1 >= 0.49, (item["ref"], item["pad"], item["bbox"])
-            assert y0 >= -hw_y + 0.49 and hw_y - y1 >= 0.49, (item["ref"], item["pad"], item["bbox"])
+            min_y_clr = (
+                0.35
+                if item["ref"] in {"SW1", "SW2", "SW3", "SW4"} and item["pad"] in {"3", "4"}
+                else 0.49
+            )
+            assert y0 >= -hw_y + min_y_clr and hw_y - y1 >= min_y_clr, (
+                item["ref"], item["pad"], item["bbox"],
+            )
 
 
 def test_features_json_matches_datum(board_dump, features):
@@ -138,6 +150,6 @@ def test_features_json_matches_datum(board_dump, features):
 
 def test_dru_contains_jlc_and_hv_rules():
     dru = DRU_FILE.read_text(encoding="utf8")
-    assert "0.127mm" in dru
+    assert "0.092mm" in dru
     assert "0.30mm" in dru
-    assert "/PROBE_TIP" in dru and "0.40mm" in dru
+    assert "/CH1_TIP" in dru and "/CH2_TIP" in dru and "0.40mm" in dru

@@ -442,20 +442,76 @@
         "pattern": "/+5V_VBUS"
       },
       {
-        "netclass": "POWER",
-        "pattern": "/-1V8_ANA"
-      },
-      {
-        "netclass": "POWER",
-        "pattern": "/-3V3_RAW"
-      },
-      {
-        "netclass": "ANALOG",
-        "pattern": "/ADC_AIN"
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCA_D0"
       },
       {
         "netclass": "HIGHSPEED",
-        "pattern": "/ADC_CLK"
+        "pattern": "/ADCA_D1"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCA_D2"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCA_D3"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCA_D4"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCA_D5"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCA_D6"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCA_D7"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/ADCA_INP"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCB_D0"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCB_D1"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCB_D2"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCB_D3"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCB_D4"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCB_D5"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCB_D6"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCB_D7"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/ADCB_INP"
       },
       {
         "netclass": "HIGHSPEED",
@@ -463,115 +519,23 @@
       },
       {
         "netclass": "HIGHSPEED",
-        "pattern": "/ADC_D0"
+        "pattern": "/ADC_ENCA"
       },
       {
         "netclass": "HIGHSPEED",
-        "pattern": "/ADC_D0_MCU"
-      },
-      {
-        "netclass": "HIGHSPEED",
-        "pattern": "/ADC_D1"
-      },
-      {
-        "netclass": "HIGHSPEED",
-        "pattern": "/ADC_D1_MCU"
-      },
-      {
-        "netclass": "HIGHSPEED",
-        "pattern": "/ADC_D2"
-      },
-      {
-        "netclass": "HIGHSPEED",
-        "pattern": "/ADC_D2_MCU"
-      },
-      {
-        "netclass": "HIGHSPEED",
-        "pattern": "/ADC_D3"
-      },
-      {
-        "netclass": "HIGHSPEED",
-        "pattern": "/ADC_D3_MCU"
-      },
-      {
-        "netclass": "HIGHSPEED",
-        "pattern": "/ADC_D4"
-      },
-      {
-        "netclass": "HIGHSPEED",
-        "pattern": "/ADC_D4_MCU"
-      },
-      {
-        "netclass": "HIGHSPEED",
-        "pattern": "/ADC_D5"
-      },
-      {
-        "netclass": "HIGHSPEED",
-        "pattern": "/ADC_D5_MCU"
-      },
-      {
-        "netclass": "HIGHSPEED",
-        "pattern": "/ADC_D6"
-      },
-      {
-        "netclass": "HIGHSPEED",
-        "pattern": "/ADC_D6_MCU"
-      },
-      {
-        "netclass": "HIGHSPEED",
-        "pattern": "/ADC_D7"
-      },
-      {
-        "netclass": "HIGHSPEED",
-        "pattern": "/ADC_D7_MCU"
-      },
-      {
-        "netclass": "HIGHSPEED",
-        "pattern": "/ADC_D8"
-      },
-      {
-        "netclass": "HIGHSPEED",
-        "pattern": "/ADC_D8_MCU"
-      },
-      {
-        "netclass": "HIGHSPEED",
-        "pattern": "/ADC_D9"
-      },
-      {
-        "netclass": "HIGHSPEED",
-        "pattern": "/ADC_D9_MCU"
-      },
-      {
-        "netclass": "ANALOG",
-        "pattern": "/ADC_MODE"
+        "pattern": "/ADC_ENCB"
       },
       {
         "netclass": "LV",
-        "pattern": "/ADC_OTR"
-      },
-      {
-        "netclass": "ANALOG",
-        "pattern": "/ADC_REFBF"
-      },
-      {
-        "netclass": "ANALOG",
-        "pattern": "/ADC_REFTF"
+        "pattern": "/ADC_S1"
       },
       {
         "netclass": "LV",
-        "pattern": "/ADC_STBY"
+        "pattern": "/ADC_S2"
       },
       {
         "netclass": "ANALOG",
         "pattern": "/ADC_VREF"
-      },
-      {
-        "netclass": "ANALOG",
-        "pattern": "/AFE_DC_SENSE"
-      },
-      {
-        "netclass": "LV",
-        "pattern": "/AFE_GAIN_10X"
       },
       {
         "netclass": "POWER",
@@ -587,35 +551,91 @@
       },
       {
         "netclass": "LV",
+        "pattern": "/BTN_DOWN_N"
+      },
+      {
+        "netclass": "LV",
         "pattern": "/BTN_MODE_N"
       },
       {
+        "netclass": "LV",
+        "pattern": "/BTN_UP_N"
+      },
+      {
         "netclass": "ANALOG",
-        "pattern": "/COMP_INN"
-      },
-      {
-        "netclass": "HIGHSPEED",
-        "pattern": "/COMP_OUT"
+        "pattern": "/CH1_DC_SENSE"
       },
       {
         "netclass": "LV",
-        "pattern": "/COMP_THR_DAC"
+        "pattern": "/CH1_GAIN_LO"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/CH1_HV_MID"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/CH1_INV"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/CH1_OUT"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/CH1_SW_LO"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/CH1_TIP"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/CH1_VBUF"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/CH1_VDIV"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/CH2_DC_SENSE"
       },
       {
         "netclass": "LV",
-        "pattern": "/COMP_THR_MID"
+        "pattern": "/CH2_GAIN_LO"
       },
       {
-        "netclass": "LV",
-        "pattern": "/COMP_THR_PWM"
+        "netclass": "ANALOG",
+        "pattern": "/CH2_HV_MID"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/CH2_INV"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/CH2_OUT"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/CH2_SW_LO"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/CH2_TIP"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/CH2_VBUF"
+      },
+      {
+        "netclass": "ANALOG",
+        "pattern": "/CH2_VDIV"
       },
       {
         "netclass": "POWER",
         "pattern": "/GND"
-      },
-      {
-        "netclass": "ANALOG",
-        "pattern": "/HV_MID"
       },
       {
         "netclass": "LV",
@@ -651,35 +671,15 @@
       },
       {
         "netclass": "LV",
-        "pattern": "/LED1_DIN"
+        "pattern": "/LED1_A"
       },
       {
         "netclass": "LV",
-        "pattern": "/LED_CASCADE"
-      },
-      {
-        "netclass": "LV",
-        "pattern": "/LED_DATA_MCU"
-      },
-      {
-        "netclass": "POWER",
-        "pattern": "/LED_VDD"
-      },
-      {
-        "netclass": "ANALOG",
-        "pattern": "/LM2776_C1N"
-      },
-      {
-        "netclass": "ANALOG",
-        "pattern": "/LM2776_C1P"
+        "pattern": "/LED2_A"
       },
       {
         "netclass": "LV",
         "pattern": "/POD_CH0"
-      },
-      {
-        "netclass": "LV",
-        "pattern": "/POD_CH0_PROT"
       },
       {
         "netclass": "LV",
@@ -691,19 +691,11 @@
       },
       {
         "netclass": "LV",
-        "pattern": "/POD_CH1_PROT"
-      },
-      {
-        "netclass": "LV",
         "pattern": "/POD_CH1_RAW"
       },
       {
         "netclass": "LV",
         "pattern": "/POD_CH2"
-      },
-      {
-        "netclass": "LV",
-        "pattern": "/POD_CH2_PROT"
       },
       {
         "netclass": "LV",
@@ -715,15 +707,7 @@
       },
       {
         "netclass": "LV",
-        "pattern": "/POD_CH3_PROT"
-      },
-      {
-        "netclass": "LV",
         "pattern": "/POD_CH3_RAW"
-      },
-      {
-        "netclass": "ANALOG",
-        "pattern": "/PROBE_TIP"
       },
       {
         "netclass": "LV",
@@ -731,15 +715,7 @@
       },
       {
         "netclass": "ANALOG",
-        "pattern": "/REF_0V25"
-      },
-      {
-        "netclass": "ANALOG",
         "pattern": "/REF_1V00"
-      },
-      {
-        "netclass": "ANALOG",
-        "pattern": "/REF_MID"
       },
       {
         "netclass": "LV",
@@ -752,26 +728,6 @@
       {
         "netclass": "LV",
         "pattern": "/SWDIO"
-      },
-      {
-        "netclass": "ANALOG",
-        "pattern": "/TPS_FB"
-      },
-      {
-        "netclass": "ANALOG",
-        "pattern": "/U4_FB_10X"
-      },
-      {
-        "netclass": "ANALOG",
-        "pattern": "/U4_FB_1X"
-      },
-      {
-        "netclass": "ANALOG",
-        "pattern": "/U4_INN"
-      },
-      {
-        "netclass": "ANALOG",
-        "pattern": "/U4_INP"
       },
       {
         "netclass": "LV",
@@ -812,18 +768,6 @@
       {
         "netclass": "POWER",
         "pattern": "/VREG_LX"
-      },
-      {
-        "netclass": "ANALOG",
-        "pattern": "/V_ADC"
-      },
-      {
-        "netclass": "ANALOG",
-        "pattern": "/V_BUF"
-      },
-      {
-        "netclass": "ANALOG",
-        "pattern": "/V_DIV"
       },
       {
         "netclass": "LV",

@@ -1,115 +1,322 @@
-"""Deterministic 4-layer octilinear PCB router and zone filler for ProbePen-AI.
+"""Add hand-planned octilinear tracks with rounded bends (hw/routes.py), fill zones, and stitch ground.
 
-Run with KiCad's Python after hw/gen_pcb.py:
-    kicad-python hw/route.py
+Run with local KiCad Python after hw/gen_pcb.py:
+    ~/.local/bin/kicad-python hw/route.py
 
-Design principles:
-  - Signals & non-plane power traces run exclusively on F.Cu and B.Cu with 0/45/90-degree
-    octilinear legs and 0.45 mm / 0.20 mm vias (leaving In1.Cu GND/AGND and In2.Cu +3V3_DIG/+3V3_ANA
-    unbroken by signal traces).
-  - Step 0 pre-commits grid-snapped radial breakout stubs on all fine-pitch SMD pads BEFORE any
-    vias or traces are placed, eliminating both stub-on-track shorts and 0.02 mm grid-snap gaps.
-  - Analytical spatial-bucket clearance checking enforces KiCad DRC clearances (0.15 mm LV/POWER/
-    USB/HS, 0.13 mm ANALOG, 0.40 mm HV /PROBE_TIP & /HV_MID, 0.25 mm holes, 0.30 mm board edge).
-  - Plane-backed nets drop local vias directly into In1.Cu / In2.Cu; pads outside a zone polygon
-    route to the nearest plane via; ZONE_FILLER fills all copper pours and GND stitching vias tie
-    top/bottom return paths cleanly.
+Route points are board-datum coordinates (mm, origin nose-tip center, +X toward USB-C tail,
+Y centered -7.5..+7.5 mm, Y-down in KiCad) or pad references:
+    ("U1", "17") = centre of pad 17 of U1; ("J1", "SH", 2) = third pad numbered SH of J1.
 """
 from __future__ import annotations
 
-import heapq
 import math
 import sys
-from collections import defaultdict
 from pathlib import Path
 
 import pcbnew
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-sys.path.insert(0, str(ROOT))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
+from hardware.pcb_datum import point_in_pcb  # noqa: E402
 from hw.gen_pcb import (  # noqa: E402
     AFE_X0, AFE_X1, AFE_Y0, AFE_Y1, HW_Y, L, MM, NET, OX, OY, PCB_FILE, R_NOSE, R_TAIL,
 )
-from hw import design, routes as route_cfg  # noqa: E402
 
-RES = 0.10  # 100 um routing grid (exact match to 0.4/0.5 mm fine-pitch pin centers & 4x faster search)
-NX = int(round(L / RES)) + 1           # 1321
-NY = int(round((2 * HW_Y) / RES)) + 1  # 151
-LAYERS = (pcbnew.F_Cu, pcbnew.B_Cu, pcbnew.In2_Cu)
-VIA_R = route_cfg.VIA_DIAM_MM / 2.0
+LAYERS = {
+    "F": pcbnew.F_Cu,
+    "B": pcbnew.B_Cu,
+    "In1": pcbnew.In1_Cu,
+    "In2": pcbnew.In2_Cu,
+    "In3": pcbnew.In3_Cu,
+    "In4": pcbnew.In4_Cu,
+}
 
-DIRS = [
-    (1, 0, 1000), (-1, 0, 1000), (0, 1, 1000), (0, -1, 1000),
-    (1, 1, 1414), (1, -1, 1414), (-1, 1, 1414), (-1, -1, 1414),
-]
-
-
-def gx(x: float) -> int:
-    return max(0, min(NX - 1, int(round(x / RES))))
+DEFAULT_VIA = (0.40, 0.20)
+CUT = 0.0  # extra length (mm) of a corner's 45-degree run beyond its planned arc's tangent
 
 
-def gy(y: float) -> int:
-    return max(0, min(NY - 1, int(round((y + HW_Y) / RES))))
+class Resolver:
+    """Resolve pad references ('U1', '17'[, idx]) and board-datum (x, y) mm coordinates to KiCad VECTOR2I."""
+
+    def __init__(self, board: pcbnew.BOARD):
+        self.pads: dict[tuple[str, str], list[pcbnew.VECTOR2I]] = {}
+        self.objs: dict[tuple[str, str], list[pcbnew.PAD]] = {}
+        for fp in board.GetFootprints():
+            ref = fp.GetReference()
+            for p in fp.Pads():
+                key = (ref, p.GetNumber())
+                self.pads.setdefault(key, []).append(p.GetPosition())
+                self.objs.setdefault(key, []).append(p)
+
+    def pad(self, pt, net_name: str):
+        """Return the pad a path endpoint lands on (named ref/pin or overlapping pad on the same net)."""
+        if isinstance(pt[0], str):
+            return self.objs[(pt[0], pt[1])][pt[2] if len(pt) > 2 else 0]
+        q = self(pt)
+        for pads in self.objs.values():
+            for p in pads:
+                if p.GetNetname() == net_name and p.HitTest(q):
+                    return p
+        return None
+
+    def __call__(self, pt) -> pcbnew.VECTOR2I:
+        if isinstance(pt[0], str):
+            ref, num = pt[0], pt[1]
+            idx = pt[2] if len(pt) > 2 else 0
+            pos = self.pads[(ref, num)][idx]
+            return pcbnew.VECTOR2I(pos.x, pos.y)
+        return pcbnew.VECTOR2I(MM(OX + pt[0]), MM(OY + pt[1]))
 
 
-def wx(ix: int) -> float:
-    return round(ix * RES, 4)
+def bend_radius(width_mm: float) -> float:
+    """Target radius of a track bend: 0.35 mm for fine signals, 2.0 x the width for wider tracks."""
+    return max(0.35, 2.0 * width_mm)
 
 
-def wy(iy: int) -> float:
-    return round(iy * RES - HW_Y, 4)
+def corner_radius(width_mm: float) -> float:
+    """Radius of the small arc at each 45-degree bend: 0.20 mm for signals, 1.2 x the width for wider tracks."""
+    return max(0.20, 1.2 * width_mm)
 
 
-def snap(x: float, y: float) -> tuple[float, float]:
-    return wx(gx(x)), wy(gy(y))
+def _turn(u, v) -> float:
+    """Angle in radians between two direction vectors (0 = straight on)."""
+    if u is None or v is None:
+        return 0.0
+    return abs(math.remainder(math.atan2(v[1], v[0]) - math.atan2(u[1], u[0]), 2 * math.pi))
 
 
-def point_in_poly(x: float, y: float, poly: list[tuple[float, float]]) -> bool:
-    inside = False
-    n = len(poly)
-    j = n - 1
-    for i in range(n):
-        xi, yi = poly[i]
-        xj, yj = poly[j]
-        if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / ((yj - yi) or 1e-12) + xi):
-            inside = not inside
-        j = i
-    return inside
+def _chamfers(pts, width: float, fixed, max_d, radii, cuts=None):
+    """Cut free 90-degree corners into two 45-degree bends sized so parallel concentric lanes stay spaced."""
+    n = len(pts)
+    seg = [math.dist(pts[i], pts[i + 1]) for i in range(n - 1)]
+    out_p, out_f, out_m, out_r = [pts[0]], [fixed[0]], [max_d[0]], [None]
+    small = corner_radius(width)
+    for i in range(1, n - 1):
+        p = pts[i]
+        u1 = ((pts[i - 1][0] - p[0]) / seg[i - 1], (pts[i - 1][1] - p[1]) / seg[i - 1])
+        u2 = ((pts[i + 1][0] - p[0]) / seg[i], (pts[i + 1][1] - p[1]) / seg[i])
+        turn = math.pi - math.acos(max(-1.0, min(1.0, u1[0] * u2[0] + u1[1] * u2[1])))
+        if not fixed[i] and abs(turn - math.pi / 2) < math.radians(1):
+            want = radii[i] if radii[i] is not None else bend_radius(width)
+            room1 = seg[i - 1] * (0.5 if i - 1 > 0 and not fixed[i - 1] else 0.9)
+            room2 = seg[i] * (0.5 if i + 1 < n - 1 and not fixed[i + 1] else 0.9)
+            cut = cuts[i] if cuts and cuts[i] is not None else CUT
+            d = min(MM(want) * (2 - math.sqrt(2)) + MM(cut), room1, room2, max_d[i])
+            if d > MM(0.08):
+                for u in (u1, u2):
+                    out_p.append((p[0] + u[0] * d, p[1] + u[1] * d))
+                    out_f.append(False)
+                    out_m.append(max_d[i] - d)
+                    out_r.append(small)
+                continue
+        out_p.append(p)
+        out_f.append(fixed[i])
+        out_m.append(max_d[i])
+        out_r.append(small if abs(turn - math.pi / 4) < math.radians(1) else radii[i])
+    out_p.append(pts[-1])
+    out_f.append(fixed[-1])
+    out_m.append(max_d[-1])
+    out_r.append(None)
+
+    keep = [0]
+    for j in range(1, len(out_p)):
+        if math.dist(out_p[j], out_p[keep[-1]]) < MM(0.01):
+            k = keep[-1]
+            out_f[k] = out_f[k] or out_f[j]
+            out_m[k] = min(out_m[k], out_m[j])
+            if j == len(out_p) - 1:
+                out_p[k] = out_p[j]
+            continue
+        keep.append(j)
+    return (
+        [out_p[j] for j in keep],
+        [out_f[j] for j in keep],
+        [out_m[j] for j in keep],
+        [out_r[j] for j in keep],
+    )
 
 
-def inside_board(x: float, y: float, margin: float) -> bool:
-    if x < margin or x > L - margin or y < -HW_Y + margin or y > HW_Y - margin:
-        return False
-    if x < R_NOSE and abs(y) > HW_Y - R_NOSE:
-        if math.hypot(R_NOSE - x, abs(y) - (HW_Y - R_NOSE)) > R_NOSE - margin:
-            return False
-    if x > L - R_TAIL and abs(y) > HW_Y - R_TAIL:
-        if math.hypot(x - (L - R_TAIL), abs(y) - (HW_Y - R_TAIL)) > R_TAIL - margin:
-            return False
-    return True
+def octilinear(pts, start=None, end=None, inside=None):
+    """Snap every non-0/45/90-degree leg into a straight leg plus a 45-degree leg, choosing the smoother turn."""
+    out = [(pts[0], 0)]
+    prev = tuple(start) if start else None
+    for i in range(1, len(pts)):
+        a, c = out[-1][0], pts[i]
+        dx, dy = c[0] - a[0], c[1] - a[1]
+        if math.hypot(dx, dy) < 1:
+            continue
+        off = abs(math.remainder(math.degrees(math.atan2(dy, dx)), 45))
+        nxt = None
+        if i + 1 < len(pts):
+            nxt = (pts[i + 1][0] - c[0], pts[i + 1][1] - c[1])
+        elif end:
+            nxt = tuple(end)
+        if math.hypot(dx, dy) * math.sin(math.radians(off)) > MM(0.025):
+            m = min(abs(dx), abs(dy))
+            diag = (math.copysign(m, dx), math.copysign(m, dy))
+            straight = (dx - diag[0], dy - diag[1])
+            best = None
+            for first, second in ((straight, diag), (diag, straight)):
+                q = (a[0] + first[0], a[1] + first[1])
+                cost = _turn(prev, first) + _turn(first, second) + _turn(second, nxt)
+                if inside and (inside(0, q) and i == 1 or inside(len(pts) - 1, q) and i == len(pts) - 1):
+                    cost += 10
+                if best is None or cost < best[0] - 1e-6:
+                    best = (cost, q, second)
+            out.append((best[1], None))
+            prev = best[2]
+        else:
+            prev = (dx, dy)
+        out.append((c, i))
+    return out
 
 
-def in_afe_keepout(x: float, y: float, margin: float = 0.35) -> bool:
-    return (AFE_X0 - margin) <= x <= (AFE_X1 + margin) and (AFE_Y0 - margin) <= y <= (AFE_Y1 + margin)
+def _fillets(pts, width: float, fixed, max_d=None, radii=None):
+    """Compute circular arc fillet tangent points (t1, mid, t2) in nm at free bends."""
+    n = len(pts)
+    seg = [math.dist(pts[i], pts[i + 1]) for i in range(n - 1)]
+    plan = {}
+    for i in range(1, n - 1):
+        if fixed[i]:
+            continue
+        p = pts[i]
+        u1 = ((pts[i - 1][0] - p[0]) / seg[i - 1], (pts[i - 1][1] - p[1]) / seg[i - 1])
+        u2 = ((pts[i + 1][0] - p[0]) / seg[i], (pts[i + 1][1] - p[1]) / seg[i])
+        cos_phi = max(-1.0, min(1.0, u1[0] * u2[0] + u1[1] * u2[1]))
+        phi = math.acos(cos_phi)
+        if phi < math.radians(5) or phi > math.radians(179):
+            continue
+        tan_half_turn = math.tan((math.pi - phi) / 2)
+        room1 = seg[i - 1] * (0.5 if i - 1 > 0 and not fixed[i - 1] else 0.9)
+        room2 = seg[i] * (0.5 if i + 1 < n - 1 and not fixed[i + 1] else 0.9)
+        room = min(room1, room2, max_d[i] if max_d else float("inf"))
+        want = radii[i] if radii and i < len(radii) and radii[i] is not None else bend_radius(width)
+        r = min(MM(want), room / tan_half_turn)
+        d = r * tan_half_turn
+        if d < MM(0.01):
+            continue
+        t1 = (p[0] + u1[0] * d, p[1] + u1[1] * d)
+        t2 = (p[0] + u2[0] * d, p[1] + u2[1] * d)
+        bis = (u1[0] + u2[0], u1[1] + u2[1])
+        bl = math.hypot(*bis)
+        if bl < 1e-6:
+            continue
+        to_mid = r / math.sin(phi / 2) - r
+        mid = (p[0] + bis[0] / bl * to_mid, p[1] + bis[1] / bl * to_mid)
+        plan[i] = (t1, mid, t2)
+    return plan
 
 
-def in_u1_collar(x: float, y: float) -> bool:
-    """Keep 0.45 mm vias out of U1's 0.40 mm-pitch breakout collar (allow vias inside U1 or outer ring)."""
-    ux, uy = 109.2, 0.0
-    in_outer = (ux - 6.35) <= x <= (ux + 6.35) and (uy - 6.15) <= y <= (uy + 6.15)
-    in_inner_clear = (ux - 4.30) <= x <= (ux + 4.30) and (uy - 4.30) <= y <= (uy + 4.30)
-    return in_outer and not in_inner_clear
+def add_routes(board: pcbnew.BOARD, routes: dict):
+    """Emit all hand-planned tracks, arcs, and vias from routes dict onto the board."""
+    nets = board.GetNetsByName()
+    res = Resolver(board)
+
+    def key(v):
+        return (v.x, v.y)
+
+    anchors = {}
+    for net_name, paths in routes.items():
+        a = anchors.setdefault(net_name, [])
+        for path in paths:
+            pts = [key(res(p)) for p in path.get("pts", [])]
+            if pts:
+                a += [(pts[0], id(path)), (pts[-1], id(path))]
+                a += [(q, id(path)) for q in pts[1:-1]]
+            a += [(key(res(v)), None) for v in path.get("vias", [])]
+
+    for net_name, paths in routes.items():
+        net = nets[NET(net_name)]
+        for path in paths:
+            layer, width = path.get("layer", "F"), path.get("w", 0.15)
+            raw = path.get("pts", [])
+            pts = []
+            for j, (p, q) in enumerate(zip(raw, [res(p) for p in raw])):
+                if not pts or key(q) != pts[-1][1]:
+                    pts.append((p, key(q), j))
+
+            first = res.pad(pts[0][0], net.GetNetname()) if pts else None
+            last = res.pad(pts[-1][0], net.GetNetname()) if pts else None
+
+            def inside(i, q):
+                pad = first if i == 0 else last
+                return pad is not None and pad.HitTest(pcbnew.VECTOR2I(int(q[0]), int(q[1])))
+
+            oct_pts = octilinear([q for _, q, _ in pts], path.get("start"), path.get("end"), inside) if pts else []
+            xy = [q for q, _ in oct_pts]
+            others = [a for a, owner in anchors[net_name] if owner != id(path)]
+            fixed, max_d, radii = [], [], []
+            for i, (q, src_i) in enumerate(oct_pts):
+                src = pts[src_i][0] if src_i is not None else None
+                dists = [math.dist(a, q) for a in others]
+                fixed.append(
+                    (src is not None and isinstance(src[0], str))
+                    or i in (0, len(oct_pts) - 1)
+                    or any(dd < MM(0.05) for dd in dists)
+                )
+                max_d.append(min([dd - MM(width) for dd in dists if dd < MM(3 * bend_radius(width))], default=float("inf")))
+                r = path.get("radii")
+                radii.append(r[pts[src_i][2]] if r and src_i is not None and pts[src_i][2] < len(r) else None)
+
+            if len(xy) > 2:
+                cuts = path.get("cuts")
+                if cuts:
+                    cuts = [cuts[pts[src_i][2]] if src_i is not None and pts[src_i][2] < len(cuts) else None for _, src_i in oct_pts]
+                xy, fixed, max_d, radii = _chamfers(xy, width, fixed, max_d, radii, cuts)
+            plan = _fillets(xy, width, fixed, max_d, radii)
+
+            def vec(p):
+                return pcbnew.VECTOR2I(int(round(p[0])), int(round(p[1])))
+
+            def add(item):
+                item.SetWidth(MM(width))
+                item.SetLayer(LAYERS[layer])
+                item.SetNet(net)
+                board.Add(item)
+
+            def line(a, b):
+                t = pcbnew.PCB_TRACK(board)
+                t.SetStart(vec(a))
+                t.SetEnd(vec(b))
+                add(t)
+
+            def arc(a, m, b):
+                t = pcbnew.PCB_ARC(board)
+                t.SetStart(vec(a))
+                t.SetMid(vec(m))
+                t.SetEnd(vec(b))
+                add(t)
+
+            cur = xy[0] if xy else None
+            for i in range(1, len(xy)):
+                end = plan[i][0] if i in plan else xy[i]
+                if vec(cur) != vec(end):
+                    line(cur, end)
+                if i in plan:
+                    t1, mid, t2 = plan[i]
+                    arc(t1, mid, t2)
+                    cur = t2
+                else:
+                    cur = xy[i]
+
+            size, drill = path.get("via", DEFAULT_VIA)
+            for v in path.get("vias", []):
+                via = pcbnew.PCB_VIA(board)
+                via.SetPosition(res(v))
+                via.SetWidth(MM(size))
+                via.SetDrill(MM(drill))
+                via.SetNet(net)
+                board.Add(via)
 
 
-def _rect_box_dist(x: float, y: float, x0: float, y0: float, x1: float, y1: float) -> float:
-    dx = 0.0 if x0 <= x <= x1 else (x0 - x if x < x0 else x - x1)
-    dy = 0.0 if y0 <= y <= y1 else (y0 - y if y < y0 else y - y1)
-    return math.hypot(dx, dy)
+def _inside_board(x: float, y: float, margin: float) -> bool:
+    return point_in_pcb(x, y, margin=margin)
 
 
-def _seg_dist(px: float, py: float, ax: float, ay: float, bx: float, by: float) -> float:
+def _seg_point_dist(px: float, py: float, ax: float, ay: float, bx: float, by: float) -> float:
     vx, vy = bx - ax, by - ay
     d2 = vx * vx + vy * vy
     if d2 < 1e-12:
@@ -118,993 +325,538 @@ def _seg_dist(px: float, py: float, ax: float, ay: float, bx: float, by: float) 
     return math.hypot(px - (ax + t * vx), py - (ay + t * vy))
 
 
-class ObstacleMap:
-    """Spatial index + exact geometric clearance verifier for F.Cu, B.Cu, In2.Cu, drills, and vias."""
+def _box_point_dist(px: float, py: float, x0: float, y0: float, x1: float, y1: float) -> float:
+    dx = 0.0 if x0 <= px <= x1 else (x0 - px if px < x0 else px - x1)
+    dy = 0.0 if y0 <= py <= y1 else (y0 - py if py < y0 else py - y1)
+    return math.hypot(dx, dy)
 
-    def __init__(self, board: pcbnew.BOARD):
-        self.board = board
-        self.buckets: list[defaultdict[tuple[int, int], list[tuple]]] = [defaultdict(list) for _ in range(3)]
-        self.drill_buckets: defaultdict[tuple[int, int], list[tuple]] = defaultdict(list)
-        self.via_buckets: defaultdict[tuple[int, int], list[tuple[int, float, float]]] = defaultdict(list)
-        self.net_to_id: dict[str, int] = {"": 0}
-        self.board_ok = bytearray(NX * NY)
-        self.near_copper = [bytearray(NX * NY) for _ in range(3)]
-        for iy in range(NY):
-            y = wy(iy)
-            row = iy * NX
-            for ix in range(NX):
-                if inside_board(wx(ix), y, 0.48):
-                    self.board_ok[row + ix] = 1
-        self._load_pads_and_drills()
 
-    def _mark_near(self, li: int, x0: float, y0: float, x1: float, y1: float, margin: float = 0.55):
-        ix0, ix1 = gx(x0 - margin), gx(x1 + margin)
-        iy0, iy1 = gy(y0 - margin), gy(y1 + margin)
-        nc = self.near_copper[li]
-        span = ix1 - ix0 + 1
-        ones = b"\x01" * span
-        for iy in range(iy0, iy1 + 1):
-            off = iy * NX + ix0
-            nc[off:off + span] = ones
+def place_plane_vias(board: pcbnew.BOARD) -> tuple[int, list[tuple[str, str, str]]]:
+    """Deterministically drop clean 0.40/0.20 mm vias (or share nearby vias) for unconnected plane pads.
 
-    def nid(self, net_name: str) -> int:
-        if net_name not in self.net_to_id:
-            self.net_to_id[net_name] = len(self.net_to_id)
-        return self.net_to_id[net_name]
+    Covers GND (In1.Cu), AGND (In1.Cu), +3V3_DIG (In2/In4.Cu), and +3V3_ANA (In2/In4.Cu).
+    Returns (vias_added, list of (net, ref, pin) that remain outside plane polygons).
+    """
+    n_layers = board.GetCopperLayerCount()
+    pwr_layer = pcbnew.In2_Cu if n_layers == 4 else pcbnew.In4_Cu
+    via_sig_mask = 15
+    plane_nets = ("GND", "AGND", "+3V3_DIG", "+3V3_ANA")
+    nets_by_name = board.GetNetsByName()
 
-    def _add_to_buckets(self, li: int, x0: float, y0: float, x1: float, y1: float, obj):
-        bx0, by0 = int(math.floor(x0)), int(math.floor(y0 + HW_Y))
-        bx1, by1 = int(math.floor(x1)), int(math.floor(y1 + HW_Y))
-        bk = self.buckets[li]
-        for bx in range(bx0 - 1, bx1 + 2):
-            for by in range(by0 - 1, by1 + 2):
-                bk[(bx, by)].append(obj)
+    # Map net_name -> (layer, priority, zone_polygon), all zones by layer, and keepouts
+    plane_zones: dict[str, tuple[int, int, object]] = {}
+    layer_zones: dict[int, list[tuple[str, int, object]]] = {pcbnew.In1_Cu: [], pwr_layer: []}
+    rule_areas: dict[int, list] = {pcbnew.In1_Cu: [], pwr_layer: []}
+    for z in board.Zones():
+        if z.GetIsRuleArea():
+            if z.GetDoNotAllowZoneFills():
+                for layer in (pcbnew.In1_Cu, pwr_layer):
+                    if z.IsOnLayer(layer):
+                        rule_areas[layer].append(z.Outline())
+        else:
+            nn = z.GetNetname().lstrip("/")
+            prio = z.GetAssignedPriority()
+            for layer in (pcbnew.In1_Cu, pwr_layer):
+                if z.IsOnLayer(layer):
+                    layer_zones[layer].append((nn, prio, z.Outline()))
+                    if nn in plane_nets:
+                        plane_zones[nn] = (layer, prio, z.Outline())
 
-    def _add_drill_bucket(self, x0: float, y0: float, x1: float, y1: float, obj):
-        bx0, by0 = int(math.floor(x0)), int(math.floor(y0 + HW_Y))
-        bx1, by1 = int(math.floor(x1)), int(math.floor(y1 + HW_Y))
-        for bx in range(bx0 - 1, bx1 + 2):
-            for by in range(by0 - 1, by1 + 2):
-                self.drill_buckets[(bx, by)].append(obj)
+    # Collect obstacles: pads (non-PTH per F/B, PTH on both), drills, tracks/arcs, vias
+    pad_obs = []   # (nn, layer_mask, x0, y0, x1, y1, cx, cy, is_circ, r)
+    drill_obs = [] # (nn, cx, cy, rx, ry)
+    hv_nets = {"CH1_TIP", "CH1_HV_MID", "CH2_TIP", "CH2_HV_MID"}
+    plane_pads: dict[str, list[tuple[str, str, int, float, float]]] = {n: [] for n in plane_nets}
 
-    def _load_pads_and_drills(self):
-        for fp in self.board.GetFootprints():
-            for p in fp.Pads():
-                nn_raw = p.GetNetname()
-                nn = nn_raw.lstrip("/") if nn_raw else ""
-                nid = self.nid(nn)
-                clr = route_cfg.net_clearance_mm(nn) if nn else route_cfg.DEFAULT_CLR_MM
+    pth_boxes_by_net: dict[tuple[str, str], list[tuple[float, float, float, float]]] = {}
+    for fp in board.GetFootprints():
+        ref = fp.GetReference()
+        for p in fp.Pads():
+            nn = p.GetNetname().lstrip("/")
+            if nn.startswith("unconnected-"):
+                nn = ""
+            bb = p.GetBoundingBox()
+            x0, y0 = pcbnew.ToMM(bb.GetLeft()) - OX, pcbnew.ToMM(bb.GetTop()) - OY
+            x1, y1 = pcbnew.ToMM(bb.GetRight()) - OX, pcbnew.ToMM(bb.GetBottom()) - OY
+            cx, cy = pcbnew.ToMM(p.GetPosition().x) - OX, pcbnew.ToMM(p.GetPosition().y) - OY
+            ds = p.GetDrillSize()
+            has_drill = ds.x > 0 or ds.y > 0
+            mask = (1 if p.IsOnLayer(pcbnew.F_Cu) else 0) | (2 if p.IsOnLayer(pcbnew.B_Cu) else 0)
+            is_circ = p.GetShape() == pcbnew.PAD_SHAPE_CIRCLE
+            r = 0.5 * (x1 - x0) if is_circ else 0.0
+            if mask:
+                pad_obs.append((nn, mask, x0, y0, x1, y1, cx, cy, is_circ, r))
+            if has_drill:
+                drill_obs.append((nn, cx, cy, pcbnew.ToMM(ds.x) / 2.0, pcbnew.ToMM(ds.y) / 2.0))
+                if nn in plane_nets:
+                    pth_boxes_by_net.setdefault((ref, nn), []).append((x0, y0, x1, y1))
+
+    for fp in board.GetFootprints():
+        ref = fp.GetReference()
+        if ref == "J5":
+            continue
+        for p in fp.Pads():
+            nn = p.GetNetname().lstrip("/")
+            if nn in plane_nets and p.GetDrillSize().x == 0 and p.IsOnCopperLayer():
                 bb = p.GetBoundingBox()
-                x0 = pcbnew.ToMM(bb.GetLeft()) - OX
-                y0 = pcbnew.ToMM(bb.GetTop()) - OY
-                x1 = pcbnew.ToMM(bb.GetRight()) - OX
-                y1 = pcbnew.ToMM(bb.GetBottom()) - OY
-                cx = pcbnew.ToMM(p.GetPosition().x) - OX
-                cy = pcbnew.ToMM(p.GetPosition().y) - OY
-                is_circ = p.GetShape() == pcbnew.PAD_SHAPE_CIRCLE
-                r = (x1 - x0) / 2.0 if is_circ else 0.0
-                ds = p.GetDrillSize()
-                has_drill = ds.x > 0 or ds.y > 0
-                if p.IsOnCopperLayer():
-                    mask = (1 if p.IsOnLayer(pcbnew.F_Cu) else 0) | (2 if p.IsOnLayer(pcbnew.B_Cu) else 0) | (4 if has_drill else 0)
-                    obj = ("pad", nid, x0, y0, x1, y1, is_circ, cx, cy, r, clr)
-                    for li in (0, 1, 2):
-                        if mask & (1 << li):
-                            self._add_to_buckets(li, x0, y0, x1, y1, obj)
-                            self._mark_near(li, x0, y0, x1, y1)
-
-                if has_drill:
-                    rx = pcbnew.ToMM(ds.x) / 2.0
-                    ry = pcbnew.ToMM(ds.y) / 2.0
-                    dobj = (nid, cx, cy, rx, ry)
-                    self._add_drill_bucket(cx - rx, cy - ry, cx + rx, cy + ry, dobj)
-                    for li in (0, 1, 2):
-                        self._mark_near(li, cx - rx, cy - ry, cx + rx, cy + ry)
-
-    def add_track(self, nn: str, li: int, ax: float, ay: float, bx: float, by: float, width: float):
-        nid = self.nid(nn)
-        hw = width / 2.0
-        clr = route_cfg.net_clearance_mm(nn)
-        obj = ("trk", nid, ax, ay, bx, by, hw, clr)
-        x0, y0, x1, y1 = min(ax, bx) - hw, min(ay, by) - hw, max(ax, bx) + hw, max(ay, by) + hw
-        self._add_to_buckets(li, x0, y0, x1, y1, obj)
-        self._mark_near(li, x0, y0, x1, y1)
-
-    def add_via(self, nn: str, x: float, y: float):
-        nid = self.nid(nn)
-        clr = route_cfg.net_clearance_mm(nn)
-        vobj = ("via", nid, x, y, VIA_R, clr)
-        for li in (0, 1, 2):
-            self._add_to_buckets(li, x - VIA_R, y - VIA_R, x + VIA_R, y + VIA_R, vobj)
-            self._mark_near(li, x - VIA_R, y - VIA_R, x + VIA_R, y + VIA_R)
-        dobj = (nid, x, y, route_cfg.VIA_DRILL_MM / 2.0, route_cfg.VIA_DRILL_MM / 2.0)
-        self._add_drill_bucket(x - 0.15, y - 0.15, x + 0.15, y + 0.15, dobj)
-        bx0, by0 = int(math.floor(x)), int(math.floor(y + HW_Y))
-        for bx in range(bx0 - 1, bx0 + 2):
-            for by in range(by0 - 1, by0 + 2):
-                self.via_buckets[(bx, by)].append((nid, x, y))
-
-    def point_clear(self, li: int, x: float, y: float, half_w: float, nid: int, clr_me: float,
-                    check_drill: bool = True, ignore_own_pad: bool = False,
-                    allow_afe_in2: bool = False) -> bool:
-        edge_req = max(route_cfg.EDGE_CLR_MM, clr_me if clr_me > 0.3 else 0.0) + half_w
-        if not inside_board(x, y, edge_req):
-            return False
-        if li == 2 and not allow_afe_in2 and in_afe_keepout(x, y, margin=0.35):
-            return False
-        bk_key = (int(math.floor(x)), int(math.floor(y + HW_Y)))
-        seen = set()
-        for obj in self.buckets[li].get(bk_key, ()):
-            oid = id(obj)
-            if oid in seen:
-                continue
-            seen.add(oid)
-            onid = obj[1]
-            if onid == nid:
-                continue
-            kind = obj[0]
-            if kind == "pad":
-                _, _, x0, y0, x1, y1, is_circ, cx, cy, r, oclr = obj
-                req = max(clr_me, oclr) + half_w
-                if is_circ:
-                    if math.hypot(x - cx, y - cy) < r + req:
-                        return False
-                else:
-                    if _rect_box_dist(x, y, x0, y0, x1, y1) < req:
-                        return False
-            elif kind == "trk":
-                _, _, ax, ay, bx, by, ohw, oclr = obj
-                req = max(clr_me, oclr) + half_w + ohw
-                if _seg_dist(x, y, ax, ay, bx, by) < req:
-                    return False
-            else:  # via
-                _, _, vx, vy, vr, oclr = obj
-                req = max(clr_me, oclr) + half_w + vr
-                if math.hypot(x - vx, y - vy) < req:
-                    return False
-
-        if check_drill:
-            hclr = route_cfg.HOLE_CLR_MM + half_w
-            for dobj in self.drill_buckets.get(bk_key, ()):
-                dnid, dx, dy, rx, ry = dobj
-                if dnid == nid and not ignore_own_pad:
+                x0, y0 = pcbnew.ToMM(bb.GetLeft()) - OX, pcbnew.ToMM(bb.GetTop()) - OY
+                x1, y1 = pcbnew.ToMM(bb.GetRight()) - OX, pcbnew.ToMM(bb.GetBottom()) - OY
+                # Skip SMD EP/pad that directly overlaps a same-net PTH on the same footprint (e.g. U1.81)
+                if any(x0 <= px1 and px0 <= x1 and y0 <= py1 and py0 <= y1 for px0, py0, px1, py1 in pth_boxes_by_net.get((ref, nn), ())):
                     continue
-                if _rect_box_dist(x, y, dx - rx, dy - ry, dx + rx, dy + ry) < hclr:
+                cx, cy = pcbnew.ToMM(p.GetPosition().x) - OX, pcbnew.ToMM(p.GetPosition().y) - OY
+                li = 1 if (p.IsOnLayer(pcbnew.B_Cu) and not p.IsOnLayer(pcbnew.F_Cu)) else 0
+                plane_pads[nn].append((ref, p.GetNumber(), li, cx, cy))
+
+    # Tracks/arcs and vias already emitted by routes.py
+    seg_obs = []  # (nn, li, ax, ay, bx, by, hw)
+    via_obs = []  # (nn, vx, vy, r)
+    net_segs: dict[str, list[tuple[float, float, float, float]]] = {n: [] for n in plane_nets}
+    net_vias: dict[str, list[tuple[float, float]]] = {n: [] for n in plane_nets}
+
+    for tr in board.GetTracks():
+        nn = tr.GetNetname().lstrip("/")
+        if tr.GetClass() == "PCB_VIA":
+            vx, vy = pcbnew.ToMM(tr.GetPosition().x) - OX, pcbnew.ToMM(tr.GetPosition().y) - OY
+            vr = pcbnew.ToMM(tr.GetWidth(pcbnew.F_Cu)) / 2.0
+            vdr = pcbnew.ToMM(tr.GetDrill()) / 2.0
+            via_obs.append((nn, vx, vy, vr))
+            drill_obs.append((nn, vx, vy, vdr, vdr))
+            if nn in net_vias:
+                net_vias[nn].append((vx, vy))
+        elif tr.GetClass() in ("PCB_TRACK", "PCB_ARC"):
+            layer = tr.GetLayer()
+            sig_map = (
+                {pcbnew.F_Cu: 0, pcbnew.B_Cu: 1, pcbnew.In2_Cu: 2, pcbnew.In1_Cu: 3}
+                if n_layers == 4
+                else {pcbnew.F_Cu: 0, pcbnew.B_Cu: 1, pcbnew.In2_Cu: 2, pcbnew.In3_Cu: 3}
+            )
+            li = sig_map.get(layer, -1)
+            ax, ay = pcbnew.ToMM(tr.GetStart().x) - OX, pcbnew.ToMM(tr.GetStart().y) - OY
+            bx, by = pcbnew.ToMM(tr.GetEnd().x) - OX, pcbnew.ToMM(tr.GetEnd().y) - OY
+            hw = pcbnew.ToMM(tr.GetWidth()) / 2.0
+            if li >= 0:
+                seg_obs.append((nn, li, ax, ay, bx, by, hw))
+            if nn in net_segs and li in (0, 1, 2, 3):
+                net_segs[nn].append((ax, ay, bx, by))
+
+    def in_plane_poly(nn: str, vx: float, vy: float, inset: float = 0.28) -> bool:
+        if nn not in plane_zones:
+            return False
+        layer, my_prio, outline = plane_zones[nn]
+        ring = [(0.0, 0.0)] + [
+            (inset * math.cos(a * math.pi / 4), inset * math.sin(a * math.pi / 4)) for a in range(8)
+        ]
+        hi_inset = max(inset, 0.62)
+        hi_ring = [(0.0, 0.0)] + [
+            (hi_inset * math.cos(a * math.pi / 4), hi_inset * math.sin(a * math.pi / 4)) for a in range(8)
+        ]
+        # Higher-priority foreign zones carve out lower-priority planes (e.g., AGND/+3V3_ANA inside GND/+3V3_DIG)
+        hi_outs = [zo for znet, zprio, zo in layer_zones[layer] if znet != nn and zprio > my_prio]
+        for dx, dy in ring:
+            q = pcbnew.VECTOR2I(MM(OX + vx + dx), MM(OY + vy + dy))
+            if not outline.Contains(q):
+                return False
+            for ra in rule_areas[layer]:
+                if ra.Contains(q):
+                    return False
+        for dx, dy in hi_ring:
+            q = pcbnew.VECTOR2I(MM(OX + vx + dx), MM(OY + vy + dy))
+            for ho in hi_outs:
+                if ho.Contains(q):
                     return False
         return True
 
-    def via_clear(self, x: float, y: float, nid: int, clr_me: float, min_via_pitch: float = 0.0) -> bool:
-        if min_via_pitch > 0.0:
-            bk_key = (int(math.floor(x)), int(math.floor(y + HW_Y)))
-            for vnid, vx, vy in self.via_buckets.get(bk_key, ()):
-                if vnid != nid and math.hypot(x - vx, y - vy) < min_via_pitch:
-                    return False
-        return self.point_clear(0, x, y, VIA_R + 0.005, nid, clr_me, check_drill=True, ignore_own_pad=True) and \
-               self.point_clear(1, x, y, VIA_R + 0.005, nid, clr_me, check_drill=True, ignore_own_pad=True) and \
-               self.point_clear(2, x, y, VIA_R + 0.005, nid, clr_me, check_drill=True, ignore_own_pad=True, allow_afe_in2=True)
+    def is_pad_grounded_via_routes(nn: str, cx: float, cy: float) -> bool:
+        """Check whether (cx, cy) already reaches any via or PTH inside this plane polygon."""
+        anchors = list(net_vias[nn])
+        for onn, dcx, dcy, _, _ in drill_obs:
+            if onn == nn and in_plane_poly(nn, dcx, dcy, inset=0.10):
+                anchors.append((dcx, dcy))
+        if not anchors:
+            return False
+        pts = [(cx, cy)]
+        for ax, ay in anchors:
+            if math.hypot(ax - cx, ay - cy) < 0.05:
+                return True
+        segs = net_segs[nn]
+        visited = {0}
+        # Collect all segment endpoints + pads on this net, BFS via segment adjacency
+        nodes = [(cx, cy)] + [(ax, ay) for ax, ay in anchors]
+        anchor_start, anchor_end = 1, 1 + len(anchors)
+        for ax, ay, bx, by in segs:
+            nodes.append((ax, ay))
+            nodes.append((bx, by))
+        queue = [0]
+        while queue:
+            ui = queue.pop(0)
+            ux, uy = nodes[ui]
+            if anchor_start <= ui < anchor_end:
+                return True
+            for ax, ay, bx, by in segs:
+                if _seg_point_dist(ux, uy, ax, ay, bx, by) < 0.08:
+                    for wi in range(len(nodes)):
+                        if wi not in visited:
+                            wx, wy = nodes[wi]
+                            if _seg_point_dist(wx, wy, ax, ay, bx, by) < 0.08:
+                                visited.add(wi)
+                                queue.append(wi)
+        return False
 
-    def seg_clear(self, li: int, ax: float, ay: float, bx: float, by: float,
-                  half_w: float, nid: int, clr_me: float) -> bool:
+    def point_clear(nn: str, li_mask: int, x: float, y: float, half_r: float, check_drill: bool = True, is_via: bool = False) -> bool:
+        if not _inside_board(x, y, 0.34 + half_r):
+            return False
+        base_clr = 0.45 if nn in hv_nets else 0.13
+        drill_margin = (vdr + 0.275) if is_via else 0.0
+        for onn, omask, x0, y0, x1, y1, cx, cy, is_circ, r in pad_obs:
+            if onn == nn or not (omask & li_mask):
+                continue
+            req = max(base_clr + half_r, (0.45 + half_r) if onn in hv_nets else 0.0, drill_margin)
+            if is_circ:
+                if math.hypot(x - cx, y - cy) < r + req:
+                    return False
+            elif _box_point_dist(x, y, x0, y0, x1, y1) < req:
+                return False
+        for onn, sli, ax, ay, bx, by, ohw in seg_obs:
+            if onn == nn or not (li_mask & (1 << sli)):
+                continue
+            req = max(base_clr + half_r + ohw, (0.45 + half_r + ohw) if onn in hv_nets else 0.0, drill_margin + ohw)
+            if _seg_point_dist(x, y, ax, ay, bx, by) < req:
+                return False
+        for onn, vx, vy, vr_o in via_obs:
+            if is_via:
+                req = 0.56
+            elif onn == nn:
+                continue
+            else:
+                req = max(base_clr + half_r + vr_o, (0.45 + half_r + vr_o) if onn in hv_nets else 0.0, drill_margin + vr_o)
+            if math.hypot(x - vx, y - vy) < req:
+                return False
+        if check_drill:
+            for onn, dx, dy, rx, ry in drill_obs:
+                if is_via:
+                    hreq = max(rx, ry) + vdr + 0.265
+                    if _box_point_dist(x, y, dx - rx, dy - ry, dx + rx, dy + ry) < vdr + 0.265:
+                        return False
+                elif onn != nn:
+                    if _box_point_dist(x, y, dx - rx, dy - ry, dx + rx, dy + ry) < 0.27 + half_r:
+                        return False
+        return True
+
+    def seg_clear(nn: str, li: int, ax: float, ay: float, bx: float, by: float, hw: float) -> bool:
         length = math.hypot(bx - ax, by - ay)
-        steps = max(2, int(math.ceil(length / 0.035)) + 1)
+        steps = max(2, int(math.ceil(length / 0.08)) + 1)
         for k in range(steps):
             t = k / (steps - 1)
-            px = ax + (bx - ax) * t
-            py = ay + (by - ay) * t
-            if not self.point_clear(li, px, py, half_w + 0.015, nid, clr_me, check_drill=True):
+            if not point_clear(nn, 1 << li, ax + (bx - ax) * t, ay + (by - ay) * t, hw, check_drill=True):
                 return False
         return True
 
+    added_vias = 0
+    unplaced: list[tuple[str, str, str]] = []
+    vr = DEFAULT_VIA[0] / 2.0
+    vdr = DEFAULT_VIA[1] / 2.0
+    stub_w = 0.10
 
-def _pad_breakout(fp: pcbnew.FOOTPRINT, p: pcbnew.PAD) -> tuple[float, float, float, float, int, bool]:
-    """Return (cx, cy, ex_grid, ey_grid, layer_idx, needs_stub) for each pad."""
-    cx = pcbnew.ToMM(p.GetPosition().x) - OX
-    cy = pcbnew.ToMM(p.GetPosition().y) - OY
-    li = 1 if fp.GetLayer() == pcbnew.B_Cu and not p.IsOnLayer(pcbnew.F_Cu) else 0
-    ref = fp.GetReference()
+    # 16 compass angles: cardinal, 45 deg diagonals, and 22.5 deg offsets
+    dirs = [(math.cos(a), math.sin(a)) for a in (0, math.pi, -math.pi/2, math.pi/2, math.pi/4, -math.pi/4, 3*math.pi/4, -3*math.pi/4)]
+    dirs += [(math.cos(a), math.sin(a)) for a in (k * math.pi / 8 for k in range(1, 16, 2))]
+    radii = (0.0, 0.40, 0.52, 0.65, 0.80, 0.96, 1.15, 1.38, 1.65, 2.00)
 
-    if p.GetDrillSize().x > 0 or ref in ("H1", "H2", "J2"):
-        sx, sy = snap(cx, cy)
-        return cx, cy, sx, sy, li, False
+    def bfs_connect_or_drop(
+        nn: str,
+        li: int,
+        cx: float,
+        cy: float,
+        local_vias: list[tuple[float, float]],
+        grounded_list: list[tuple[float, float]],
+        step: float = 0.10,
+        win: float = 16.0,
+        lim: int = 20000,
+    ) -> tuple[list[tuple[float, float]] | None, tuple[float, float] | None]:
+        """Walk F.Cu/B.Cu on a fine grid around (cx, cy) to a shared via/PTH/grounded pad or new valid drop via."""
+        import heapq
+        hw = stub_w / 2.0
+        gx0 = max(0.5, round((cx - win) / step) * step)
+        gy0 = max(-8.4, round((cy - win) / step) * step)
+        gx1 = min(137.5, round((cx + win) / step) * step)
+        gy1 = min(8.4, round((cy + win) / step) * step)
 
-    fxc = pcbnew.ToMM(fp.GetPosition().x) - OX
-    fyc = pcbnew.ToMM(fp.GetPosition().y) - OY
+        # Slice obstacles to the local window (+2 mm margin)
+        m = 2.0
+        li_bit = 1 << li
+        loc_pads_sig = [p for p in pad_obs if p[0] != nn and (p[1] & li_bit) and p[4] >= gx0 - m and p[2] <= gx1 + m and p[5] >= gy0 - m and p[3] <= gy1 + m]
+        loc_pads_all = [p for p in pad_obs if p[0] != nn and p[4] >= gx0 - m and p[2] <= gx1 + m and p[5] >= gy0 - m and p[3] <= gy1 + m]
+        loc_segs_sig = [s for s in seg_obs if s[0] != nn and s[1] == li and max(s[2], s[4]) >= gx0 - m and min(s[2], s[4]) <= gx1 + m and max(s[3], s[5]) >= gy0 - m and min(s[3], s[5]) <= gy1 + m]
+        loc_segs_all = [s for s in seg_obs if s[0] != nn and max(s[2], s[4]) >= gx0 - m and min(s[2], s[4]) <= gx1 + m and max(s[3], s[5]) >= gy0 - m and min(s[3], s[5]) <= gy1 + m]
+        loc_vias_all = [v for v in via_obs if gx0 - m <= v[1] <= gx1 + m and gy0 - m <= v[2] <= gy1 + m]
+        loc_vias_for = [v for v in loc_vias_all if v[0] != nn]
+        loc_drills_all = [d for d in drill_obs if gx0 - m <= d[1] <= gx1 + m and gy0 - m <= d[2] <= gy1 + m]
+        loc_drills_for = [d for d in loc_drills_all if d[0] != nn]
 
-    ex, ey = cx, cy
-    needs_stub = False
-    if ref == "U1" and p.GetNumber().isdigit() and p.GetNumber() != "81":
-        dx, dy = cx - fxc, cy - fyc
-        pin_i = int(p.GetNumber())
-        pin_in_side = (pin_i - 1) % 20
-        if pin_i % 2 == 1:
-            # Odd pins fan inward into U1 moat; stagger middle pins -1.10 / -1.90 (1.60 mm ring pitch!)
-            if 3 <= pin_in_side <= 16 and pin_i % 4 == 3:
-                step = -1.90
-            else:
-                step = -1.10
-        else:
-            step = 0.80
-        if abs(dx) > abs(dy):
-            ex = cx + math.copysign(1.0, dx) * step
-        else:
-            ey = cy + math.copysign(1.0, dy) * step
-        needs_stub = True
-    elif ref in ("U2", "U6", "U8", "D1", "D2", "J4", "J3"):
-        bb = p.GetBoundingBox()
-        w = pcbnew.ToMM(bb.GetWidth())
-        h = pcbnew.ToMM(bb.GetHeight())
-        if w > h * 1.3:
-            sign = 1.0 if cx >= fxc else -1.0
-            pad_clr = 0.15
-            if ref == "J4" and p.GetNumber() != "MP":
-                pad_clr = 0.45
-                if int(p.GetNumber()) % 2 == 1:
-                    sign = -1.0  # J4 odd signal pins fan inward under body -> 1.00 mm pitch
-            elif ref == "U8" and p.GetNumber() in ("1", "4", "7", "10", "13"):
-                # Keep U8 GND vias tucked under SOIC-14 body so outer x=90/98 corridors stay open
-                sign = -1.0 if cx >= fxc else 1.0
-                pad_clr = 0.65
-            ex = cx + sign * (w / 2.0 + pad_clr)
-            needs_stub = True
-        elif h > w * 1.3:
-            sign = 1.0 if cy >= fyc else -1.0
-            if ref == "J3" and p.GetNumber() != "MP":
-                sign = 1.0
-            ey = cy + sign * (h / 2.0 + 0.15)
-            needs_stub = True
-    elif ref == "J1" and p.GetNumber() != "SH":
-        num = p.GetNumber()
-        if num in ("A4", "B4", "A6", "B6", "A7", "B7", "A9", "B9"):
-            # Handled directly by _add_explicit_usb_bridges without duplicate Step-0 stubs
-            ex = cx
-            needs_stub = False
-        else:
-            ex = cx - 0.85
-            needs_stub = True
-
-    ex_g, ey_g = snap(ex, ey)
-    return cx, cy, ex_g, ey_g, li, needs_stub
-
-
-def _emit_track(board: pcbnew.BOARD, net_item, li: int, ax: float, ay: float, bx: float, by: float, width: float):
-    if math.hypot(bx - ax, by - ay) < 0.002:
-        return None
-    t = pcbnew.PCB_TRACK(board)
-    t.SetStart(pcbnew.VECTOR2I(MM(OX + ax), MM(OY + ay)))
-    t.SetEnd(pcbnew.VECTOR2I(MM(OX + bx), MM(OY + by)))
-    t.SetWidth(MM(width))
-    t.SetLayer(LAYERS[li])
-    t.SetNet(net_item)
-    board.Add(t)
-    return t
-
-
-def _emit_via(board: pcbnew.BOARD, net_item, x: float, y: float):
-    v = pcbnew.PCB_VIA(board)
-    v.SetPosition(pcbnew.VECTOR2I(MM(OX + x), MM(OY + y)))
-    v.SetWidth(MM(route_cfg.VIA_DIAM_MM))
-    v.SetDrill(MM(route_cfg.VIA_DRILL_MM))
-    v.SetNet(net_item)
-    board.Add(v)
-
-
-def _bump_unrouted_pad(unrouted_cnt: list[int], ex_g: float, ey_g: float, delta: int, r_cells: int = 4) -> None:
-    """Add `delta` (+1/-1) within `0.45 mm` of `(ex_g, ey_g)` so unrouted pin breakouts stay clear."""
-    cx_i, cy_i = gx(ex_g), gy(ey_g)
-    r2 = 20
-    x0, x1 = max(0, cx_i - r_cells), min(NX - 1, cx_i + r_cells)
-    y0, y1 = max(0, cy_i - r_cells), min(NY - 1, cy_i + r_cells)
-    for iy in range(y0, y1 + 1):
-        dy2 = (iy - cy_i) * (iy - cy_i)
-        row = iy * NX
-        for ix in range(x0, x1 + 1):
-            if (ix - cx_i) * (ix - cx_i) + dy2 <= r2:
-                unrouted_cnt[row + ix] += delta
-
-
-def _astar_route(
-    obs: ObstacleMap,
-    starts: list[tuple[int, int, int]],   # (li, gx, gy)
-    targets: list[tuple[int, int, int]],  # (li, gx, gy)
-    nid: int,
-    half_w: float,
-    clr: float,
-    allowed_layers: tuple[int, ...] = (0, 1, 2),
-    search_pad_mm: float = 16.0,
-    max_exp: int = 25000,
-    unrouted_cnt: list[int] | None = None,
-    min_via_pitch: float = 0.95,
-    h_weight: float = 1.50,
-) -> list[tuple[int, int, int]] | None:
-    """Octilinear A* across (layer, gx, gy) supporting via transitions across F.Cu, B.Cu, and In2.Cu."""
-    target_set = set(targets)
-    if any(s in target_set for s in starts):
-        for s in starts:
-            if s in target_set:
-                return [s]
-
-    xs = [gx_ for _, gx_, _ in starts + targets]
-    ys = [gy_ for _, _, gy_ in starts + targets]
-    pad_cells = int(round(search_pad_mm / RES))
-    x_min = max(0, min(xs) - pad_cells)
-    x_max = min(NX - 1, max(xs) + pad_cells)
-    y_min = max(0, min(ys) - pad_cells)
-    y_max = min(NY - 1, max(ys) + pad_cells)
-
-    # Aim heuristic at the CLOSEST target in `targets` to `starts` (never an average across far-apart clusters!)
-    sx_mean = sum(gx_ for _, gx_, _ in starts) / len(starts)
-    sy_mean = sum(gy_ for _, _, gy_ in starts) / len(starts)
-    best_t = min(targets, key=lambda t: (t[1] - sx_mean) ** 2 + (t[2] - sy_mean) ** 2)
-    tx_aim, ty_aim = best_t[1], best_t[2]
-
-    def h(x: int, y: int) -> int:
-        dx = abs(x - tx_aim)
-        dy = abs(y - ty_aim)
-        dmin, dmax = (dx, dy) if dx < dy else (dy, dx)
-        return int(h_weight * (1414 * dmin + 1000 * (dmax - dmin)))
-
-    clear_cache: dict[tuple[int, int, int], bool] = {}
-    fast_safe = (half_w <= 0.125 and clr <= 0.18)
-    bok = obs.board_ok
-    nc = obs.near_copper
-
-    def is_ok(li: int, x: int, y: int) -> bool:
-        if fast_safe and li != 2:
-            idx = y * NX + x
-            if not bok[idx]:
+        def loc_trk_ok(x: float, y: float) -> bool:
+            if not _inside_board(x, y, 0.32 + hw):
                 return False
-            if not nc[li][idx]:
-                return True
-        k = (li, x, y)
-        res = clear_cache.get(k)
-        if res is None:
-            res = obs.point_clear(li, wx(x), wy(y), half_w, nid, clr)
-            clear_cache[k] = res
-        return res
+            base_clr = 0.45 if nn in hv_nets else 0.105
+            for onn, _omask, x0, y0, x1, y1, pcx, pcy, is_circ, r in loc_pads_sig:
+                req = max(base_clr + hw, (0.45 + hw) if onn in hv_nets else 0.0)
+                if is_circ:
+                    if math.hypot(x - pcx, y - pcy) < r + req:
+                        return False
+                elif _box_point_dist(x, y, x0, y0, x1, y1) < req:
+                    return False
+            for onn, _sli, ax, ay, bx, by, ohw in loc_segs_sig:
+                req = max(base_clr + hw + ohw, (0.45 + hw + ohw) if onn in hv_nets else 0.0)
+                if _seg_point_dist(x, y, ax, ay, bx, by) < req:
+                    return False
+            for onn, vx, vy, vr_o in loc_vias_for:
+                req = max(base_clr + hw + vr_o, (0.45 + hw + vr_o) if onn in hv_nets else 0.0)
+                if math.hypot(x - vx, y - vy) < req:
+                    return False
+            for _onn, dx, dy, rx, ry in loc_drills_for:
+                if _box_point_dist(x, y, dx - rx, dy - ry, dx + rx, dy + ry) < 0.26 + hw:
+                    return False
+            return True
 
-    via_cache: dict[tuple[int, int], bool] = {}
+        def loc_seg_ok(ax: float, ay: float, bx: float, by: float) -> bool:
+            length = math.hypot(bx - ax, by - ay)
+            steps = max(2, int(math.ceil(length / 0.05)) + 1)
+            for k in range(steps):
+                t = k / (steps - 1)
+                if not loc_trk_ok(ax + (bx - ax) * t, ay + (by - ay) * t):
+                    return False
+            return True
 
-    def is_via_ok(li_cur: int, x: int, y: int) -> bool:
-        fx, fy = wx(x), wy(y)
-        k = (x, y)
-        res = via_cache.get(k)
-        if res is None:
-            res = obs.via_clear(fx, fy, nid, clr, min_via_pitch=min_via_pitch)
-            via_cache[k] = res
-        return res
+        def via_drop_ok(vx: float, vy: float) -> bool:
+            if not in_plane_poly(nn, vx, vy, inset=0.25):
+                return False
+            if not _inside_board(vx, vy, 0.32 + vr):
+                return False
+            if any(math.hypot(vx - ox, vy - oy) < 0.56 for _, ox, oy, _ in loc_vias_all):
+                return False
+            drill_margin = vdr + 0.26
+            base_clr = 0.45 if nn in hv_nets else 0.11
+            half_r = vr + 0.005
+            for onn, _omask, x0, y0, x1, y1, pcx, pcy, is_circ, r in loc_pads_all:
+                req = max(base_clr + half_r, (0.45 + half_r) if onn in hv_nets else 0.0, drill_margin)
+                if is_circ:
+                    if math.hypot(vx - pcx, vy - pcy) < r + req:
+                        return False
+                elif _box_point_dist(vx, vy, x0, y0, x1, y1) < req:
+                    return False
+            for onn, _sli, ax, ay, bx, by, ohw in loc_segs_all:
+                req = max(base_clr + half_r + ohw, (0.45 + half_r + ohw) if onn in hv_nets else 0.0, drill_margin + ohw)
+                if _seg_point_dist(vx, vy, ax, ay, bx, by) < req:
+                    return False
+            for _onn, dx, dy, rx, ry in loc_drills_all:
+                if _box_point_dist(vx, vy, dx - rx, dy - ry, dx + rx, dy + ry) < vdr + 0.265:
+                    return False
+            return True
 
-    dist: dict[tuple[int, int, int], int] = {}
-    closed: set[tuple[int, int, int]] = set()
-    prev: dict[tuple[int, int, int], tuple[int, int, int]] = {}
-    pq: list[tuple[int, int, int, int, int]] = []
+        anchors_raw = [(vx, vy) for vx, vy in local_vias if gx0 <= vx <= gx1 and gy0 <= vy <= gy1 and in_plane_poly(nn, vx, vy, inset=0.10)]
+        for onn, dcx, dcy, _, _ in loc_drills_all:
+            if onn == nn and in_plane_poly(nn, dcx, dcy, inset=0.10):
+                anchors_raw.append((dcx, dcy))
+        for px_a, py_a in grounded_list:
+            if gx0 <= px_a <= gx1 and gy0 <= py_a <= gy1 and math.hypot(px_a - cx, py_a - cy) > 0.05:
+                anchors_raw.append((px_a, py_a))
+        seen_a = set()
+        anchors = []
+        for ax, ay in anchors_raw:
+            ak = (round(ax / 0.05) * 0.05, round(ay / 0.05) * 0.05)
+            if ak not in seen_a:
+                seen_a.add(ak)
+                anchors.append((ax, ay))
 
-    for s in starts:
-        dist[s] = 0
-        heapq.heappush(pq, (h(s[1], s[2]), 0, s[0], s[1], s[2]))
-
-    expanded = 0
-    allow_via = len(allowed_layers) > 1
-    via_cost = 1200
-
-    while pq:
-        _, g, li, x, y = heapq.heappop(pq)
-        st = (li, x, y)
-        if st in target_set:
-            path = [st]
-            while st in prev:
-                st = prev[st]
-                path.append(st)
-            path.reverse()
-            return path
-        if st in closed:
-            continue
-        closed.add(st)
-        expanded += 1
-        if expanded > max_exp:
-            return None
-
-        for dx, dy, step_cost in DIRS:
-            nx, ny = x + dx, y + dy
-            if not (x_min <= nx <= x_max and y_min <= ny <= y_max):
+        sx, sy = round(cx / step) * step, round(cy / step) * step
+        prev: dict[tuple[int, int], tuple[int, int] | None] = {(0, 0): None}
+        dist_g: dict[tuple[int, int], float] = {(0, 0): 0.0}
+        pq: list[tuple[float, int, int]] = [(0.0, 0, 0)]
+        visited = set()
+        while pq and len(visited) < lim:
+            g, ix, iy = heapq.heappop(pq)
+            if (ix, iy) in visited:
                 continue
-            nst = (li, nx, ny)
-            pad_pen = 0
-            if nst not in target_set:
-                if not is_ok(li, nx, ny):
+            visited.add((ix, iy))
+            px, py = (cx, cy) if (ix == 0 and iy == 0) else (round(sx + ix * step, 3), round(sy + iy * step, 3))
+            if ix != 0 or iy != 0:
+                for ax, ay in anchors:
+                    if abs(ax - px) <= 0.45 and abs(ay - py) <= 0.45 and loc_seg_ok(px, py, ax, ay):
+                        path = [(ax, ay)]
+                        cur: tuple[int, int] | None = (ix, iy)
+                        while cur is not None:
+                            cpx, cpy = (cx, cy) if cur == (0, 0) else (round(sx + cur[0] * step, 3), round(sy + cur[1] * step, 3))
+                            path.append((cpx, cpy))
+                            cur = prev[cur]
+                        path.reverse()
+                        return path, None
+                if via_drop_ok(px, py) and (math.hypot(px - cx, py - cy) > 0.20 or loc_seg_ok(cx, cy, px, py)):
+                    path = []
+                    cur = (ix, iy)
+                    while cur is not None:
+                        cpx, cpy = (cx, cy) if cur == (0, 0) else (round(sx + cur[0] * step, 3), round(sy + cur[1] * step, 3))
+                        path.append((cpx, cpy))
+                        cur = prev[cur]
+                    path.reverse()
+                    return path, (px, py)
+
+            for dx_i, dy_i in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx_i, ny_i = ix + dx_i, iy + dy_i
+                if (nx_i, ny_i) in visited:
                     continue
-                if dx and dy:
-                    # Strictly check orthogonal shoulders so 45-degree segments never graze a neighbor
-                    if not (is_ok(li, x + dx, y) and is_ok(li, x, y + dy)):
-                        continue
-                if unrouted_cnt and unrouted_cnt[ny * NX + nx] > 0:
-                    pad_pen = 15000
-            else:
-                if dx and dy and not (is_ok(li, x + dx, y) and is_ok(li, x, y + dy)):
-                    # Check segment safety when stepping diagonally onto target
-                    if not obs.seg_clear(li, wx(x), wy(y), wx(nx), wy(ny), half_w, nid, clr):
-                        continue
-            if li == 0:
-                dir_pen = 0 if dx == 0 else (200 if dy == 0 else 100)
-            elif li == 1:
-                dir_pen = 0 if dy == 0 else (200 if dx == 0 else 100)
-            else:
-                dir_pen = 0 if dy == 0 else (350 if dx == 0 else 175)
-            ng = g + step_cost + dir_pen + pad_pen
-            if ng < dist.get(nst, 1 << 60):
-                dist[nst] = ng
-                prev[nst] = st
-                heapq.heappush(pq, (ng + h(nx, ny), ng, li, nx, ny))
-
-        if allow_via and is_via_ok(li, x, y):
-            for nli in allowed_layers:
-                if nli == li:
+                nx, ny = round(sx + nx_i * step, 3), round(sy + ny_i * step, 3)
+                if not (gx0 <= nx <= gx1 and gy0 <= ny <= gy1):
                     continue
-                nst = (nli, x, y)
-                v_pen = 15000 if (unrouted_cnt and unrouted_cnt[y * NX + x] > 0 and nst not in target_set) else 0
-                ng = g + via_cost + v_pen
-                if ng < dist.get(nst, 1 << 60):
-                    dist[nst] = ng
-                    prev[nst] = st
-                    heapq.heappush(pq, (ng + h(x, y), ng, nli, x, y))
+                if not loc_trk_ok(nx, ny):
+                    continue
+                ng = g + 1.0
+                if ng < dist_g.get((nx_i, ny_i), 1e18):
+                    dist_g[(nx_i, ny_i)] = ng
+                    prev[(nx_i, ny_i)] = (ix, iy)
+                    heapq.heappush(pq, (ng, nx_i, ny_i))
+        return None, None
 
-    return None
+    def _emit_path_and_via(nn: str, li: int, path: list[tuple[float, float]], new_via: tuple[float, float] | None, local_vias: list[tuple[float, float]]) -> bool:
+        net_item = nets_by_name[NET(nn)]
+        lay_enum = LAYERS["B"] if li == 1 else LAYERS["F"]
+        # Simplify collinear points
+        simp = [path[0]]
+        for p in path[1:]:
+            if len(simp) >= 2:
+                ax, ay = simp[-2]
+                bx, by = simp[-1]
+                dx1, dy1 = bx - ax, by - ay
+                dx2, dy2 = p[0] - bx, p[1] - by
+                if abs(dx1 * dy2 - dy1 * dx2) < 1e-4 and (dx1 * dx2 + dy1 * dy2) >= 0:
+                    simp[-1] = p
+                    continue
+            if math.hypot(p[0] - simp[-1][0], p[1] - simp[-1][1]) > 0.005:
+                simp.append(p)
+        for a, b in zip(simp, simp[1:]):
+            tr = pcbnew.PCB_TRACK(board)
+            tr.SetStart(pcbnew.VECTOR2I(MM(OX + a[0]), MM(OY + a[1])))
+            tr.SetEnd(pcbnew.VECTOR2I(MM(OX + b[0]), MM(OY + b[1])))
+            tr.SetWidth(MM(stub_w))
+            tr.SetLayer(lay_enum)
+            tr.SetNet(net_item)
+            board.Add(tr)
+            seg_obs.append((nn, li, a[0], a[1], b[0], b[1], stub_w / 2.0))
+            if nn in net_segs:
+                net_segs[nn].append((a[0], a[1], b[0], b[1]))
+        if new_via is not None:
+            vx, vy = new_via
+            via = pcbnew.PCB_VIA(board)
+            via.SetPosition(pcbnew.VECTOR2I(MM(OX + vx), MM(OY + vy)))
+            via.SetWidth(MM(DEFAULT_VIA[0]))
+            via.SetDrill(MM(DEFAULT_VIA[1]))
+            via.SetNet(net_item)
+            board.Add(via)
+            via_obs.append((nn, vx, vy, vr))
+            drill_obs.append((nn, vx, vy, vdr, vdr))
+            local_vias.append((vx, vy))
+            return True
+        return False
 
+    # Phase 1: run Step 1 (share <= 2.50 mm) and Step 2 (radial drop) across all 4 plane nets first
+    local_vias_by_net: dict[str, list[tuple[float, float]]] = {nn: list(net_vias[nn]) for nn in plane_nets}
+    grounded_pads: dict[tuple[str, int], list[tuple[float, float]]] = {(nn, li): [] for nn in plane_nets for li in (0, 1)}
+    deferred_by_net: dict[str, list[tuple[str, str, int, float, float]]] = {nn: [] for nn in plane_nets}
 
-def _collapse_path(path: list[tuple[int, int, int]]) -> tuple[list[tuple[int, float, float, float, float]], list[tuple[float, float]]]:
-    segs, vias = [], []
-    if len(path) <= 1:
-        return segs, vias
-
-    runs: list[tuple[int, list[tuple[int, int]]]] = []
-    cur_li = path[0][0]
-    cur_pts = [(path[0][1], path[0][2])]
-    for li, x, y in path[1:]:
-        if li != cur_li:
-            runs.append((cur_li, cur_pts))
-            vias.append((wx(cur_pts[-1][0]), wy(cur_pts[-1][1])))
-            cur_li = li
-            cur_pts = [(x, y)]
-        else:
-            cur_pts.append((x, y))
-    runs.append((cur_li, cur_pts))
-
-    for li, pts in runs:
-        if len(pts) < 2:
-            continue
-        start = pts[0]
-        dx0 = pts[1][0] - pts[0][0]
-        dy0 = pts[1][1] - pts[0][1]
-        for i in range(1, len(pts) - 1):
-            dx1 = pts[i + 1][0] - pts[i][0]
-            dy1 = pts[i + 1][1] - pts[i][1]
-            if (dx1, dy1) != (dx0, dy0):
-                segs.append((li, wx(start[0]), wy(start[1]), wx(pts[i][0]), wy(pts[i][1])))
-                start = pts[i]
-                dx0, dy0 = dx1, dy1
-        segs.append((li, wx(start[0]), wy(start[1]), wx(pts[-1][0]), wy(pts[-1][1])))
-    return segs, vias
-
-
-def _find_local_plane_via(
-    obs: ObstacleMap, x: float, y: float, li: int, nid: int,
-    clr: float, poly: list[tuple[float, float]], half_w: float,
-    reserved_pts: list[tuple[float, float]] | None = None,
-) -> tuple[float, float] | None:
-    """Search spiraling outward from (x, y) for a clean drop-via inside `poly`."""
-    candidates = []
-    for r_step in range(0, 65):
-        r = r_step * 0.10
-        n_ang = 1 if r_step == 0 else 16
-        for k in range(n_ang):
-            ang = 2.0 * math.pi * k / n_ang
-            vx = wx(gx(x + r * math.cos(ang)))
-            vy = wy(gy(y + r * math.sin(ang)))
-            candidates.append((r, vx, vy))
-
-    seen = []
-    seen_set = set()
-    for _, vx, vy in candidates:
-        if (vx, vy) in seen_set:
-            continue
-        seen_set.add((vx, vy))
-        if in_afe_keepout(vx, vy, margin=0.35):
-            continue
-        if not point_in_poly(vx, vy, poly):
-            continue
-        if not obs.via_clear(vx, vy, nid, clr):
-            continue
-        if obs.seg_clear(li, x, y, vx, vy, half_w, nid, clr):
-            seen.append((vx, vy))
-    if not seen:
-        return None
-    if reserved_pts:
-        # Prefer open via alleys (|vy| >= 4.70 or |vy| <= 0.75) away from unrouted signal breakouts
-        clean = [(vx, vy) for vx, vy in seen if not any(abs(vx - rx) < 0.60 and abs(vy - ry) < 0.60 for rx, ry in reserved_pts)]
-        for vx, vy in clean:
-            if abs(vy) >= 4.70 or abs(vy) <= 0.75:
-                return vx, vy
-        if clean:
-            return clean[0]
-    for vx, vy in seen:
-        if abs(vy) >= 4.70 or abs(vy) <= 0.75:
-            return vx, vy
-    return seen[0]
-
-
-def _connect_plane_net(
-    board: pcbnew.BOARD,
-    obs: ObstacleMap,
-    net_name: str,
-    pad_entries: list[tuple[pcbnew.PAD, float, float, float, float, int, bool]],
-    seed_anchors: list[tuple[int, int, int]] | None = None,
-    reserved_pts: list[tuple[float, float]] | None = None,
-    unrouted_cnt: list[int] | None = None,
-) -> tuple[list, list[tuple[int, int, int]]]:
-    _, poly = route_cfg.PLANE_ZONES[net_name]
-    net_item = board.GetNetsByName()[NET(net_name)]
-    nid = obs.nid(net_name)
-    clr = route_cfg.net_clearance_mm(net_name)
-    w = route_cfg.track_width_mm(net_name)
-    half_w = w / 2.0
-
-    connected_anchors: list[tuple[int, int, int]] = list(seed_anchors) if seed_anchors else []
-    via_pts: list[tuple[int, float, float]] = []
-    smd_entries = []
-
-    for pad, cx, cy, ex_g, ey_g, li, needs_stub in pad_entries:
-        # PTH pad already cuts through In1.Cu and In2.Cu inside the zone polygon!
-        if pad.GetDrillSize().x > 0 and point_in_poly(cx, cy, poly) and not in_afe_keepout(cx, cy, 0.25):
-            connected_anchors.append((li, gx(ex_g), gy(ey_g)))
-            via_pts.append((0, ex_g, ey_g))
-            via_pts.append((1, ex_g, ey_g))
-            via_pts.append((2, ex_g, ey_g))
-        else:
-            smd_entries.append((pad, cx, cy, ex_g, ey_g, li, needs_stub))
-
-    outside_nodes: list[tuple[float, float, float, float, int, bool]] = []
-    for pad, cx, cy, ex_g, ey_g, li, needs_stub in smd_entries:
-        stub_w = 0.13
-        shared_hit = None
-        for ali, ax, ay in via_pts:
-            if ali == li and math.hypot(ax - ex_g, ay - ey_g) <= 2.8:
-                if obs.seg_clear(li, ex_g, ey_g, ax, ay, stub_w / 2.0, nid, clr):
-                    shared_hit = (ax, ay)
+    for nn in plane_nets:
+        local_vias = local_vias_by_net[nn]
+        for ref, pin, li, cx, cy in plane_pads[nn]:
+            if is_pad_grounded_via_routes(nn, cx, cy):
+                grounded_pads[(nn, li)].append((cx, cy))
+                continue
+            # 1) Try sharing an existing via of same net within 2.5 mm
+            shared = None
+            for vx, vy in sorted(local_vias, key=lambda p: math.hypot(p[0] - cx, p[1] - cy)):
+                d = math.hypot(vx - cx, vy - cy)
+                if d <= 2.50 and in_plane_poly(nn, vx, vy, inset=0.10) and seg_clear(nn, li, cx, cy, vx, vy, stub_w / 2.0):
+                    shared = (vx, vy)
                     break
-        if shared_hit is not None:
-            ax, ay = shared_hit
-            if not needs_stub and math.hypot(ex_g - cx, ey_g - cy) > 0.002:
-                _emit_track(board, net_item, li, cx, cy, ex_g, ey_g, stub_w)
-                obs.add_track(net_name, li, cx, cy, ex_g, ey_g, stub_w)
-            if math.hypot(ax - ex_g, ay - ey_g) > 0.002:
-                _emit_track(board, net_item, li, ex_g, ey_g, ax, ay, stub_w)
-                obs.add_track(net_name, li, ex_g, ey_g, ax, ay, stub_w)
-            connected_anchors.append((li, gx(ex_g), gy(ey_g)))
-            continue
+            if shared is not None:
+                vx, vy = shared
+                _emit_path_and_via(nn, li, [(cx, cy), (vx, vy)], None, local_vias)
+                grounded_pads[(nn, li)].append((cx, cy))
+                continue
 
-        res = _find_local_plane_via(obs, ex_g, ey_g, li, nid, clr, poly, stub_w / 2.0, reserved_pts=reserved_pts)
-        if res is not None:
-            vx, vy = res
-            if not needs_stub and math.hypot(ex_g - cx, ey_g - cy) > 0.002:
-                _emit_track(board, net_item, li, cx, cy, ex_g, ey_g, stub_w)
-                obs.add_track(net_name, li, cx, cy, ex_g, ey_g, stub_w)
-            if math.hypot(vx - ex_g, vy - ey_g) > 0.002:
-                _emit_track(board, net_item, li, ex_g, ey_g, vx, vy, stub_w)
-                obs.add_track(net_name, li, ex_g, ey_g, vx, vy, stub_w)
-            _emit_via(board, net_item, vx, vy)
-            obs.add_via(net_name, vx, vy)
-            connected_anchors.append((li, gx(vx), gy(vy)))
-            via_pts.append((0, vx, vy))
-            via_pts.append((1, vx, vy))
-            via_pts.append((2, vx, vy))
-        else:
-            outside_nodes.append((cx, cy, ex_g, ey_g, li, needs_stub))
+            # 2) Search radial candidates for a clean new drop-via inside the target plane polygon
+            chosen = None
+            for rad in radii:
+                if rad == 0.0:
+                    cands = [(cx, cy)]
+                else:
+                    cands = [(round(cx + dx * rad, 3), round(cy + dy * rad, 3)) for dx, dy in dirs]
+                for vx, vy in cands:
+                    if not in_plane_poly(nn, vx, vy, inset=0.28):
+                        continue
+                    # Via occupies all signal layers, drill cannot hit any drill, via-to-via >= 0.56 mm
+                    if not point_clear(nn, via_sig_mask, vx, vy, vr + 0.01, check_drill=True, is_via=True):
+                        continue
+                    if any(math.hypot(vx - ox, vy - oy) < 0.56 for _, ox, oy, _ in via_obs):
+                        continue
+                    if rad == 0.0 or seg_clear(nn, li, cx, cy, vx, vy, stub_w / 2.0):
+                        chosen = (vx, vy)
+                        break
+                if chosen is not None:
+                    break
 
-    if not connected_anchors:
-        px = sum(p[0] for p in poly) / len(poly)
-        py = sum(p[1] for p in poly) / len(poly)
-        res = _find_local_plane_via(obs, px, py, 0, nid, clr, poly, half_w)
-        if res:
-            vx, vy = res
-            _emit_via(board, net_item, vx, vy)
-            obs.add_via(net_name, vx, vy)
-            connected_anchors.append((0, gx(vx), gy(vy)))
+            if chosen is not None:
+                vx, vy = chosen
+                if _emit_path_and_via(nn, li, [(cx, cy), (vx, vy)], (vx, vy), local_vias):
+                    added_vias += 1
+                grounded_pads[(nn, li)].append((cx, cy))
+            else:
+                deferred_by_net[nn].append((ref, pin, li, cx, cy))
 
-    failed = []
-    remaining = list(outside_nodes)
-    while remaining:
-        remaining.sort(key=lambda it: min(math.hypot(it[2] - wx(ax), it[3] - wy(ay)) for _, ax, ay in connected_anchors))
-        cx, cy, ex_g, ey_g, li, needs_stub = remaining.pop(0)
-        routed = False
-
-        # First try finding a nearby clear via inside `poly` and A*-routing directly to it
-        local_vias = []
-        for r_step in range(5, 65, 3):
-            r = r_step * 0.10
-            for k in range(16):
-                ang = 2.0 * math.pi * k / 16
-                vx, vy = snap(ex_g + r * math.cos(ang), ey_g + r * math.sin(ang))
-                if not in_afe_keepout(vx, vy, margin=0.35) and point_in_poly(vx, vy, poly):
-                    if obs.via_clear(vx, vy, nid, clr):
-                        local_vias.append((r, vx, vy))
-            if len(local_vias) >= 4:
-                break
-
-        if local_vias:
-            tx_w = 0.14
-            targets = [(k_li, gx(vx), gy(vy)) for _, vx, vy in local_vias[:4] for k_li in (0, 1, 2)]
-            path = _astar_route(obs, [(li, gx(ex_g), gy(ey_g))], targets, nid, tx_w / 2.0, clr,
-                                allowed_layers=(0, 1, 2), search_pad_mm=12.0, max_exp=30000,
-                                unrouted_cnt=unrouted_cnt, min_via_pitch=0.0, h_weight=1.90)
-            if path is not None:
-                vx, vy = wx(path[-1][1]), wy(path[-1][2])
-                if not needs_stub and math.hypot(ex_g - cx, ey_g - cy) > 0.002:
-                    _emit_track(board, net_item, li, cx, cy, ex_g, ey_g, tx_w)
-                    obs.add_track(net_name, li, cx, cy, ex_g, ey_g, tx_w)
-                segs, vias = _collapse_path(path)
-                for sli, sx0, sy0, sx1, sy1 in segs:
-                    _emit_track(board, net_item, sli, sx0, sy0, sx1, sy1, tx_w)
-                    obs.add_track(net_name, sli, sx0, sy0, sx1, sy1, tx_w)
-                for pvx, pvy in vias:
-                    _emit_via(board, net_item, pvx, pvy)
-                    obs.add_via(net_name, pvx, pvy)
-                _emit_via(board, net_item, vx, vy)
-                obs.add_via(net_name, vx, vy)
-                connected_anchors.append((li, gx(ex_g), gy(ey_g)))
-                connected_anchors.append((0, gx(vx), gy(vy)))
-                via_pts.append((0, vx, vy))
-                via_pts.append((1, vx, vy))
-                via_pts.append((2, vx, vy))
-                routed = True
-
-        if not routed:
-            ranked = sorted(connected_anchors, key=lambda a: math.hypot(ex_g - wx(a[1]), ey_g - wy(a[2])))
-            for anchor in ranked[:6]:
-                tx_w = 0.14
-                path = _astar_route(obs, [(li, gx(ex_g), gy(ey_g))], [anchor], nid, tx_w / 2.0, clr,
-                                    allowed_layers=(0, 1, 2), search_pad_mm=65.0, max_exp=90000,
-                                    unrouted_cnt=None, min_via_pitch=0.0, h_weight=1.90)
+    # Phase 2: interleaved F.Cu/B.Cu BFS fallback across all 4 plane nets (0.10 mm then 0.05 mm)
+    for step, win, lim in ((0.10, 14.0, 15000), (0.10, 18.0, 20000), (0.05, 8.0, 25000), (0.05, 12.0, 30000)):
+        if not any(deferred_by_net.values()):
+            break
+        for nn in plane_nets:
+            deferred = deferred_by_net[nn]
+            if not deferred:
+                continue
+            local_vias = local_vias_by_net[nn]
+            next_deferred = []
+            for ref, pin, li, cx, cy in deferred:
+                if is_pad_grounded_via_routes(nn, cx, cy):
+                    grounded_pads[(nn, li)].append((cx, cy))
+                    continue
+                path, new_via = bfs_connect_or_drop(
+                    nn, li, cx, cy, local_vias, grounded_pads[(nn, li)],
+                    step=step, win=win, lim=lim,
+                )
                 if path is not None:
-                    if not needs_stub and math.hypot(ex_g - cx, ey_g - cy) > 0.002:
-                        _emit_track(board, net_item, li, cx, cy, ex_g, ey_g, tx_w)
-                        obs.add_track(net_name, li, cx, cy, ex_g, ey_g, tx_w)
-                    segs, vias = _collapse_path(path)
-                    for sli, sx0, sy0, sx1, sy1 in segs:
-                        _emit_track(board, net_item, sli, sx0, sy0, sx1, sy1, tx_w)
-                        obs.add_track(net_name, sli, sx0, sy0, sx1, sy1, tx_w)
-                    for vx, vy in vias:
-                        _emit_via(board, net_item, vx, vy)
-                        obs.add_via(net_name, vx, vy)
-                    connected_anchors.append((li, gx(ex_g), gy(ey_g)))
-                    for pt in path[::8]:
-                        connected_anchors.append(pt)
-                    routed = True
-                    break
-        if not routed:
-            failed.append((net_name, round(cx, 2), round(cy, 2)))
-    return failed, connected_anchors
+                    if _emit_path_and_via(nn, li, path, new_via, local_vias):
+                        added_vias += 1
+                    grounded_pads[(nn, li)].append((cx, cy))
+                else:
+                    next_deferred.append((ref, pin, li, cx, cy))
+            deferred_by_net[nn] = next_deferred
 
+    for nn in plane_nets:
+        for ref, pin, _li, _cx, _cy in deferred_by_net[nn]:
+            unplaced.append((nn, ref, pin))
 
-def _add_explicit_usb_bridges(board: pcbnew.BOARD, obs: ObstacleMap):
-    """Route J1 interleaved A6/B6 (DP) & A7/B7 (DM) bridges and VBUS_RAW jumper under USB-C shell."""
-    nb = board.GetNetsByName()
-    dm_net, dp_net = nb[NET("USB_CONN_DM")], nb[NET("USB_CONN_DP")]
-    # J1 exact pad centers: A6=(125.255,+0.25), A7=(125.255,-0.25), B6=(125.255,-0.75), B7=(125.255,+0.75)
-    # USB_CONN_DM: A7 -> (126.9, -0.25) -> via -> B.Cu -> (124.0, +0.75) -> via -> B7
-    for ax, ay, bx, by, li in [
-        (125.255, -0.25, 126.9, -0.25, 0),
-        (126.9, -0.25, 126.9, 0.75, 1),
-        (126.9, 0.75, 124.0, 0.75, 1),
-        (124.0, 0.75, 125.255, 0.75, 0),
-    ]:
-        _emit_track(board, dm_net, li, ax, ay, bx, by, 0.20)
-        obs.add_track("USB_CONN_DM", li, ax, ay, bx, by, 0.20)
-    for vx, vy in [(126.9, -0.25), (124.0, 0.75)]:
-        _emit_via(board, dm_net, vx, vy)
-        obs.add_via("USB_CONN_DM", vx, vy)
-
-    # USB_CONN_DP: A6 -> (127.7, +0.25) -> via -> B.Cu (y=-0.95 clears DM via @ y=-0.25) -> (124.0, -0.75) -> via -> B6
-    for ax, ay, bx, by, li in [
-        (125.255, 0.25, 127.7, 0.25, 0),
-        (127.7, 0.25, 127.7, -0.95, 1),
-        (127.7, -0.95, 124.0, -0.95, 1),
-        (124.0, -0.95, 124.0, -0.75, 1),
-        (124.0, -0.75, 125.255, -0.75, 0),
-    ]:
-        _emit_track(board, dp_net, li, ax, ay, bx, by, 0.20)
-        obs.add_track("USB_CONN_DP", li, ax, ay, bx, by, 0.20)
-    for vx, vy in [(127.7, 0.25), (124.0, -0.75)]:
-        _emit_via(board, dp_net, vx, vy)
-        obs.add_via("USB_CONN_DP", vx, vy)
-
-    # VBUS_RAW: join J1 upper (125.255, -2.45) and lower (125.255, +2.45) on B.Cu at x=123.0 (clear of USB_CONN_DP/DM)
-    vbus_net = nb[NET("VBUS_RAW")]
-    for ax, ay, bx, by, li in [
-        (125.255, -2.45, 124.1, -2.45, 0),
-        (124.1, -2.45, 123.0, -1.35, 1),
-        (123.0, -1.35, 123.0, 1.35, 1),
-        (123.0, 1.35, 124.1, 2.45, 1),
-        (124.1, 2.45, 125.255, 2.45, 0),
-    ]:
-        _emit_track(board, vbus_net, li, ax, ay, bx, by, 0.25)
-        obs.add_track("VBUS_RAW", li, ax, ay, bx, by, 0.25)
-    for vx, vy in [(124.1, -2.45), (124.1, 2.45)]:
-        _emit_via(board, vbus_net, vx, vy)
-        obs.add_via("VBUS_RAW", vx, vy)
-
-
-class NetRouter:
-    """Holds MST forest state per non-plane net so Phase 1 can route short edges first and Phase 3 finishes long ones."""
-
-    def __init__(self, board: pcbnew.BOARD, obs: ObstacleMap, net_name: str,
-                 pad_entries: list[tuple[pcbnew.PAD, float, float, float, float, int, bool]],
-                 extra_seeds: dict[str, list[tuple[int, int, int]]] | None = None):
-        self.board = board
-        self.obs = obs
-        self.net_name = net_name
-        self.net_item = board.GetNetsByName()[NET(net_name)]
-        self.nid = obs.nid(net_name)
-        self.clr = route_cfg.net_clearance_mm(net_name)
-        self.base_w = route_cfg.track_width_mm(net_name)
-
-        self.nodes: list[tuple[int, int, int, float, float, bool]] = []
-        seen_xy = set()
-        for pad, cx, cy, ex_g, ey_g, li, needs_stub in pad_entries:
-            k = (li, gx(ex_g), gy(ey_g))
-            if k in seen_xy:
-                continue
-            seen_xy.add(k)
-            self.nodes.append((k[0], k[1], k[2], cx, cy, needs_stub))
-
-        self.parent = list(range(len(self.nodes)))
-        self.comp_pts: list[list[tuple[int, int, int]]] = [[(n[0], n[1], n[2])] for n in self.nodes]
-        self.bridged = [n[5] for n in self.nodes]
-
-        if extra_seeds and net_name in extra_seeds:
-            if net_name in ("USB_CONN_DP", "USB_CONN_DM", "VBUS_RAW"):
-                idxs = [
-                    i for i, n in enumerate(self.nodes)
-                    if (net_name in ("USB_CONN_DP", "USB_CONN_DM") and wx(n[1]) > 124.5 and abs(wy(n[2])) < 1.5)
-                    or (net_name == "VBUS_RAW" and wx(n[1]) > 124.5 and 2.3 <= abs(wy(n[2])) <= 2.6)
-                ]
-                if len(idxs) >= 2:
-                    r0 = idxs[0]
-                    for j in idxs[1:]:
-                        self.parent[j] = r0
-                        self.comp_pts[r0].extend(self.comp_pts[j])
-                    self.comp_pts[r0].extend(extra_seeds[net_name])
-                    for j in idxs:
-                        self.bridged[j] = True
-            else:
-                # Pre-allocated horizontal B.Cu trunk forms a single connected anchor component for all pin clusters
-                tpts = extra_seeds[net_name]
-                t_idx = len(self.nodes)
-                self.nodes.append((tpts[0][0], tpts[0][1], tpts[0][2], wx(tpts[0][1]), wy(tpts[0][2]), True))
-                self.parent.append(t_idx)
-                self.comp_pts.append(list(tpts))
-                self.bridged.append(True)
-
-    def _find(self, i: int) -> int:
-        while self.parent[i] != i:
-            self.parent[i] = self.parent[self.parent[i]]
-            i = self.parent[i]
-        return i
-
-    def route_up_to(self, max_dist_mm: float, unrouted_cnt: list[int] | None = None) -> list:
-        if len(self.nodes) < 2:
-            return []
-        failed = []
-        skipped_pairs: set[tuple[int, int]] = set()
-        while True:
-            # Find shortest inter-component edge <= max_dist_mm
-            groups: dict[int, list[int]] = defaultdict(list)
-            for i in range(len(self.nodes)):
-                groups[self._find(i)].append(i)
-            roots = list(groups.keys())
-            if len(roots) <= 1:
-                break
-
-            best_pair = None
-            best_d = max_dist_mm + 1e-6
-            for a_i in range(len(roots)):
-                ra = roots[a_i]
-                pts_a = self.comp_pts[ra]
-                for b_i in range(a_i + 1, len(roots)):
-                    rb = roots[b_i]
-                    pair_key = (min(ra, rb), max(ra, rb))
-                    if pair_key in skipped_pairs:
-                        continue
-                    pts_b = self.comp_pts[rb]
-                    # Check min point-to-point distance between component sets
-                    d = min(
-                        math.hypot(wx(pa[1]) - wx(pb[1]), wy(pa[2]) - wy(pb[2]))
-                        for pa in pts_a[::max(1, len(pts_a) // 8)]
-                        for pb in pts_b[::max(1, len(pts_b) // 8)]
-                    )
-                    if d < best_d:
-                        best_d = d
-                        best_pair = (ra, rb, d)
-
-            if best_pair is None:
-                break
-
-            ra, rb, d_est = best_pair
-            pts_u = self.comp_pts[ra]
-            pts_v = self.comp_pts[rb]
-            pad_mm = 15.0 if d_est < 8.0 else (30.0 if d_est < 22.0 else 90.0)
-            cls = design.NETCLASS.get(self.net_name, "LV")
-            min_w = 0.125 if cls in ("POWER", "USB") else 0.096
-            w = max(min_w, self.base_w if d_est < 6.5 else min_w)
-
-            # Sample nearest cluster targets around closest endpoints
-            best_u = min(pts_u, key=lambda pu: min((wx(pu[1]) - wx(pv[1])) ** 2 + (wy(pu[2]) - wy(pv[2])) ** 2 for pv in pts_v))
-            best_v = min(pts_v, key=lambda pv: (wx(best_u[1]) - wx(pv[1])) ** 2 + (wy(best_u[2]) - wy(pv[2])) ** 2)
-            u_cands = [pu for pu in pts_u if math.hypot(wx(pu[1]) - wx(best_u[1]), wy(pu[2]) - wy(best_u[2])) <= 12.0] or [best_u]
-            v_cands = [pv for pv in pts_v if math.hypot(wx(pv[1]) - wx(best_v[1]), wy(pv[2]) - wy(best_v[2])) <= 12.0] or [best_v]
-
-            path = _astar_route(self.obs, u_cands, v_cands, self.nid, w / 2.0 + 0.002, self.clr,
-                                allowed_layers=(0, 1, 2), search_pad_mm=pad_mm, max_exp=35000,
-                                unrouted_cnt=unrouted_cnt, min_via_pitch=0.78, h_weight=1.55)
-            if path is None:
-                w = min_w
-                path = _astar_route(self.obs, pts_u, pts_v, self.nid, w / 2.0 + 0.002, self.clr,
-                                    allowed_layers=(0, 1, 2), search_pad_mm=100.0, max_exp=100000,
-                                    unrouted_cnt=None, min_via_pitch=0.0, h_weight=2.10)
-            if path is None:
-                if max_dist_mm < 1e5:
-                    # Leave unmerged during short-hop Phase 1b so Phase 2/3 retries with full board access
-                    skipped_pairs.add((min(ra, rb), max(ra, rb)))
-                    continue
-                nu = self.nodes[groups[ra][0]]
-                failed.append((self.net_name, round(nu[3], 2), round(nu[4], 2)))
-                # Merge so we don't spin repeatedly on the same disconnected component pair
-                self.parent[rb] = ra
-                self.comp_pts[ra].extend(self.comp_pts[rb])
-                continue
-
-            for end_pt in (path[0], path[-1]):
-                for nidx, n in enumerate(self.nodes):
-                    if not self.bridged[nidx] and (n[0], n[1], n[2]) == end_pt:
-                        ex_g, ey_g = wx(n[1]), wy(n[2])
-                        if math.hypot(ex_g - n[3], ey_g - n[4]) > 0.002:
-                            _emit_track(self.board, self.net_item, n[0], n[3], n[4], ex_g, ey_g, w)
-                            self.obs.add_track(self.net_name, n[0], n[3], n[4], ex_g, ey_g, w)
-                        self.bridged[nidx] = True
-
-            segs, vias = _collapse_path(path)
-            for sli, sx0, sy0, sx1, sy1 in segs:
-                _emit_track(self.board, self.net_item, sli, sx0, sy0, sx1, sy1, w)
-                self.obs.add_track(self.net_name, sli, sx0, sy0, sx1, sy1, w)
-            for vx, vy in vias:
-                _emit_via(self.board, self.net_item, vx, vy)
-                self.obs.add_via(self.net_name, vx, vy)
-
-            self.parent[rb] = ra
-            self.comp_pts[ra].extend(self.comp_pts[rb])
-            self.comp_pts[ra].extend(path[::4])
-        return failed
-
-
-def _run_routing_pass(promoted: list[str]) -> tuple[pcbnew.BOARD, list, int]:
-    from hw import gen_pcb
-    board = gen_pcb.build()
-    board.BuildConnectivity()
-    obs = ObstacleMap(board)
-
-    net_pads: dict[str, list] = defaultdict(list)
-    for fp in board.GetFootprints():
-        for p in fp.Pads():
-            nn = p.GetNetname()
-            if not nn or nn.startswith("unconnected-"):
-                continue
-            cx, cy, ex_g, ey_g, li, needs_stub = _pad_breakout(fp, p)
-            net_pads[nn.lstrip("/")].append((p, cx, cy, ex_g, ey_g, li, needs_stub))
-
-    nets_by_name = board.GetNetsByName()
-    for net_name, entries in net_pads.items():
-        net_item = nets_by_name[NET(net_name)]
-        clr = route_cfg.net_clearance_mm(net_name)
-        nid = obs.nid(net_name)
-        w_stub = 0.125
-        seen_stub = set()
-        for p, cx, cy, ex_g, ey_g, li, needs_stub in entries:
-            if not needs_stub or math.hypot(ex_g - cx, ey_g - cy) < 0.002:
-                continue
-            sk = (li, round(cx, 3), round(cy, 3))
-            if sk in seen_stub:
-                continue
-            seen_stub.add(sk)
-            if obs.seg_clear(li, cx, cy, ex_g, ey_g, w_stub / 2.0, nid, clr):
-                _emit_track(board, net_item, li, cx, cy, ex_g, ey_g, w_stub)
-                obs.add_track(net_name, li, cx, cy, ex_g, ey_g, w_stub)
-
-    _add_explicit_usb_bridges(board, obs)
-    extra_seeds = {
-        "USB_CONN_DM": [(1, gx(124.0), gy(0.75)), (1, gx(125.4), gy(0.75)), (1, gx(126.9), gy(0.25))],
-        "USB_CONN_DP": [(1, gx(124.0), gy(-0.75)), (1, gx(125.8), gy(-0.95)), (1, gx(127.7), gy(0.25))],
-        "VBUS_RAW": [(1, gx(124.1), gy(-2.45)), (1, gx(123.0), gy(0.0)), (1, gx(124.1), gy(2.45))],
-    }
-
-    routers = {
-        nn: NetRouter(board, obs, nn, net_pads[nn], extra_seeds)
-        for nn in route_cfg.ORDERED_NETS
-        if nn in net_pads and nn not in route_cfg.PLANE_ZONES
-    }
-
-    unrouted_cnt = [0] * (NX * NY)
-    net_keepout_pts: dict[str, list[tuple[float, float]]] = {}
-    for nn, entries in net_pads.items():
-        pts = []
-        for p, cx, cy, ex_g, ey_g, li, needs_stub in entries:
-            if p.GetDrillSize().x > 0:
-                continue
-            ref = p.GetParentFootprint().GetReference()
-            if ref == "J1" and p.GetNumber() in ("A4", "B4", "A6", "B6", "A7", "B7", "A9", "B9", "SH"):
-                continue
-            pts.append((ex_g, ey_g))
-            _bump_unrouted_pad(unrouted_cnt, ex_g, ey_g, +1)
-        net_keepout_pts[nn] = pts
-
-    failures = []
-    # Phase 1: Route short signal hops (<= 6.5 mm) while protecting all other unrouted pad breakouts
-    for nn in route_cfg.ORDERED_NETS:
-        if nn in routers:
-            for ex_g, ey_g in net_keepout_pts.get(nn, ()):
-                _bump_unrouted_pad(unrouted_cnt, ex_g, ey_g, -1)
-            routers[nn].route_up_to(6.5, unrouted_cnt=unrouted_cnt)
-            r = routers[nn]
-            if len({r._find(i) for i in range(len(r.nodes))}) > 1:
-                for ex_g, ey_g in net_keepout_pts.get(nn, ()):
-                    _bump_unrouted_pad(unrouted_cnt, ex_g, ey_g, +1)
-
-    # Phase 2: Route ALL remaining signal nets across F.Cu (vertical) and B.Cu (horizontal)
-    head = [n for n in promoted if n in routers]
-    tail = [n for n in route_cfg.ORDERED_NETS if n in routers and n not in head]
-    released = set()
-    for nn in head + tail:
-        if nn not in released:
-            for ex_g, ey_g in net_keepout_pts.get(nn, ()):
-                _bump_unrouted_pad(unrouted_cnt, ex_g, ey_g, -1)
-            released.add(nn)
-        failures.extend(routers[nn].route_up_to(1e6, unrouted_cnt=unrouted_cnt))
-
-    # Phase 3: Connect all 4 plane nets LAST with via sharing and A* fallback
-    reserved_pts = [
-        (e[3], e[4])
-        for nn2, entries2 in net_pads.items()
-        if nn2 not in route_cfg.PLANE_ZONES
-        for e in entries2
-    ]
-    for nn in ("GND", "AGND"):
-        if nn in net_pads:
-            for ex_g, ey_g in net_keepout_pts.get(nn, ()):
-                _bump_unrouted_pad(unrouted_cnt, ex_g, ey_g, -1)
-            f, _ = _connect_plane_net(board, obs, nn, net_pads[nn], reserved_pts=reserved_pts, unrouted_cnt=unrouted_cnt)
-            failures.extend(f)
-
-    board.BuildConnectivity()
-    filler = pcbnew.ZONE_FILLER(board)
-    filler.Fill(board.Zones())
-    return board, failures, len(net_pads)
+    return added_vias, unplaced
 
 
 def main():
-    promoted: list[str] = []
-    board = None
-    failures = []
-    total_nets = 0
-    for attempt in range(1, 5):
-        board, failures, total_nets = _run_routing_pass(promoted)
-        print(f"pass {attempt}: routed {total_nets} nets, failures={len(failures)}: {failures[:20]}", flush=True)
-        if not failures:
-            break
-        new_bad = [f[0] for f in failures if f[0] not in promoted]
-        if not new_bad:
-            break
-        promoted = new_bad + promoted
+    from hw import routes
 
+    board = pcbnew.LoadBoard(str(PCB_FILE))
+    add_routes(board, routes.ROUTES)
+    vcount, unplaced = place_plane_vias(board)
+    board.BuildConnectivity()
+    filler = pcbnew.ZONE_FILLER(board)
+    filler.Fill(board.Zones())
+    print(f"plane vias added: {vcount}, outside-polygon manual pads: {len(unplaced)}")
+    if unplaced:
+        print("  manual plane pads:", unplaced[:20])
     pcbnew.SaveBoard(str(PCB_FILE), board)
-    if failures:
-        sys.exit(1)
+    print("routed and filled", PCB_FILE)
 
 
 if __name__ == "__main__":

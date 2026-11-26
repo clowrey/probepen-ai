@@ -1,11 +1,15 @@
-"""Write hw/probepen_ai.kicad_pcb (outline, 4-layer stackup, placement, rules, zones)
-and hw/out/board_features.json from hw/design.py and hardware/pcb_datum.py.
+"""Write hw/probepen_ai.kicad_pcb (138 x 17.6 mm S-curve tapered outline, 4-layer stackup,
+placement, rules, zones) and hw/out/board_features.json from hw/design.py and hardware/pcb_datum.py.
+
+Routing & placement rule: before routing traces, always check and optimize component rotations and
+non-fixed support placement for direct signal flow (only nose J5/LEDs and tail USB-C J1 stay fixed).
 
 Run with KiCad's Python after hw/gen_sch.py:
     kicad-python hw/gen_pcb.py
 
 Coordinates in PLACE: mm relative to board datum (origin nose-tip center, +X toward USB-C tail,
-Y centered -7.5..+7.5 mm, Y-down in KiCad). On the KiCad page the board sits shifted by (OX, OY).
+Y centered -7.0..+7.0 nose tapering via smooth C1 S-curve x=18..28 to -8.80..+8.80 body, Y-down in KiCad).
+On the KiCad page the board sits shifted by (OX, OY).
 hw/out/board_features.json converts to right-handed CAD coordinates (origin nose-tip center, Y-up).
 """
 from __future__ import annotations
@@ -26,7 +30,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))
 
-from hardware.pcb_datum import PCB as DATUM  # noqa: E402
+from hardware.pcb_datum import PCB as DATUM, half_width_at, point_in_pcb, scurve_params  # noqa: E402
 from hw import design  # noqa: E402
 from hw.parts import PARTS  # noqa: E402
 
@@ -54,12 +58,15 @@ KICAD_FP = _find_kicad_fp()
 LOCAL_FP = HERE / "lib" / "ppa.pretty"
 
 # Board mechanical envelope (from hardware/pcb_datum.py)
-L = float(DATUM["length"])        # 132.0 mm (X: 0 .. 132)
-W = float(DATUM["width"])         # 15.0 mm  (Y: -7.5 .. +7.5)
-HW_Y = W / 2.0                    # 7.5 mm
-THK = float(DATUM["thickness"])   # 1.6 mm
-R_NOSE = float(DATUM["nose_radius"])  # 4.0 mm
-R_TAIL = float(DATUM["tail_radius"])  # 1.5 mm
+L = float(DATUM["length"])            # 138.0 mm (X: 0 .. 138)
+W_NOSE = float(DATUM["nose_width"])   # 14.0 mm  (X: 0 .. 18)
+HN_Y = W_NOSE / 2.0                   # 7.0 mm
+TX0, TX1 = (float(v) for v in DATUM["taper_x"])  # 18.0 .. 28.0
+W = float(DATUM["width"])             # 17.60 mm (X: 28 .. 138, exact 1.14" LCD glass width)
+HW_Y = W / 2.0                        # 8.80 mm
+THK = float(DATUM["thickness"])       # 1.6 mm
+R_NOSE = float(DATUM["nose_radius"])  # 2.0 mm
+R_TAIL = float(DATUM["tail_radius"])  # 2.0 mm
 
 # KiCad drawing-sheet origin for datum (0, 0)
 OX, OY = 20.0, 50.0
@@ -86,336 +93,178 @@ def NET(name: str) -> str:
 
 # ----------------------------------------------------------------------------------------------
 # Component placement: ref -> (x, y, rot_deg) on F.Cu, or (x, y, rot_deg, "B") for B.Cu
-# All 147 populated SMT parts + H1/H2 stay on F.Cu (single-sided JLCPCB assembly).
-# Only DNP test pads (TP_*) and optional trimmer (CT1) sit on B.Cu.
+# All populated SMT parts stay on F.Cu (single-sided JLCPCB assembly); no PCB mounting holes.
+# J4 (13P solder-on LCD FPC landing), CT1 (optional DNP compensation trimmer), and digital TP_*
+# sit on B.Cu cleanly separated from the LCD glass/FPC, while analog TP_* sit on F.Cu.
 # ----------------------------------------------------------------------------------------------
 def _jst_kicad_xy() -> tuple[float, float]:
     sx, sy_cad = DATUM["side_jst_xy"]
-    return sx, -sy_cad  # CAD Y-up (+4.1) -> KiCad Y-down (-4.1)
+    return sx, -sy_cad  # CAD Y-up (+5.4) -> KiCad Y-down (-5.4)
 
 
 PLACE: dict[str, tuple] = {
-    # ---- Nose tip, LEDs, and High-Z AFE input divider (inside x=2..16.5 keepout) ----
-    "J2": (*DATUM["tip_boss_xy"], 0),
-    "LED1": (*DATUM["led_top_xy"], 0),
-    "LED2": (*DATUM["led_bot_xy"], 0),
-    "R1": (11.8, -1.8, 0),
-    "R2": (11.8, 0.5, 0),
-    "C32": (11.8, -3.4, 0),
-    "R3": (14.6, -2.5, 90),
-    "C33": (14.6, 0.2, 90),
-    "D4": (13.8, 3.3, 0),
-    "C60": (12.2, -5.8, 0),
-    "C61": (12.2, 5.8, 0),
-    "D5": (15.0, -5.9, 0),
-    "R51": (18.0, -5.8, 0),
-    "CT1": (13.8, 0.0, 0, "B"),
+    # ---- Block 1 (x = 0..29): Nose 3-in-1 terminal, front worklight LEDs & HV AFE dividers -
+    "J5":   (*DATUM["nose_term_xy"], 0),
+    "LED1": (*DATUM["led_top_xy"], 270, "B"),
+    "LED2": (*DATUM["led_bot_xy"], 270, "B"),
+    "R51A": (26.2, -7.2, 270),
+    "R51B": (28.8, -7.2, 270),
+    "R1":   (19.3, -2.4, 0),
+    "R2":   (23.0, -2.4, 0),
+    "C32":  (22.4, -4.1, 0),
+    "R3":   (26.2, -5.3, 0),
+    "R3U":  (26.2, -4.0, 0),
+    "C33":  (26.2, -2.7, 0),
+    "R1B":  (19.3, 2.4, 0),
+    "R2B":  (23.0, 2.4, 0),
+    "C32B": (22.4, 4.1, 0),
+    "R3B":  (26.2, 5.3, 0),
+    "R3UB": (26.2, 4.0, 0),
+    "C33B": (26.2, 2.7, 0),
+    "CT1":  (21.2, -3.5, 0, "B"),
+    "CT2":  (21.2, 3.5, 0, "B"),
 
-    # ---- Front M2 hole, U3 input buffer, BOOTSEL / button pull-ups, +3V3_DIG LDO ----
-    "H1": (*DATUM["mount_hole_front_xy"], 0),
-    "U3": (24.5, 0.0, 0),
-    "C34": (24.5, -2.6, 0),
-    "C35": (24.5, 2.6, 0),
-    "D6": (25.0, 5.4, 0),
-    "R21": (28.2, 5.4, 0),
-    "R49": (28.5, -3.5, 0),
-    "R50": (28.5, 3.5, 0),
+    # ---- Block 2 (x = 29..53): Front M2 NPTH, clamps, RS8752 buffer, power tree & Buttons ---
+    "D4":   (29.2, -4.3, 0),
+    "H1":   (*DATUM["mount_hole_front_xy"], 0),
+    "D4B":  (29.2, 4.3, 0),
 
-    # ---- Switches & 8P LCD FPC (centerline; support passives & digital LDO on edges) ----
-    "SW1": (*DATUM["btn_ask_ai_xy"], 0),
-    "SW2": (*DATUM["btn_mode_xy"], 0),
-    "J4": (*DATUM["lcd_fpc_xy"], 270),
-    "R47": (34.0, -5.2, 0),
-    "R48": (37.5, -5.2, 0),
-    "Q1": (42.0, -5.2, 0),
-    "C58": (48.5, -5.2, 0),
-    "C59": (48.5, 5.2, 0),
-    # +3V3_DIG LDO (U9) + caps in open bay under SW1/SW2 (+5V_VBUS & +3V3_DIG trunk)
-    "C2": (33.5, 5.2, 0),
-    "U9": (38.0, 5.2, 0),
-    "C3": (42.5, 5.2, 0),
+    # +3V3_DIG LDO & FB1 aligned along north power rail (y = -7.2, all 0 deg)
+    "C2":   (31.6, -7.2, 0),
+    "U9":   (35.3, -6.9, 0),
+    "C3":   (39.0, -7.2, 0),
+    "FB1":  (42.0, -7.2, 0),
 
-    # ---- Under LCD glass (x = 51.5..78.2, STRICTLY low-profile <= 1.3 mm) ----
-    # Col 1 (x=52.5..55.6): Analog LDO (+3V3_ANA) + Voltage Reference (+3V0_REF)
-    "FB1": (52.5, -5.0, 90),
-    "C4": (54.5, -5.0, 90),
-    "U10": (53.6, -1.2, 0),
-    "C5": (53.6, 1.6, 0),
-    "U5": (53.6, 4.4, 0),
-    # Col 2 (x=56.0..61.9): Negative charge pump & LDO (-3V3_RAW -> -1V8_ANA) + REF caps
-    "C6": (56.5, -5.8, 90),
-    "C7": (57.8, -5.8, 90),
-    "C62": (59.1, -5.8, 90),
-    "C8": (56.8, -2.8, 90),
-    "U11": (59.8, -2.8, 0),
-    "C9": (59.8, -0.2, 0),
-    "C10": (57.8, 1.3, 0),
-    "U12": (58.5, 4.1, 0),
-    # Col 3 (x=60.7..68.8): Negative LDO feedback, Precision Reference String, Gain Switch U6
-    "C11": (61.5, 0.6, 90),
-    "R15": (62.5, 3.8, 0),
-    "R14": (62.5, 5.6, 0),
-    "R7A": (62.0, -5.8, 0),
-    "R7B": (64.2, -5.8, 0),
-    "R8": (64.2, -4.5, 0),
-    "C36": (66.4, -5.8, 0),
-    "C37": (66.4, -4.5, 0),
-    "R9A": (64.2, -3.2, 0),
-    "R9B": (66.4, -3.2, 0),
-    "U6": (65.6, -0.5, 0),
-    "C38": (65.6, 2.0, 0),
-    "R23": (65.6, 3.2, 0),
-    "R4": (65.6, 4.4, 0),
-    "R5": (65.6, 5.6, 0),
-    "R6": (67.8, 5.6, 0),
-    # Col 4 (x=68.8..73.6): OPA356 #2 (U4) + TLV3501 comparator (U7) + DC filter
-    "C40": (69.8, -5.8, 0),
-    "U4": (71.0, -3.3, 0),
-    "C39": (70.2, -0.8, 0),
-    "R24": (70.2, 0.4, 0),
-    "C41": (70.2, 1.6, 0),
-    "R42": (72.4, 0.4, 0),
-    "U7": (71.5, 4.1, 0),
-    "C55": (70.2, 6.4, 0),
-    "R40": (72.5, 6.4, 0),
-    # Col 5 (x=73.7..77.7): PWM threshold filter + MS9280 analog reference/bypass passives
-    "R39": (74.8, -5.6, 0),
-    "R38": (74.8, -4.4, 0),
-    "C45": (74.8, -3.2, 0),
-    "C44": (74.8, -2.0, 0),
-    "C51": (74.8, -0.8, 0),
-    "C50": (74.8, 0.4, 0),
-    "C42": (74.8, 1.6, 0),
-    "R25": (74.8, 2.8, 0),
-    "C54": (74.8, 4.0, 0),
-    "R41": (74.8, 5.2, 0),
-    "C53": (74.8, 6.4, 0),
-    "C49": (76.9, -4.8, 90),
-    "C46": (76.9, -2.6, 90),
-    "C48": (76.9, 0.0, 90),
-    "C47": (76.9, 2.6, 90),
-    "C43": (76.9, 4.8, 90),
+    # Shared dual RS8752XM input buffer (A=CH1, B=CH2)
+    "U3":   (35.0, 0.0, 0),
+    "C34":  (35.0, -3.4, 0),
 
-    # ---- MS9280 10-bit ADC (U2) + Star ground tie (R16) ----
-    "U2": (*DATUM["ms9280_xy"], 180),
-    "R16": (83.0, -6.3, 0),
-    "C52": (81.8, 6.3, 0),
-    "R37": (84.2, 6.3, 0),
+    # Analog power tree & 1.000 V reference in crisp aligned columns
+    "C4":   (41.8, -4.5, 0),
+    "U10":  (41.8, -1.8, 0),
+    "C5":   (41.8, 1.2, 0),
+    "U5":   (46.8, -1.8, 0),
+    "C7":   (46.8, 1.2, 0),
+    "R7":   (51.2, -3.4, 0),
+    "R8":   (51.2, -2.0, 180),
 
-    # ---- Parallel ADC bus termination + 4-ch Side Logic Pod (J3, D2, U8, F2) ----
-    # Spaced 1.4 mm apart with a 2.3 mm open center highway (y=-0.1..+1.7) so x=89 never forms a via wall
-    "R36": (80.2, -6.3, 0),
-    "R35": (86.2, -6.3, 0),
-    "R34": (88.8, -4.8, 0),
-    "R33": (88.8, -3.4, 0),
-    "R32": (88.8, -2.0, 0),
-    "R31": (88.8, -0.6, 0),
-    "R30": (88.8, 2.2, 0),
-    "R29": (88.8, 3.6, 0),
-    "R28": (88.8, 5.0, 0),
-    "R27": (88.8, 6.4, 0),
-    "R26": (86.8, 6.3, 0),
-    "J3": (*_jst_kicad_xy(), 180),
-    "F2": (101.2, -3.5, 90),
-    "C56": (101.2, -6.2, 90),
-    "R43": (91.6, -0.1, 0),
-    "R44": (93.7, -0.1, 0),
-    "R45": (95.8, -0.1, 0),
-    "R46": (97.9, -0.1, 0),
-    "U8": (94.0, 3.6, 0),
-    "D2": (99.8, 2.8, 90),
-    "C57": (99.8, 5.9, 0),
+    # 4 side-actuated buttons (clean south strip, RP2354B internal pull-ups)
+    "SW1":  (*DATUM["btn_ask_ai_xy"], 180),
+    "SW2":  (*DATUM["btn_mode_xy"], 180),
+    "SW3":  (*DATUM["btn_up_xy"], 180),
+    "SW4":  (*DATUM["btn_down_xy"], 180),
 
-    # ---- RP2354B MCU (U1) + 10x IOVDD decoupling + Core/ADC bypass ----
-    "U1": (*DATUM["rp2354b_xy"], 0),
-    "C13": (104.6, -6.3, 0),
-    "C14": (106.8, -6.3, 0),
-    "C15": (109.0, -6.3, 0),
-    "C16": (111.2, -6.3, 0),
-    "C17": (113.4, -6.3, 0),
-    "C18": (104.6, 6.3, 0),
-    "C19": (106.8, 6.3, 0),
-    "C20": (109.0, 6.3, 0),
-    "C21": (111.2, 6.3, 0),
-    "C22": (113.4, 6.3, 0),
-    "C26": (115.5, -4.5, 90),
-    "C27": (115.5, -1.5, 90),
-    "C28": (115.5, 1.5, 90),
-    "C29": (115.5, 4.5, 90),
+    # Analog test pads spaced cleanly for silkscreen legibility
+    "TP_3V3A":  (45.8, -7.3, 0),
+    "TP_AGND":  (49.8, -7.3, 0),
+    "TP_3V0R":  (53.4, -7.3, 0),
+    "TP_REF1V": (57.0, -7.3, 0),
+    "TP_CH1":   (69.0, -7.3, 0),
+    "TP_CH2":   (69.0, 4.6, 0),
 
-    # ---- Rear M2 hole, Core VREG buck, 12 MHz XTAL, USB protection & USB-C tail ----
-    "H2": (*DATUM["mount_hole_rear_xy"], 0),
-    "L1": (118.4, -4.5, 0),
-    "C25": (121.2, -4.7, 90),
-    "C24": (122.9, -4.7, 90),
-    "C23": (120.7, 6.2, 0),
-    "Y1": (118.6, 3.6, 0),
-    "R20": (121.9, 4.2, 0),
-    "C30": (121.9, 3.0, 0),
-    "C31": (123.5, 6.3, 0),
-    "F1": (122.7, -1.3, 90),
-    "R12": (122.7, 1.3, 90),
-    "R13": (126.2, 6.2, 0),
-    "J1": (*DATUM["usbc_xy"], 90),
-    "D1": (126.0, -5.6, 0),
-    "C1": (129.0, -6.2, 0),
-    "R10": (129.0, -4.8, 0),
-    "R11": (129.0, 4.8, 0),
-    "R17": (129.0, 6.2, 0),
-    "R18": (131.0, 6.2, 0),
-    "C12": (131.0, 4.8, 0),
-    "R19": (125.0, -6.3, 0),
-    "R22": (120.5, 6.3, 0),
+    # ---- Block 3 (x = 56..76): Shared RS8752XM 2-Gain Inverting PGA & 74LVC2G66DP Switch ----
+    "R4A":  (56.5, -3.6, 0),
+    "R5A":  (56.5, -2.2, 0),
+    "C40A": (56.5, -0.8, 0),
+    "C40B": (56.5, 0.8, 0),
+    "R5B":  (56.5, 2.2, 0),
+    "R4B":  (56.5, 3.6, 0),
 
-    # ---- Bottom-side DNP test pads (near their signal pins; y=+-6.15 strips keep B.Cu highway open) ----
-    "TP_AGND": (55.0, -6.15, 0, "B"),
-    "TP_3V3A": (58.5, -6.15, 0, "B"),
-    "TP_3V0R": (55.0, 6.15, 0, "B"),
-    "TP_N1V8": (62.0, -6.15, 0, "B"),
-    "TP_VADC": (68.0, 6.15, 0, "B"),
-    "TP_3V3D": (86.0, -6.15, 0, "B"),
-    "TP_5V": (36.5, 6.15, 0, "B"),
-    "TP_1V1": (117.0, -2.8, 0, "B"),
-    "TP_GND2": (117.0, 2.8, 0, "B"),
-    "TP_SWCLK": (121.8, -3.8, 0, "B"),
-    "TP_SWDIO": (121.8, 3.8, 0, "B"),
-    "TP_RUN": (25.8, -5.6, 0, "B"),
-    "TP_BOOT": (28.2, 5.4, 0, "B"),
-    "TP_GND1": (98.0, -6.15, 0, "B"),
+    "U4":   (62.2, 0.0, 0),
+    "C39":  (62.2, -3.6, 0),
+
+    "R6A":  (66.5, -2.2, 0),
+    "R6B":  (66.5, 2.2, 0),
+
+    "U6":   (70.8, 0.0, 0),
+
+    "R24":  (75.2, -4.8, 0),
+    "C41":  (75.2, -3.6, 180),
+    "R25A": (75.2, -2.4, 0),
+    "C42":  (75.2, -1.2, 180),
+    "C36":  (75.2, 0.0, 180),
+    "C42B": (75.2, 1.2, 180),
+    "R25B": (75.2, 2.4, 0),
+    "C41B": (75.2, 3.6, 180),
+    "R24B": (75.2, 4.8, 0),
+
+    # ---- Block 4 (x = 78.6..92.0): Centered AD9288 (U2 DNP), Star Ground, J4 LCD on B.Cu --
+    "U2":   (*DATUM["ad9288_xy"], 0),
+    "C44":  (78.6, -0.9, 0),
+    "C46":  (82.0, -6.8, 0),
+    "C47":  (78.6, 3.0, 0),
+    "R16":  (85.0, -7.2, 0),
+    "C52A": (87.4, -7.0, 0),
+    "C49":  (91.0, -0.35, 90),
+    "R36A": (91.4, -3.6, 180),
+    "R36B": (91.4, 3.1, 180),
+    "J4":   (*DATUM["lcd_fpc_xy"], 180, "B"),
+
+    # ---- Block 5 (x = 90.0..97.0): LCD Backlight PWM & BOOTSEL (open center for ADC bus) ----
+    "R48":  (90.2, -7.2, 180),
+    "Q1":   (93.8, -7.05, 180),
+    "R47":  (96.8, -7.2, 0),
+    "C58":  (91.0, 7.6, 0),
+    "D6":   (95.4, 7.75, 180),
+
+    # ---- Block 6 (x = 99.5..113.0): RP2354B MCU (U1) & tight edge decoupling -------------
+    "U1":   (*DATUM["rp2354b_xy"], 0),
+    "R21":  (99.7, -7.2, 180),
+    "C17":  (104.0, -7.2, 0),
+    "C23":  (107.6, -7.2, 0),
+
+    "C14":  (98.9, 7.8, 0),
+    "C26":  (102.9, 7.9, 0),
+    "R22":  (107.2, 7.3, 180),
+    "C15":  (109.8, 7.3, 0),
+
+    "L1":   (113.0, -3.2, 270),
+    "C25":  (114.8, -2.2, 270),
+    "C29":  (110.9, -2.6, 270),
+    "C24":  (109.6, -7.4, 0),
+    "R19":  (109.6, -6.1, 180),
+    "C16":  (113.2, 5.0, 0),
+    "C27":  (113.2, 6.2, 0),
+    "R20":  (113.8, 7.5, 0),
+
+    # ---- Block 7 (x = 114.5..138): 6P Header (J3), XTAL (Y1), Rear H2, USB ESD & USB-C ----
+    "R12":  (112.4, -7.4, 180),
+    "R13":  (112.4, -5.8, 180),
+    "J3":   (*_jst_kicad_xy(), 180),
+    "R46":  (116.5, -0.8, 180),
+    "R45":  (116.5, 0.4, 180),
+    "R44":  (116.5, 1.6, 180),
+    "R43":  (116.5, 2.8, 180),
+    "D2":   (120.4, 0.4, 90),
+    "F2":   (116.5, 4.8, 0),
+    "C56":  (116.5, 6.4, 180),
+
+    "Y1":   (121.6, 4.7, 0),
+    "C30":  (120.4, 7.05, 0),
+    "C31":  (122.8, 7.05, 180),
+
+    "H2":   (*DATUM["mount_hole_rear_xy"], 0),
+    "D1":   (127.6, -6.9, 0),
+    "F1":   (131.8, -6.9, 0),
+    "C1":   (134.2, -6.9, 270),
+    "R10":  (135.3, -6.9, 90),
+    "R11":  (136.4, -6.8, 90),
+    "J1":   (*DATUM["usbc_xy"], 90),
+    "R17":  (131.6, 7.0, 0),
+    "R18":  (134.0, 7.0, 0),
+    "C12":  (129.6, 7.2, 270),
+
+    # ---- Bottom-side DNP test pads (STRICTLY outside x = 32.0..80.0 LCD glass/FPC!) -------
+    "TP_5V":    (25.2, -7.4, 0, "B"),
+    "TP_GND1":  (90.5, -7.75, 0, "B"),
+    "TP_3V3D":  (118.5, -7.75, 0, "B"),
+    "TP_BOOT":  (99.5, -7.75, 0, "B"),
+    "TP_RUN":   (113.2, 3.5, 0, "B"),
+    "TP_1V1":   (114.6, -4.0, 0, "B"),
+    "TP_GND2":  (115.0, 1.5, 0, "B"),
+    "TP_SWCLK": (115.6, 6.4, 0, "B"),
+    "TP_SWDIO": (115.8, 4.0, 0, "B"),
 }
-
-
-def _reconcile_nonoverlapping_placements():
-    """Verify and resolve exact PLACE table without any courtyard or edge violation."""
-    # Checked/adjusted slots where C23/R19/R22/D1 sit cleanly without any clash:
-    PLACE["R19"] = (117.7, -6.6, 0)     # Wait: avoid -6.6 vs L1 -6.27 -> put above U1 or beside H2
-    PLACE["C23"] = (115.6, 6.3, 90)     # check H2 [116.52, 121.48] and U1 [103.38, 114.62]
-    # Let's keep explicit static coordinates in PLACE above, refined below cleanly:
-
-
-# Override the clean verified sub-block in Region H & I where tail arc starts at x=130.5:
-# Tail corner radius is 1.5 mm at x = 130.5..132.0, y = +-6.0..+-7.5.
-# Above/below J1 (x = 124.01..133.47, y = -5.34..+5.34):
-# Note y_crt of J1 ends at +-5.34! So in y = +-6.3 (span +-5.81..-6.79):
-#   Only x = 124.0..130.4 is inside the flat tail top/bottom edge (before R1.5 corner arc!).
-# And in x = 113.3..116.4 (width 3.1 mm between U1 x<=114.62 and H2 x>=116.52? No, U1 ends at 114.62!):
-#   Wait: gap between U1 (114.62) and H2 (116.52) is 1.90 mm -> fits ONLY one vertical 0402 column at x=115.57!
-# Wait: where can we put D1, C23, R19, R22, R17, R18, C12 cleanly?
-# Look at all our genuinely HUGE empty areas on F.Cu:
-#   1) x = 21.5 .. 30.2 (between H1 and SW1):
-#      y = -6.8 .. -3.3 -> EMPTY (8.7 x 3.5 mm!)
-#   2) x = 30.2 .. 46.0, y = +3.2 .. +6.9: only U9, C2, C3 use x=33..43, leaving x=21..31 empty.
-#   3) x = 124.1 .. 130.4, y = -6.9 .. -5.6 (1.3 mm) & y = +5.6 .. +6.9 (1.3 mm):
-#      Fits 3x 0402 horizontally on top (x=125.0, 127.0, 129.0, y=-6.3) and 3x on bottom (x=125.0, 127.0, 129.0, y=+6.3)!
-#   4) Right behind H2 (x = 121.6 .. 123.95, y = -7.0 .. +7.0): 2.35 x 14.0 mm!
-#   5) Above and below Y1 (x = 116.5 .. 120.8, y = +2.6..+7.0) and L1 (x = 116.5..120.8, y = -7.0..-2.6):
-PLACE.update({
-    # Between H1 (x<=21.48) and SW1 (x>=30.23):
-    "R17": (23.2, -5.6, 0),
-    "R18": (25.5, -5.6, 0),
-    "C12": (27.8, -5.6, 0),
-    "R22": (25.8, -4.0, 0),
-
-    # Around SW1/SW2/J4 (y = +-5.4):
-    "C2": (33.5, 5.4, 0),
-    "U9": (38.0, 5.4, 0),
-    "C3": (42.5, 5.4, 0),
-
-    # Between U1 (x<=114.62) and H2 (x>=116.52) at x=115.57 (0.98 wide -> 115.08..116.06):
-    "C26": (115.57, -5.4, 90),
-    "C27": (115.57, -3.0, 90),
-    "C28": (115.57, 3.0, 90),
-    "C29": (115.57, 5.4, 90),
-    "R19": (115.57, 0.0, 90),
-
-    # Top of H2 (x=116.5..124.0, y=-7.0..-2.55):
-    "L1": (118.4, -4.5, 0),       # x:[116.58, 120.22], y:[-6.27, -2.73]
-    "C25": (121.2, -5.1, 90),     # x:[120.44, 121.96], y:[-6.60, -3.60]
-    "C24": (122.9, -5.1, 90),     # x:[122.14, 123.66], y:[-6.60, -3.60]
-
-    # Right of H2 (x=121.5..124.0, y=-3.4..+3.4):
-    "F1": (122.7, -1.6, 90),      # x:[121.73, 123.67], y:[-3.31, 0.11]
-    "C23": (122.7, 1.8, 90),      # x:[121.94, 123.46], y:[0.30, 3.30]
-
-    # Bottom of H2 (x=116.5..124.0, y=+2.55..+7.0):
-    "Y1": (118.7, 4.4, 0),        # x:[116.58, 120.82], y:[2.63, 6.17]
-    "C30": (122.5, 4.2, 0),       # x:[121.56, 123.44], y:[3.72, 4.68]
-    "C31": (122.5, 5.4, 0),       # x:[121.56, 123.44], y:[4.92, 5.88]
-    "R20": (122.5, 6.6, 0),       # x:[121.55, 123.45], y:[6.11, 7.09]
-
-    # USB ESD D1 + R12/R13: move U9 bay slightly or put D1 near H2/J1?
-    # Check x = 30.2..46.0 bottom vs x = 124..130 top/bottom:
-    # D1 (SRV05-4) is 4.16 x 3.46! Wait: at (127.0, 5.6)? No, J1 ends at y=+-5.34!
-    # Wait: where is a 4.16 x 3.46 slot near J1 (x=129.3)?
-    # Check between U1 and H2? No, Y1 is at 118.7, 4.4. Look at U1 right corners: U1 is 109.0 (103.38..114.62), H2 is 119.0!
-    # Wait: look at x = 90..101 below J3, OR move C23 to (45.2, 5.4, 0), opening x=122.7, y=+1.8 for D1?
-    # YES! Look: if C23 is at (45.3, 5.4, 0) (or next to U1 bottom/top) — wait C23 is VREG_VIN 4.7uF cap which wants to be near U1 pin 64!
-    # Put C23 at (122.8, 5.6, 90) or swap Y1 & D1: D1 right at USB pins (122.0, -4.9) and put C24/C25/C23 around (115.6..118.5)!
-    # Wait: let's check x = 114.7..124.0 exact math:
-    # Put U1 at 108.0 instead of 109.0? Or even better, check:
-    # Between J3/U8 and U1: U1 at 109.0 starts at 103.38. C13..C22 are at 104.6..113.4, y=+-6.3.
-    # Between H2 (x>=116.52) and U1 (x<=114.62), x=115.57 has 1.90 mm width.
-    # Above H2 (x=116.5..124.0, y=-7.0..-2.5): width = 7.5 mm, height = 4.5 mm!
-    #   L1 (3.64x3.54) at (118.4, -4.5) takes x=[116.58, 120.22].
-    #   D1 (rot=90, 3.46x4.16) at (122.1, -4.8) takes x=[120.37, 123.83], y=[-6.88, -2.72]!!
-    #   Now C25 & C24 (0603, 3.00x1.52):
-    #     Put C25 (0603, rot=0) at (115.5, -5.0, 90)? Wait C26..29 are 0402!
-    #     Put C24 (0603) at (115.5, 0.0, 90) -> wait H2 is at y=[-2.48, +2.48], so at y=0 x=115.57 has 1.90 mm width -> 0603 rot=90 is 1.52 mm wide ([114.81, 116.33]), fits cleanly between U1 (114.62) and H2 (116.52)!!
-    #     Check y for x=115.57 column (height 14.0 mm, y=-7.0..+7.0):
-    #       C26 (0402, rot=90, h=1.88): y=-5.9 -> [-6.84, -4.96]
-    #       C24 (0603, rot=90, h=3.00): y=-3.2 -> [-4.70, -1.70]
-    #       C25 (0603, rot=90, h=3.00): y=0.0  -> [-1.50, +1.50]
-    #       C23 (0603, rot=90, h=3.00): y=3.2  -> [+1.70, +4.70]
-    #       C29 (0402, rot=90, h=1.88): y=5.9  -> [+4.96, +6.84]
-    #     Where do C27, C28, R19 (3x 0402) go?
-    #       Look at x=122.7, y=-2.7..+2.7 (right behind H2!): F1 (122.7, -1.0, 90) -> [-2.71, +0.71] (wait D1 ends at -2.72 -> put F1 at (122.7, -0.7, 90) = [-2.41, +1.01]!),
-    #       R12 (0603, rot=90) at (122.7, 2.7, 90) -> [1.20, 4.20]
-    #       R13 (0603, rot=0? Wait let's put R13 beside J1 below or put C27, C28 at (125.0, -6.3), (127.0, -6.3)?? No, keep C27, C28 RIGHT BY U1!)
-    #       Let's check x = 102.0..103.38 (between U8/D2 and U1) or shift Y1 to y=+5.2?
-    #       Actually look at x = 117.5..124.0, y = +2.5..+7.0:
-    #       Y1 is at (118.7, 4.4) -> x:[116.58, 120.82], y:[2.63, 6.17]
-    #       Bottom strip of J1 (x = 124.0..130.0, y = +6.3): R12 (125.2, 6.3, 0), R13 (128.4, 6.3, 0) -> leaves x=121..124, y=+2.6..+7.0 for C30, C31, R20, R19!
-    #       And C1, R10, R11 on Top strip of J1 (x = 125.0, 127.0, 129.0, y = -6.3)!
-    #       What about C27, C28 (two tiny 0402s on +1V1_CORE)? U1 +1V1_CORE pin 10 is on U1 LEFT (`x=103.4`) and pin 32 is on U1 BOTTOM (`x=106.2, y=5.62`)!
-    #       Look at the bottom strip of U1 (`y = +6.3`, width `11.2 mm`: `104.0..114.6`):
-    #       Space 0402s (`1.88 mm` wide) at 2.0 mm pitch instead of 2.2 mm:
-    #       103.2? (wait C57 is at 101.2), 104.4, 106.4, 108.4, 110.4, 112.4, 114.4 -> SIX 0402s cleanly in ONE row (`104.4..114.4`, `y=+6.3` AND `y=-6.3`) = TWELVE 0402s (10x IOVDD + C27 + C28)!
-    "D1": (122.2, -5.0, 90),
-    "F1": (123.0, 4.3, 90),
-    "C26": (116.0, -4.9, 90),
-    "C24": (116.0, -2.3, 90),
-    "C25": (116.0, 0.9, 90),
-    "R19": (116.0, 3.4, 90),
-    "C29": (116.0, 5.3, 90),
-    "C23": (122.9, -1.3, 90),
-
-    # Generous 2.4 mm pitch along U1 top/bottom y=+-6.55 -> clean via windows between caps:
-    "C17": (103.0, -6.55, 0),
-    "C13": (105.4, -6.55, 0),
-    "C14": (107.8, -6.55, 0),
-    "C15": (110.2, -6.55, 0),
-    "C16": (112.6, -6.55, 0),
-    "C27": (114.8, -6.55, 0),
-
-    "C22": (103.0, 6.55, 0),
-    "C18": (105.4, 6.55, 0),
-    "C19": (107.8, 6.55, 0),
-    "C20": (110.2, 6.55, 0),
-    "C21": (112.6, 6.55, 0),
-    "C28": (114.6, 6.55, 0),
-
-    # Behind U1/H2 & around J1 (y = +-6.3 strips stop at x=130.3 to clear r=1.5 tail arcs):
-    "L1": (118.6, -4.5, 0),
-    "Y1": (118.8, 4.2, 0),
-    "C30": (121.4, 4.0, 90),
-    "C31": (122.5, 6.6, 0),
-    "R20": (119.5, 6.6, 0),
-    "C1": (125.0, -6.3, 0),
-    "R10": (127.0, -6.3, 0),
-    "R11": (129.0, -6.3, 0),
-    "R12": (125.6, 6.3, 0),
-    "R13": (128.8, 6.3, 0),
-})
 
 
 # ----------------------------------------------------------------------------------------------
@@ -452,17 +301,49 @@ def arc_geom(board: pcbnew.BOARD, layer: int, start, mid, end, w: float = 0.1):
 
 
 def outline(board: pcbnew.BOARD):
-    """Closed 132.0 x 15.0 mm pen outline (nose corner r=4.0 mm, tail corner r=1.5 mm)."""
+    """Closed 138 x 17.60 mm pen outline (untapered when W_NOSE == W, otherwise C1 S-curve taper)."""
     rn, rt, k = R_NOSE, R_TAIL, 1.0 - math.sqrt(0.5)
     e = pcbnew.Edge_Cuts
-    seg(board, e, (rn, -HW_Y), (L - rt, -HW_Y))
-    arc_geom(board, e, (L - rt, -HW_Y), (L - rt * k, -HW_Y + rt * k), (L, -HW_Y + rt))
-    seg(board, e, (L, -HW_Y + rt), (L, HW_Y - rt))
-    arc_geom(board, e, (L, HW_Y - rt), (L - rt * k, HW_Y - rt * k), (L - rt, HW_Y))
-    seg(board, e, (L - rt, HW_Y), (rn, HW_Y))
-    arc_geom(board, e, (rn, HW_Y), (rn * k, HW_Y - rn * k), (0.0, HW_Y - rn))
-    seg(board, e, (0.0, HW_Y - rn), (0.0, -HW_Y + rn))
-    arc_geom(board, e, (0.0, -HW_Y + rn), (rn * k, -HW_Y + rn * k), (rn, -HW_Y))
+
+    if abs(W - W_NOSE) < 1e-6:
+        hb = HW_Y
+        seg(board, e, (rn, -hb), (L - rt, -hb))
+        arc_geom(board, e, (L - rt, -hb), (L - rt * k, -hb + rt * k), (L, -hb + rt))
+        seg(board, e, (L, -hb + rt), (L, hb - rt))
+        arc_geom(board, e, (L, hb - rt), (L - rt * k, hb - rt * k), (L - rt, hb))
+        seg(board, e, (L - rt, hb), (rn, hb))
+        arc_geom(board, e, (rn, hb), (rn * k, hb - rn * k), (0.0, hb - rn))
+        seg(board, e, (0.0, hb - rn), (0.0, -hb + rn))
+        arc_geom(board, e, (0.0, -hb + rn), (rn * k, -hb + rn * k), (rn, -hb))
+        return
+
+    tx0, tx1, x_mid, y_mid, r_s, hb = scurve_params()
+    theta = math.atan2(x_mid - tx0, r_s - (y_mid - HN_Y))
+    ht = 0.5 * theta
+    # Midpoints of Arc 1 (18..23) and Arc 2 (23..28) along their circles
+    x_m1 = tx0 + r_s * math.sin(ht)
+    y_m1 = HN_Y + r_s - r_s * math.cos(ht)
+    x_m2 = tx1 - r_s * math.sin(ht)
+    y_m2 = hb - r_s + r_s * math.cos(ht)
+
+    # Top edge (KiCad -Y), left -> right
+    seg(board, e, (rn, -HN_Y), (tx0, -HN_Y))
+    arc_geom(board, e, (tx0, -HN_Y), (x_m1, -y_m1), (x_mid, -y_mid))
+    arc_geom(board, e, (x_mid, -y_mid), (x_m2, -y_m2), (tx1, -hb))
+    seg(board, e, (tx1, -hb), (L - rt, -hb))
+    # Tail end
+    arc_geom(board, e, (L - rt, -hb), (L - rt * k, -hb + rt * k), (L, -hb + rt))
+    seg(board, e, (L, -hb + rt), (L, hb - rt))
+    arc_geom(board, e, (L, hb - rt), (L - rt * k, hb - rt * k), (L - rt, hb))
+    # Bottom edge (KiCad +Y), right -> left
+    seg(board, e, (L - rt, hb), (tx1, hb))
+    arc_geom(board, e, (tx1, hb), (x_m2, y_m2), (x_mid, y_mid))
+    arc_geom(board, e, (x_mid, y_mid), (x_m1, y_m1), (tx0, HN_Y))
+    seg(board, e, (tx0, HN_Y), (rn, HN_Y))
+    # Nose end
+    arc_geom(board, e, (rn, HN_Y), (rn * k, HN_Y - rn * k), (0.0, HN_Y - rn))
+    seg(board, e, (0.0, HN_Y - rn), (0.0, -HN_Y + rn))
+    arc_geom(board, e, (0.0, -HN_Y + rn), (rn * k, -HN_Y + rn * k), (rn, -HN_Y))
 
 
 def text(board: pcbnew.BOARD, s: str, x: float, y: float, size: float = 0.9,
@@ -537,7 +418,7 @@ def write_dru():
   (constraint track_width (min 0.12mm))
 )
 (rule "HV divider to ground and LV"
-  (condition "(A.NetName == '/PROBE_TIP' || A.NetName == '/HV_MID') && (B.NetName != A.NetName)")
+  (condition "(A.NetName == '/CH1_TIP' || A.NetName == '/CH1_HV_MID' || A.NetName == '/CH2_TIP' || A.NetName == '/CH2_HV_MID') && (B.NetName != A.NetName)")
   (constraint clearance (min 0.40mm))
 )
 """
@@ -598,17 +479,14 @@ def _inside_board(bb, margin: float = 0.4) -> bool:
     x1 = bb.GetRight() / 1e6 - OX
     y0 = bb.GetTop() / 1e6 - OY
     y1 = bb.GetBottom() / 1e6 - OY
-    if x0 < margin or x1 > L - margin or y0 < -HW_Y + margin or y1 > HW_Y - margin:
-        return False
-    # Check rounded nose / tail corners
     for cx in (x0, x1):
         for cy in (y0, y1):
-            if cx < R_NOSE and abs(cy) > HW_Y - R_NOSE:
-                if math.hypot(R_NOSE - cx, abs(cy) - (HW_Y - R_NOSE)) > R_NOSE - margin:
-                    return False
-            if cx > L - R_TAIL and abs(cy) > HW_Y - R_TAIL:
-                if math.hypot(cx - (L - R_TAIL), abs(cy) - (HW_Y - R_TAIL)) > R_TAIL - margin:
-                    return False
+            if not point_in_pcb(cx, cy, margin=margin):
+                return False
+    for sx in range(int(math.ceil(max(x0, TX0))), int(math.floor(min(x1, TX1))) + 1):
+        for cy in (y0, y1):
+            if not point_in_pcb(float(sx), cy, margin=margin):
+                return False
     return True
 
 
@@ -684,31 +562,47 @@ def fit_text(board: pcbnew.BOARD, t: pcbnew.PCB_TEXT, spots, what: str) -> bool:
 def silkscreen(board: pcbnew.BOARD):
     """Top and bottom functional labels fitted away from pads and edges."""
     F, B = pcbnew.F_SilkS, pcbnew.B_SilkS
-    sx1, _ = DATUM["btn_ask_ai_xy"]
-    sx2, _ = DATUM["btn_mode_xy"]
-    t1 = text(board, "AI", sx1, -4.8, 0.8, layer=F, bold=True)
-    fit_text(board, t1, [(sx1, y, 0, 0.8) for y in (-4.8, -5.2, -3.9, 4.0)], "AI")
-    t2 = text(board, "MODE", sx2, -4.8, 0.8, layer=F, bold=True)
-    fit_text(board, t2, [(sx2 + dx, y, 0, 0.8) for y in (-3.9, -4.3, 4.0) for dx in (0, -1.5, 1.5)], "MODE")
+    for lbl, ny in (("CH1", -4.0), ("GND", 0.0), ("CH2", 4.0)):
+        tf = text(board, lbl, 16.8, ny, 0.8, layer=F, bold=True)
+        fit_text(board, tf, [(x, ny + dy, 0, 0.8) for x in (17.2, 16.4, 15.8) for dy in (0, -1.8, 1.8)], f"nose_f_{lbl}")
+        tb = text(board, lbl, 17.5, ny, 0.8, layer=B, bold=True)
+        fit_text(board, tb, [(x, ny + dy, 0, 0.8) for x in (17.6, 16.8, 2.2) for dy in (0, -1.8, 1.8)], f"nose_b_{lbl}")
 
-    # Back side board banner (plenty of clear silk space on back!)
-    title = text(board, "ProbePen-AI v1.0", 40.0, 0.0, 1.3, layer=B, bold=True)
-    fit_text(board, title, [(x, y, 0, 1.3) for y in (0.0, -2.0, 2.0) for x in (40.0, 35.0, 45.0)], "title")
-    pod = text(board, "POD CH0-3 3V3 GND", 96.0, -5.2, 0.8, layer=B, bold=True)
-    fit_text(board, pod, [(96.0 + dx, y, 0, 0.8) for y in (-5.2, -4.2, -2.5) for dx in (0, -2.0, 2.0)], "POD")
+    btn_labels = [
+        ("AI", DATUM["btn_ask_ai_xy"][0]),
+        ("MODE", DATUM["btn_mode_xy"][0]),
+        ("UP", DATUM["btn_up_xy"][0]),
+        ("DN", DATUM["btn_down_xy"][0]),
+    ]
+    for lbl, sx in btn_labels:
+        t = text(board, lbl, sx, 4.8, 0.8, layer=F, bold=True)
+        fit_text(board, t, [(sx + dx, y, 0, 0.8) for y in (4.8, 4.3, 3.6, 5.2, 5.6, 7.6) for dx in (0, -2.5, 2.5, 4.0, -4.0)], lbl)
 
-    # Short names next to each B.Cu test pad
+    # Back side labels strictly outside LCD glass (x=32..63) & FPC (63..78.85)
+    title = text(board, "ProbePen-AI v1.0", 90.0, -0.5, 1.05, layer=B, bold=True)
+    fit_text(board, title, [(x, y, 0, 1.05) for y in (-0.5, 0.5, -1.6) for x in (90.0, 92.5, 25.0)], "title")
+    pod = text(board, "IO0-3 3V3 GND", 119.5, -2.0, 0.8, layer=B, bold=True)
+    fit_text(board, pod, [(119.5 + dx, y, 0, 0.8) for y in (-2.0, -1.0, -6.8) for dx in (0, -2.0, 2.0)], "POD")
+    lcd_hint = text(board, "1.14/0.96 13P LCD", 89.5, 2.2, 0.8, layer=B, bold=True)
+    fit_text(board, lcd_hint, [(x, y, 0, 0.8) for y in (2.2, 3.1, 1.3) for x in (89.5, 92.5)], "LCD")
+
+    # Short names next to each test pad on its own layer (analog on F, digital on B)
     tp_labels = {
-        "TP_AGND": "AGND", "TP_3V3A": "3V3A", "TP_3V0R": "3V0R", "TP_N1V8": "-1V8",
-        "TP_VADC": "VADC", "TP_3V3D": "3V3D", "TP_5V": "5V", "TP_1V1": "1V1",
+        "TP_AGND": "AGND", "TP_3V3A": "3V3A", "TP_3V0R": "3V0R",
+        "TP_CH1": "CH1", "TP_CH2": "CH2", "TP_REF1V": "1V0",
+        "TP_3V3D": "3V3D", "TP_5V": "5V", "TP_1V1": "1V1",
         "TP_GND2": "GND", "TP_SWCLK": "SWCLK", "TP_SWDIO": "SWDIO", "TP_RUN": "RUN",
         "TP_BOOT": "BOOT", "TP_GND1": "GND",
     }
     for ref, lbl in tp_labels.items():
-        tx, ty, _ = PLACE[ref][:3]
-        t = text(board, lbl, tx, ty + 1.5, 0.8, layer=B)
-        spots = [(tx, ty + dy, 0, 0.8) for dy in (1.5, -1.5, 1.8, -1.8)] + [
-            (tx + dx, ty, 0, 0.8) for dx in (2.2, -2.2)
+        loc = PLACE[ref]
+        tx, ty = loc[0], loc[1]
+        lay = B if (len(loc) > 3 and loc[3] == "B") else F
+        t = text(board, lbl, tx, ty + 1.3, 0.8, layer=lay)
+        spots = [(tx, ty + dy, 0, 0.8) for dy in (1.3, -1.3, 1.7, -1.7)] + [
+            (tx + dx, ty, 0, 0.8) for dx in (2.1, -2.1, 2.7, -2.7)
+        ] + [(tx + dx, ty + dy, 0, 0.8) for dx in (-1.9, 1.9) for dy in (-1.3, 1.3)] + [
+            (tx + dx, ty + dy, 90, 0.8) for dx in (-1.7, 0.0, 1.7) for dy in (-1.7, 0.0, 1.7)
         ]
         fit_text(board, t, spots, ref)
 
@@ -761,10 +655,9 @@ def build() -> pcbnew.BOARD:
             fp.SetField("MPN", PARTS[c.part].mpn)
             fp.GetField("MPN").SetVisible(False)
 
-        if c.ref in ("J1", "J2", "J3", "J4", "U1"):
+        if c.ref in ("J1", "J3", "J4", "J5", "U1"):
             fp.SetLocalZoneConnection(pcbnew.ZONE_CONNECTION_FULL)
         if c.ref == "J1":
-            # Drop/trim silkscreen segments that overhang past the x=132 mm tail edge
             for it in list(fp.GraphicalItems()):
                 if it.GetLayer() == pcbnew.F_SilkS and it.GetBoundingBox().GetRight() / 1e6 - OX > L - 0.15:
                     fp.Remove(it)
@@ -785,35 +678,45 @@ def build() -> pcbnew.BOARD:
 
         fp.Reference().SetTextSize(pcbnew.VECTOR2I(MM(0.8), MM(0.8)))
         fp.Reference().SetTextThickness(MM(0.12))
-        if c.ref in ("J1", "J2", "J3", "J4", "SW1", "SW2", "H1", "H2") or c.ref.startswith("TP_"):
+        if c.ref in ("J1", "J3", "J4", "J5", "SW1", "SW2", "SW3", "SW4", "H1", "H2") or c.ref.startswith("TP_"):
             fp.Reference().SetVisible(False)
 
     extra_place = set(PLACE) - seen_refs
     assert not extra_place, f"Unused PLACE entries: {extra_place}"
 
-    # ---- Keepouts & 4-layer copper zones -----------------------------------------------------
-    # High-Z AFE inner-layer pour keepout (reduces parasitic capacitance on 1 MOhm probe node)
+    # ---- Keepouts & 4-layer copper planes (In1=GND/AGND, In2=+3V3_DIG/+3V3_ANA) ----------
+    def _circle_pts(cx: float, cy: float, r: float, steps: int = 24) -> list[tuple[float, float]]:
+        return [
+            (round(cx + r * math.cos(2.0 * math.pi * k / steps), 4),
+             round(cy + r * math.sin(2.0 * math.pi * k / steps), 4))
+            for k in range(steps)
+        ]
+
+    inner_layers = [pcbnew.In1_Cu, pcbnew.In2_Cu]
     zone(
-        board, None, [pcbnew.In1_Cu, pcbnew.In2_Cu],
+        board, None, inner_layers,
         [(AFE_X0, AFE_Y0), (AFE_X1, AFE_Y0), (AFE_X1, AFE_Y1), (AFE_X0, AFE_Y1)],
         rule_area=True, name="AFE high-Z keepout",
     )
-    # Keep inner-layer copper pour >= 0.30 mm clear of J1 USB-C alignment NPTH holes (drill 0.65 mm)
-    jx = DATUM["usbc_xy"][0] - 2.6  # J1 NPTH X = 129.3 - 2.6 = 126.7
+    for href in ("H1", "H2"):
+        hx, hy = PLACE[href][:2]
+        r_npth_m2 = 1.45  # 1.10 mm radius + 0.35 mm circular inner-plane clearance around unplated M2 hole
+        zone(
+            board, None, inner_layers,
+            _circle_pts(hx, hy, r_npth_m2),
+            rule_area=True, name=f"{href} NPTH keepout",
+        )
+    jx = DATUM["usbc_xy"][0] - 2.6
     for sign, tag in ((-1, "top"), (1, "bot")):
         jy = sign * 2.89
-        r_npth = 0.65  # 0.325 radius + 0.325 clearance
+        r_npth = 0.65
         zone(
-            board, None, [pcbnew.In1_Cu, pcbnew.In2_Cu],
-            [(jx - r_npth, jy - r_npth), (jx + r_npth, jy - r_npth),
-             (jx + r_npth, jy + r_npth), (jx - r_npth, jy + r_npth)],
+            board, None, inner_layers,
+            _circle_pts(jx, jy, r_npth),
             rule_area=True, name=f"J1 NPTH keepout {tag}",
         )
 
     inset = 0.45
-    y_top, y_bot = -HW_Y + inset, HW_Y - inset
-    # In1.Cu: solid digital GND everywhere except the analog island (x=51.5..82.6, y=-4.8..+7.05)
-    # Corner arcs inset 0.45 mm inside nose (r=4.0) and tail (r=1.5) curves so zero copper_edge_clearance!
     rn_i = max(0.2, R_NOSE - inset)
     rt_i = max(0.2, R_TAIL - inset)
     def _arc_pts(cx, cy, r, a0_deg, a1_deg, steps=6):
@@ -823,21 +726,43 @@ def build() -> pcbnew.BOARD:
             for k in range(steps + 1)
         ]
 
+    # Sample smooth S-curve inset polygon points along x=18..28
+    taper_xs = [TX0 + (TX1 - TX0) * k / 10.0 for k in range(11)]
+    taper_top = [(round(x, 4), round(-half_width_at(x, margin=inset), 4)) for x in taper_xs]
+    taper_bot = [(round(x, 4), round(half_width_at(x, margin=inset), 4)) for x in reversed(taper_xs)]
+
     gnd_in1_poly = [
-        *_arc_pts(R_NOSE, -HW_Y + R_NOSE, rn_i, 180, 270),
+        *_arc_pts(R_NOSE, -HN_Y + R_NOSE, rn_i, 180, 270),
+        *taper_top,
         *_arc_pts(L - R_TAIL, -HW_Y + R_TAIL, rt_i, 270, 360),
         *_arc_pts(L - R_TAIL, HW_Y - R_TAIL, rt_i, 0, 90),
-        (83.2, y_bot), (83.2, -5.2), (51.5, -5.2), (51.5, y_bot),
-        *_arc_pts(R_NOSE, HW_Y - R_NOSE, rn_i, 90, 180),
+        *taper_bot,
+        *_arc_pts(R_NOSE, HN_Y - R_NOSE, rn_i, 90, 180),
     ]
     zone(board, nets["GND"], [pcbnew.In1_Cu], gnd_in1_poly, priority=0, clearance=0.22, name="In1 GND", min_thickness=0.14)
 
-    # In1.Cu: AGND analog return island under analog power, U6/U4/REF, U2 analog pins
-    # R16 star ground bridges AGND (x<=82.6) to GND (x>=83.2) right above U2
+    # Analog island with north decoupling tab (x=69.5..85.0) for U2 analog pins & C46/C48/R16.1;
+    # digital GND/+3V3_DIG stay continuous via x<31, south bridge y=+4.1..+8.35, and x>83.4.
     agnd_in1_poly = [
-        (51.5, -4.8), (82.6, -4.8), (82.6, y_bot), (51.5, y_bot),
+        (31.0, -6.2), (69.5, -6.2), (69.5, -8.35), (85.0, -8.35),
+        (85.0, -5.8), (83.4, -5.8), (83.4, 4.1), (31.0, 4.1),
     ]
-    zone(board, nets["AGND"], [pcbnew.In1_Cu], agnd_in1_poly, priority=1, clearance=0.22, name="In1 AGND", min_thickness=0.14)
+    zone(board, nets["AGND"], [pcbnew.In1_Cu], agnd_in1_poly, priority=1, clearance=0.40, name="In1 AGND", min_thickness=0.14)
+
+    dig_xs = [23.0 + (TX1 - 23.0) * k / 5.0 for k in range(6)]
+    dig3v3_in4_poly = [
+        *[(round(x, 4), round(-half_width_at(x, margin=inset), 4)) for x in dig_xs],
+        (129.5, round(-HW_Y + inset, 4)),
+        (129.5, round(HW_Y - inset, 4)),
+        *[(round(x, 4), round(half_width_at(x, margin=inset), 4)) for x in reversed(dig_xs)],
+    ]
+    zone(board, nets["+3V3_DIG"], [pcbnew.In2_Cu], dig3v3_in4_poly, priority=0, clearance=0.22, name="In2 +3V3_DIG", min_thickness=0.14)
+
+    ana3v3_in4_poly = [
+        (31.0, -6.2), (69.5, -6.2), (69.5, -8.35), (85.0, -8.35),
+        (85.0, -5.8), (83.4, -5.8), (83.4, 4.1), (31.0, 4.1),
+    ]
+    zone(board, nets["+3V3_ANA"], [pcbnew.In2_Cu], ana3v3_in4_poly, priority=1, clearance=0.40, name="In2 +3V3_ANA", min_thickness=0.14)
 
     silkscreen(board)
     place_references(board)
@@ -854,32 +779,33 @@ def features(board: pcbnew.BOARD) -> dict:
     x1, y1 = PLACE["J1"][:2]
     x3, y3 = PLACE["J3"][:2]
     x4, y4 = PLACE["J4"][:2]
+    x5, y5 = PLACE["J5"][:2]
     cons = [
         {
             "ref": "J1", "kind": "usbc", "edge": "tail",
             "x": to_features(x1, y1)[0], "y": to_features(x1, y1)[1],
             "w": 9.0, "h": 7.35, "z_max": 3.25,
-            # Overmould envelope: 10 x 6.5 mm opening starting at PCB tail X=132 -> +X
             "plug_envelope": [round(L, 3), -5.0, -0.5, round(L + 16.0, 3), 5.0, 5.0],
         },
         {
-            "ref": "J2", "kind": "m3_probe_tip", "edge": "nose",
-            "x": to_features(*PLACE["J2"][:2])[0], "y": to_features(*PLACE["J2"][:2])[1],
-            "w": 6.0, "h": 6.0, "z_max": 3.0,
-            "plug_envelope": [-15.0, -3.5, 0.0, 4.5, 3.5, 6.0],
+            "ref": "J5", "kind": "wago_2060_3p_combo", "edge": "nose",
+            "x": to_features(x5, y5)[0], "y": to_features(x5, y5)[1],
+            "w": 13.1, "h": 11.9, "z_max": 4.5,
+            "plug_envelope": [-15.0, -6.2, -2.5, 16.0, 6.2, 5.0],
         },
         {
             "ref": "J3", "kind": "jst_sh6", "edge": "+y",
             "x": to_features(x3, y3)[0], "y": to_features(x3, y3)[1],
             "w": 8.0, "h": 4.25, "z_max": 2.9,
-            # Mating SHR-06V-S-B plug enters along -Y from outside wall (y >= HW_Y)
             "plug_envelope": [round(x3 - 5.0, 3), round(HW_Y - 1.5, 3), 1.4, round(x3 + 5.0, 3), round(HW_Y + 12.0, 3), 5.2],
         },
         {
-            "ref": "J4", "kind": "fpc_8p", "edge": "internal",
+            "ref": "J4", "kind": "lcd_fpc_13p", "edge": "internal", "side": "B",
             "x": to_features(x4, y4)[0], "y": to_features(x4, y4)[1],
-            "w": 6.3, "h": 3.8, "z_max": 1.2,
-            "plug_envelope": [round(x4 - 2.0, 3), -3.5, 1.6, round(x4 + 6.0, 3), 3.5, 3.0],
+            "w": 3.0, "h": 8.8, "z_max": 0.2,
+            "plug_envelope": [round(LCD_X0, 3), round(-float(DATUM["lcd_glass_width"]) / 2.0, 3),
+                              -float(DATUM["lcd_glass_thickness"]) - 0.2,
+                              round(LCD_X1 + 15.85, 3), round(float(DATUM["lcd_glass_width"]) / 2.0, 3), 0.1],
         },
     ]
 
@@ -892,26 +818,31 @@ def features(board: pcbnew.BOARD) -> dict:
         ys = [b for p in pads for b in (p.GetBoundingBox().GetTop(), p.GetBoundingBox().GetBottom())]
         centres[ref] = list(to_features((min(xs) + max(xs)) / 2e6 - OX, (min(ys) + max(ys)) / 2e6 - OY))
 
+    lx0, lx1 = DATUM["lcd_active_x"]
+    ahw = float(DATUM["lcd_active_width"]) / 2.0
     holes = []
-    for ref in ("H1", "H2"):
-        hx, hy = to_features(*PLACE[ref][:2])
+    for href in ("H1", "H2"):
+        hx, hy = to_features(*PLACE[href][:2])
         holes.append([hx, hy, 2.2])
-
     return {
         "outline_mm": [L, W],
+        "nose_width": W_NOSE,
+        "taper_x": [TX0, TX1],
         "thickness": THK,
         "nose_r": R_NOSE,
         "tail_r": R_TAIL,
         "holes": holes,
         "connectors": cons,
         "leds": [list(to_features(*PLACE[r][:2])) for r in ("LED1", "LED2")],
-        "buttons": [list(to_features(*PLACE[r][:2])) for r in ("SW1", "SW2")],
-        "lcd_window": [LCD_X0, round(-float(DATUM["lcd_glass_width"]) / 2.0, 3),
-                       LCD_X1, round(float(DATUM["lcd_glass_width"]) / 2.0, 3)],
+        "buttons": [list(to_features(*PLACE[r][:2])) for r in ("SW1", "SW2", "SW3", "SW4")],
+        "lcd_side": "B",
+        "lcd_glass": [LCD_X0, round(-float(DATUM["lcd_glass_width"]) / 2.0, 3),
+                      LCD_X1, round(float(DATUM["lcd_glass_width"]) / 2.0, 3)],
+        "lcd_window": [lx0, round(-ahw, 3), lx1, round(ahw, 3)],
         "afe_keepout": _cad_box_from_kicad(AFE_X0, AFE_Y0, AFE_X1, AFE_Y1),
         "part_centres": centres,
-        "max_component_height": 3.3,       # USBC 3.25 mm, TS-1187A 1.5 mm, Wurth boss 3.0 mm, JST-SH 2.9 mm
-        "max_under_lcd_height": 1.3,       # SOT-23/MSOP-10 <= 1.15 mm under foam-spaced LCD glass
+        "max_component_height": 3.3,
+        "max_under_lcd_height": 0.0,
     }
 
 

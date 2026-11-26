@@ -4,14 +4,16 @@ Run with KiCad's Python:
     kicad-python hw/gen_lib.py
 
 Datasheet sources:
-  MS9280         Hangzhou Ruimeng MS9280 V1.3 (2023-04-17), SSOP-28
-  RS2227XN       Jiangsu Runic RS2227 Rev B.1, MSOP-10
-  SN74LV4T125    TI SN74LV4T125 (SCLS749C), TSSOP-14 (single-unit)
-  RT9013-33GB    Richtek RT9013 (DS9013-10), SOT-23-5
-  BAV199         Nexperia BAV199 (2020-09-01), SOT-23
-  503480-0800    Molex 503480-0800 (SD-503480-001 nominal FBH1 8P 0.5 mm layout; verify in JLC preview)
-  9774030360R    Wurth Elektronik WA-SMSI 9774030360R M3x3.0 mm SMT spacer (OD 7.4 mm, hole 4.4 mm)
-  JZ100          Knowles Voltronics JZ100 trimmer capacitor (5.5 mm span, 2.0 mm gap, 4.0 mm pad height)
+  AD9288              Analog Devices AD9288BSTZ-80 (C514284), LQFP-48 (Table 3 pinout)
+  RS8752              Jiangsu Runic RS8752XM (C255421), MSOP-8
+  74LVC2G66           Nexperia 74LVC2G66DP,125 (C282354), TSSOP-8 (SOT505-2)
+  RT9013-33GB         Richtek RT9013 (DS9013-10), SOT-23-5
+  BAV199              Nexperia BAV199 (2020-09-01), SOT-23
+  LCD_FPC_13P_Solder  1.14" 135x240 ST7789 / 0.96" 80x160 ST7735S 13P 0.70 mm solder FPC
+  TS24CA              SHOU HAN TS24CA (C393942) 4.7x3.5x1.9 mm side-actuated SMD tactile switch
+  Nose_WAGO2060_KF381 WAGO 2060-453/998-404 3P 4.0 mm SMD + DNP KF250NH-3.81-3P THT + 14x2.8 mm F/B via-stitched probe pads
+  JZ100               Knowles Voltronics JZ100 trimmer capacitor (5.5 mm span, 2.0 mm gap, 4.0 mm pad height)
+  LED_Side_XL3806     XINGLIGHT XL-3806UWC (C2843778) 3.8x1.0x0.6 mm side-emitting white LED (1=K, 2=A)
 """
 from __future__ import annotations
 
@@ -85,86 +87,90 @@ def _poly(points, width=0.254):
 def symbols() -> str:
     out = ['(kicad_symbol_lib\n\t(version 20251024)\n\t(generator "ppa_gen_lib")\n\t(generator_version "10.0")\n']
 
-    # 1. MS9280 (Ruimeng MS9280 V1.3, SSOP-28)
+    # 1. AD9288 (ADI AD9288BSTZ-80, LQFP-48 Table 3)
     L, R = -15.24, 15.24
     left = [
-        ("27", "AIN", "input"),
-        ("26", "VREF", "passive"),
-        ("18", "REFSENSE", "input"),
-        ("23", "MODE", "input"),
-        ("21", "REFTS", "passive"),
-        ("22", "REFTF", "passive"),
-        ("24", "REFBF", "passive"),
-        ("25", "REFBS", "passive"),
-        ("19", "CLAMP", "input"),
-        ("20", "CLAMPIN", "input"),
+        ("2", "AINA", "input"),
+        ("3", "~{AINA}", "input"),
+        ("11", "AINB", "input"),
+        ("10", "~{AINB}", "input"),
+        ("5", "REFINA", "input"),
+        ("6", "REFOUT", "passive"),
+        ("7", "REFINB", "input"),
+        ("4", "DFS", "input"),
+        ("8", "S1", "input"),
+        ("9", "S2", "input"),
+        ("47", "ENCA", "input"),
+        ("14", "ENCB", "input"),
+        ("25", "NC", "no_connect"),
+        ("26", "NC", "no_connect"),
+        ("35", "NC", "no_connect"),
+        ("36", "NC", "no_connect"),
     ]
     right = [
-        ("3", "D0", "output"), ("4", "D1", "output"), ("5", "D2", "output"),
-        ("6", "D3", "output"), ("7", "D4", "output"), ("8", "D5", "output"),
-        ("9", "D6", "output"), ("10", "D7", "output"), ("11", "D8", "output"),
-        ("12", "D9", "output"), ("13", "OTR", "output"),
-        ("15", "CLK", "input"), ("16", "THREE_STATE", "input"), ("17", "STBY", "input"),
+        ("37", "D0A", "output"), ("38", "D1A", "output"), ("39", "D2A", "output"), ("40", "D3A", "output"),
+        ("41", "D4A", "output"), ("42", "D5A", "output"), ("43", "D6A", "output"), ("44", "D7A", "output"),
+        ("24", "D0B", "output"), ("23", "D1B", "output"), ("22", "D2B", "output"), ("21", "D3B", "output"),
+        ("20", "D4B", "output"), ("19", "D5B", "output"), ("18", "D6B", "output"), ("17", "D7B", "output"),
     ]
-    pins = [
-        ("28", "AVDD", "power_in", -2.54, 22.86, 270),
-        ("2", "DRVDD", "power_in", 2.54, 22.86, 270),
-        ("1", "AVSS", "power_in", -2.54, -22.86, 90),
-        ("14", "DRVSS", "power_in", 2.54, -22.86, 90),
+    vd_pins = [("13", "VD"), ("30", "VD"), ("31", "VD"), ("48", "VD")]
+    vdd_pins = [("15", "VDD"), ("28", "VDD"), ("33", "VDD"), ("46", "VDD")]
+    gnd_pins = [
+        ("1", "GND"), ("12", "GND"), ("16", "GND"), ("27", "GND"),
+        ("29", "GND"), ("32", "GND"), ("34", "GND"), ("45", "GND"),
     ]
-    pins += [(n, nm, k, L, 15.24 - 2.54 * i, 0) for i, (n, nm, k) in enumerate(left)]
-    pins += [(n, nm, k, R, 16.51 - 2.54 * i, 180) for i, (n, nm, k) in enumerate(right)]
+    pins = []
+    for i, (n, nm) in enumerate(vd_pins):
+        pins.append((n, nm, "power_in", -10.16 + 2.54 * i, 25.4, 270))
+    for i, (n, nm) in enumerate(vdd_pins):
+        pins.append((n, nm, "power_in", 2.54 + 2.54 * i, 25.4, 270))
+    for i, (n, nm) in enumerate(gnd_pins):
+        pins.append((n, nm, "power_in", -8.89 + 2.54 * i, -25.4, 90))
+    pins += [(n, nm, k, L, 19.05 - 2.54 * i, 0) for i, (n, nm, k) in enumerate(left)]
+    pins += [(n, nm, k, R, 19.05 - 2.54 * i, 180) for i, (n, nm, k) in enumerate(right)]
     out.append(_symbol(
-        "MS9280", "U", "MS9280",
-        "Hangzhou Ruimeng MS9280 10-bit 35 MSPS parallel ADC, SSOP-28",
-        "Package_SO:SSOP-28_5.3x10.2mm_P0.65mm",
-        (-12.7, -20.32, 12.7, 20.32), pins, fields_right=True,
+        "AD9288", "U", "AD9288BSTZ-80",
+        "Analog Devices AD9288 dual 8-bit 80 MSPS parallel ADC, LQFP-48",
+        "Package_QFP:LQFP-48_7x7mm_P0.5mm",
+        (-12.7, -22.86, 12.7, 22.86), pins, fields_right=True,
     ))
 
-    # 2. RS2227XN (Runic RS2227 Rev B.1, MSOP-10)
+    # 1b. RS8752 (Jiangsu Runic RS8752XM, MSOP-8)
     L, R = -12.7, 12.7
     pins = [
-        ("1", "V+", "power_in", 0, 11.43, 270),
-        ("5", "GND", "power_in", 0, -11.43, 90),
-        ("2", "S", "input", L, 5.08, 0),
-        ("10", "~{OE}", "input", L, 2.54, 0),
-        ("3", "D+", "passive", L, -2.54, 0),
-        ("4", "D-", "passive", L, -5.08, 0),
-        ("7", "HSD1+", "passive", R, 5.08, 180),
-        ("6", "HSD1-", "passive", R, 2.54, 180),
-        ("9", "HSD2+", "passive", R, -2.54, 180),
-        ("8", "HSD2-", "passive", R, -5.08, 180),
+        ("8", "V+", "power_in", 0, 11.43, 270),
+        ("4", "V-", "power_in", 0, -11.43, 90),
+        ("3", "+INA", "input", L, 5.08, 0),
+        ("2", "-INA", "input", L, 2.54, 0),
+        ("5", "+INB", "input", L, -2.54, 0),
+        ("6", "-INB", "input", L, -5.08, 0),
+        ("1", "OUTA", "output", R, 3.81, 180),
+        ("7", "OUTB", "output", R, -3.81, 180),
     ]
     out.append(_symbol(
-        "RS2227XN", "U", "RS2227XN",
-        "Runic RS2227XN 550 MHz DPDT 2:1 analog switch, MSOP-10",
-        "Package_SO:MSOP-10_3x3mm_P0.5mm",
+        "RS8752", "U", "RS8752XM",
+        "Runic RS8752XM dual 250 MHz 1 pA CMOS RR-out op-amp, MSOP-8",
+        "Package_SO:MSOP-8_3x3mm_P0.65mm",
         (-10.16, -8.89, 10.16, 8.89), pins, fields_right=True,
     ))
 
-    # 3. SN74LV4T125 (TI SCLS749C, single-unit TSSOP-14)
+    # 2. 74LVC2G66 (Nexperia 74LVC2G66DP,125 SOT505-2 / TSSOP-8; 1E=pin7, 2E=pin3)
     L, R = -12.7, 12.7
-    left = [
-        ("1", "1~{OE}", "input"), ("2", "1A", "input"),
-        ("4", "2~{OE}", "input"), ("5", "2A", "input"),
-        ("10", "3~{OE}", "input"), ("9", "3A", "input"),
-        ("13", "4~{OE}", "input"), ("12", "4A", "input"),
-    ]
-    right = [
-        ("3", "1Y", "tri_state"), ("6", "2Y", "tri_state"),
-        ("8", "3Y", "tri_state"), ("11", "4Y", "tri_state"),
-    ]
     pins = [
-        ("14", "VCC", "power_in", 0, 15.24, 270),
-        ("7", "GND", "power_in", 0, -15.24, 90),
+        ("8", "VCC", "power_in", 0, 11.43, 270),
+        ("4", "GND", "power_in", 0, -11.43, 90),
+        ("1", "1Y", "passive", L, 5.08, 0),
+        ("7", "1E", "input", L, 2.54, 0),
+        ("5", "2Y", "passive", L, -2.54, 0),
+        ("3", "2E", "input", L, -5.08, 0),
+        ("2", "1Z", "passive", R, 3.81, 180),
+        ("6", "2Z", "passive", R, -3.81, 180),
     ]
-    pins += [(n, nm, k, L, 8.89 - 2.54 * i, 0) for i, (n, nm, k) in enumerate(left)]
-    pins += [(n, nm, k, R, 7.62 - 5.08 * i, 180) for i, (n, nm, k) in enumerate(right)]
     out.append(_symbol(
-        "SN74LV4T125", "U", "SN74LV4T125",
-        "TI SN74LV4T125 4-channel 5V-tolerant level-shifting buffer, TSSOP-14",
-        "Package_SO:TSSOP-14_4.4x5mm_P0.65mm",
-        (-10.16, -12.7, 10.16, 12.7), pins, fields_right=True,
+        "74LVC2G66", "U", "74LVC2G66DP",
+        "Nexperia 74LVC2G66DP dual independent 440 MHz 6 ohm SPST analog switch, TSSOP-8",
+        "Package_SO:TSSOP-8_3x3mm_P0.65mm",
+        (-10.16, -8.89, 10.16, 8.89), pins, fields_right=True,
     ))
 
     # 4. RT9013-33GB (Richtek DS9013-10, SOT-23-5)
@@ -201,6 +207,21 @@ def symbols() -> str:
         "Nexperia BAV199 ultra-low-leakage (<3 pA typ) dual series diode, SOT-23",
         "Package_TO_SOT_SMD:SOT-23",
         (-5.08, -5.08, 5.08, 5.08), pins, g,
+    ))
+
+    # 6. SW_Side_TS24CA (SHOU HAN TS24CA / C393942 4-pad side-actuated SMD tactile switch)
+    g_sw = _poly([(-2.54, 1.27), (2.54, 2.54)]) + _poly([(-2.54, -2.54), (2.54, -2.54)])
+    pins = [
+        ("1", "A", "passive", -7.62, 1.27, 0),
+        ("2", "B", "passive", 7.62, 1.27, 180),
+        ("3", "SH", "passive", 7.62, -2.54, 180),
+        ("4", "SH", "passive", -7.62, -2.54, 0),
+    ]
+    out.append(_symbol(
+        "SW_Side_TS24CA", "SW", "TS24CA",
+        "SHOU HAN TS24CA right-angle SMD tactile push button (1=A, 2=B, 3/4=shield)",
+        "ppa:SW_Push_Side_TS24CA",
+        (-5.08, -3.81, 5.08, 3.81), pins, g_sw,
     ))
 
     out.append(")\n")
@@ -282,41 +303,117 @@ def _circle(fp, layer, r, w):
     fp.Add(s)
 
 
-def fp_molex_503480():
-    """Molex 503480-0800 8-pin 0.5 mm BackFlip FPC connector (SD-503480-001 nominal FBH1 layout)."""
+def fp_lcd_fpc_13p():
+    """13-pin 0.70 mm pitch solder-on FPC footprint (1.14 in ST7789 & 0.96 in ST7735S compatible, DNP on B.Cu)."""
     fp = _new_fp(
-        "Molex_503480-0800_1x08-1MP_P0.50mm_Horizontal",
-        "Molex 503480-0800 8-circuit 0.50 mm pitch BackFlip FPC receptacle",
+        "LCD_FPC_13P_P0.70mm_Solder",
+        "13-pin 0.70 mm pitch bare solder-on FPC landing (1.14 in & 0.96 in IPS LCDs)",
+        attr=pcbnew.FP_SMD | pcbnew.FP_EXCLUDE_FROM_BOM | pcbnew.FP_EXCLUDE_FROM_POS_FILES | pcbnew.FP_DNP,
     )
-    for i in range(8):
-        _smd(fp, i + 1, -1.75 + i * 0.50, -1.65, 0.30, 1.10, ratio=0.1)
-    for sx in (-2.80, 2.80):
-        _smd(fp, "MP", sx, 1.35, 0.85, 1.40, ratio=0.1)
-    _rect(fp, pcbnew.F_Fab, -3.15, -1.90, 3.15, 1.90, 0.1)
-    # Silkscreen outline kept clear of pads
-    _line(fp, pcbnew.F_SilkS, -3.35, -1.90, -3.35, 0.45, 0.12)
-    _line(fp, pcbnew.F_SilkS, 3.35, -1.90, 3.35, 0.45, 0.12)
-    _line(fp, pcbnew.F_SilkS, -2.15, 2.05, 2.15, 2.05, 0.12)
-    _line(fp, pcbnew.F_SilkS, -1.75, -2.45, -1.75, -2.75, 0.25)  # pin 1 marker
-    _rect(fp, pcbnew.F_CrtYd, -3.55, -2.50, 3.55, 2.35, 0.05)
-    fp.Reference().SetPosition(_v(0, -3.3))
-    fp.Value().SetPosition(_v(0, 3.0))
+    cu_mask_only = pcbnew.LSET()
+    cu_mask_only.AddLayer(pcbnew.F_Cu)
+    cu_mask_only.AddLayer(pcbnew.F_Mask)
+    for i in range(13):
+        # On F.Cu before Flip(pos, False), Y goes -4.20 -> +4.20 so after Flip to B.Cu: Pin 1 is +4.20, Pin 13 is -4.20
+        y = -4.20 + i * 0.70
+        p = _smd(fp, i + 1, 0.0, y, 3.00, 0.40, ratio=0.08)
+        p.SetLayerSet(cu_mask_only)
+    # 1.14" glass outline (-46.20..-15.20, y=+-8.80) & 0.96" glass outline (-43.15..-15.20, y=+-6.75) on Fab
+    _rect(fp, pcbnew.F_Fab, -46.20, -8.80, -15.20, 8.80, 0.12)
+    _rect(fp, pcbnew.F_Fab, -43.15, -6.75, -15.20, 6.75, 0.08)
+    _rect(fp, pcbnew.F_Fab, -15.20, -6.20, 0.65, 6.20, 0.10)  # FPC tab (tip at x = +0.65 -> 88.85 mm)
+    for sy in (-5.20, 5.20):  # 10.40 mm alignment hole targets on Fab
+        s = pcbnew.PCB_SHAPE(fp, pcbnew.SHAPE_T_CIRCLE)
+        s.SetLayer(pcbnew.F_Fab)
+        s.SetCenter(_v(-3.35, sy))
+        s.SetEnd(_v(-3.05, sy))
+        s.SetWidth(MM(0.10))
+        fp.Add(s)
+    # Minimal SilkS pin-1 dot clear of pads & adjacent copper
+    s = pcbnew.PCB_SHAPE(fp, pcbnew.SHAPE_T_CIRCLE)
+    s.SetLayer(pcbnew.F_SilkS)
+    s.SetCenter(_v(1.90, -4.20))
+    s.SetEnd(_v(2.10, -4.20))
+    s.SetWidth(MM(0.18))
+    fp.Add(s)
+    _rect(fp, pcbnew.F_CrtYd, -1.75, -4.65, 1.75, 4.65, 0.05)
+    fp.Reference().SetPosition(_v(2.8, 0.0))
+    fp.Value().SetPosition(_v(-30.0, 0.0))
     return fp
 
 
-def fp_wurth_m3():
-    """Wurth Elektronik WA-SMSI 9774030360R M3x3.0 mm SMT spacer (OD 7.4 mm pad, 4.4 mm hole)."""
+def fp_sw_ts24ca():
+    """SHOU HAN TS24CA (C393942) 4.7x3.5x1.9 mm pure-SMD side-actuated tactile switch (plunger faces -Y at rot=0)."""
     fp = _new_fp(
-        "Wurth_9774030360R_M3",
-        "Wurth 9774030360R WA-SMSI M3x3.0 mm SMD threaded spacer (7.4 mm pad, 4.4 mm hole)",
-        attr=pcbnew.FP_THROUGH_HOLE,
+        "SW_Push_Side_TS24CA",
+        "SHOU HAN TS24CA right-angle SMD tactile push button (LCSC C393942)",
     )
-    _pth(fp, 1, 0, 0, 7.4, 4.4, "circle")
-    _circle(fp, pcbnew.F_Fab, 3.0, 0.1)
-    _circle(fp, pcbnew.F_SilkS, 3.9, 0.12)
-    _circle(fp, pcbnew.F_CrtYd, 4.2, 0.05)
-    fp.Reference().SetPosition(_v(0, -4.8))
-    fp.Value().SetPosition(_v(0, 4.8))
+    _smd(fp, 1, -1.700, 0.975, 0.600, 1.200, ratio=0.1)
+    _smd(fp, 2, 1.700, 0.975, 0.600, 1.200, ratio=0.1)
+    _smd(fp, 3, 2.125, -0.975, 1.050, 1.300, ratio=0.1)
+    _smd(fp, 4, -2.125, -0.975, 1.050, 1.300, ratio=0.1)
+    _rect(fp, pcbnew.F_Fab, -2.275, -1.225, 2.275, 1.075, 0.10)
+    _rect(fp, pcbnew.F_Fab, -1.000, -2.425, 1.000, -1.225, 0.10)  # plunger
+    _line(fp, pcbnew.F_SilkS, -1.10, 1.25, 1.10, 1.25, 0.12)
+    _line(fp, pcbnew.F_SilkS, -1.10, 0.70, -1.10, 1.25, 0.12)  # pin 1 tick
+    _rect(fp, pcbnew.F_CrtYd, -2.90, -2.55, 2.90, 1.80, 0.05)
+    fp.Reference().SetPosition(_v(0, 2.5))
+    fp.Value().SetPosition(_v(0, -3.1))
+    return fp
+
+
+def fp_nose_wago2060_kf381_probe():
+    """3-in-1 nose combo: WAGO 2060-453 SMD (4.0 mm) + DNP KF250NH-3.81-3P THT + 14x2.8 mm F/B via-stitched probe pads."""
+    fp = _new_fp(
+        "Nose_WAGO2060_KF381_ProbePads",
+        "WAGO 2060-453/998-404 3P 4.0 mm SMD spring terminal + DNP KF250NH-3.81-3P THT + 14x2.8 mm F/B via-stitched probe pads",
+        attr=pcbnew.FP_SMD,
+    )
+    f_cu_mask = pcbnew.LSET()
+    f_cu_mask.AddLayer(pcbnew.F_Cu)
+    f_cu_mask.AddLayer(pcbnew.F_Mask)
+    b_cu_mask = pcbnew.LSET()
+    b_cu_mask.AddLayer(pcbnew.B_Cu)
+    b_cu_mask.AddLayer(pcbnew.B_Mask)
+
+    poles = ((1, -4.00, -3.81), (2, 0.00, 0.00), (3, 4.00, 3.81))
+    via_xs = (-3.20, -1.30, 2.30, 4.20, 5.90)
+
+    for num, y_wago, y_kf in poles:
+        # 1. Heavy-duty flat solder pads: 14.0 x 2.80 mm on F.Cu, shortened 10.8 x 2.80 mm on B.Cu
+        # (leaves x = 0..4.2 mm at nose tip clear on B.Cu for always-on front worklight LEDs)
+        pt = _smd(fp, num, -0.50, y_wago, 14.00, 2.80, ratio=0.06)
+        pt.SetLayerSet(f_cu_mask)
+        pb = _smd(fp, num, 1.10, y_wago, 10.80, 2.80, ratio=0.06)
+        pb.SetLayerSet(b_cu_mask)
+
+        # 2. WAGO 2060-453/998-404 SMD solder paste zones (C2765056: 6.0x2.0 front, 3.5x2.0 rear)
+        _smd(fp, num, -4.625, y_wago, 6.00, 2.00, ratio=0.10)
+        _smd(fp, num, 4.625, y_wago, 3.50, 2.00, ratio=0.10)
+
+        # 3. DNP KF250NH-3.81-3P (C976577) THT holes: front row in gap between WAGO paste pads, rear row behind
+        _pth(fp, num, 0.50, y_kf, 2.30, 1.50, "circle")
+        _pth(fp, num, 7.50, y_kf, 2.30, 1.50, "circle")
+
+        # 4. 10 through-board stitching vias per pole (30 total) mechanically locking F.Cu and B.Cu pads
+        for vx in via_xs:
+            for vy in (y_wago - 1.00, y_wago + 1.00):
+                _pth(fp, num, vx, vy, 0.55, 0.30, "circle")
+
+    # WAGO 2060-453 body & top push-buttons on F.Fab; probe solder zones on B.Fab
+    _rect(fp, pcbnew.F_Fab, -7.62, -5.95, 6.38, 5.95, 0.12)
+    for _, y_wago, _ in poles:
+        _rect(fp, pcbnew.F_Fab, 0.00, y_wago - 1.10, 6.10, y_wago + 1.10, 0.10)
+        _rect(fp, pcbnew.B_Fab, -4.30, y_wago - 1.40, 6.50, y_wago + 1.40, 0.10)
+    # Optional KF250NH-3.81-3P body outline on F.Fab (x = -2.0 .. +10.0, y = -6.0 .. +6.0)
+    _rect(fp, pcbnew.F_Fab, -2.00, -6.00, 10.00, 6.00, 0.08)
+
+    # Silkscreen outline outside exposed copper pads (y = +-5.95 clear of y = +-5.40 pads)
+    _line(fp, pcbnew.F_SilkS, -7.62, -6.05, 6.38, -6.05, 0.12)
+    _line(fp, pcbnew.F_SilkS, -7.62, 6.05, 6.38, 6.05, 0.12)
+    _rect(fp, pcbnew.F_CrtYd, -7.80, -6.25, 8.85, 6.25, 0.05)
+    fp.Reference().SetPosition(_v(0, -6.6))
+    fp.Value().SetPosition(_v(0, 6.6))
     return fp
 
 
@@ -337,6 +434,25 @@ def fp_jz100():
     return fp
 
 
+def fp_led_xl3806():
+    """XINGLIGHT XL-3806UWC (C2843778) 3.8x1.0x0.6 mm side-view white LED (emitting edge -Y at rot=0; 1=K, 2=A)."""
+    fp = _new_fp(
+        "LED_Side_XL3806_3.8x1.0mm",
+        "XINGLIGHT XL-3806UWC 3.8x1.0x0.6 mm side-emitting white LED (1=K, 2=A, emits -Y at rot=0)",
+    )
+    _smd(fp, 1, -1.55, 0.0, 0.90, 1.00, ratio=0.10)
+    _smd(fp, 2, 1.55, 0.0, 0.90, 1.00, ratio=0.10)
+    _rect(fp, pcbnew.F_Fab, -1.90, -0.50, 1.90, 0.50, 0.10)
+    _line(fp, pcbnew.F_Fab, -1.90, -0.50, 1.90, -0.50, 0.18)  # emitting lens face (-Y)
+    _line(fp, pcbnew.F_Fab, -1.55, -0.45, -1.55, 0.45, 0.15)  # cathode marker
+    _line(fp, pcbnew.F_SilkS, -2.15, -0.45, -2.15, 0.45, 0.15)  # cathode tick
+    _line(fp, pcbnew.F_SilkS, -1.00, -0.68, 1.00, -0.68, 0.14)  # emitting edge indicator
+    _rect(fp, pcbnew.F_CrtYd, -2.10, -0.70, 2.10, 0.70, 0.05)
+    fp.Reference().SetPosition(_v(0, 1.35))
+    fp.Value().SetPosition(_v(0, -1.35))
+    return fp
+
+
 def main():
     LIB.mkdir(exist_ok=True)
     SYM.write_text(symbols(), encoding="utf8", newline="\n")
@@ -344,7 +460,7 @@ def main():
         shutil.rmtree(PRETTY)
     PRETTY.mkdir()
     io = pcbnew.PCB_IO_KICAD_SEXPR()
-    for f in (fp_molex_503480(), fp_wurth_m3(), fp_jz100()):
+    for f in (fp_lcd_fpc_13p(), fp_sw_ts24ca(), fp_nose_wago2060_kf381_probe(), fp_jz100(), fp_led_xl3806()):
         io.FootprintSave(str(PRETTY), f)
     print("wrote", SYM, "and", sorted(os.listdir(PRETTY)))
 
