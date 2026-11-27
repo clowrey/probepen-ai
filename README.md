@@ -80,6 +80,18 @@ The layout rules (inner layers, vias, widths, critical nets, the MCU fan-out) ar
 [`hw/out/board_features.json`](hw/out/board_features.json), so every opening follows the board.
 Screws self-tap into pilot holes in the plastic; there are no heat-set inserts.
 
+![Case views](docs/img/case_exploded.png)
+
+- The outline follows the board, including the 14 mm nose and its S-curve taper.
+- The nose has a front window over the WAGO wire entries and the two work-light LEDs, and a window
+  on top over the terminal's release push-buttons.
+- The LCD sits on the bottom of the board, so its viewing window is in the bottom shell, with a
+  ledge under the glass rim.
+- Each side button gets a flexure tab cut into the side wall that presses the switch plunger.
+- Two holes in the bottom shell reach the input trimmer capacitors.
+- The 12.2 × 21.5 mm cross-section is set by the WAGO terminal (4.5 mm tall) on top and the LCD glass
+  below.
+
 ## Input limits and safety
 
 The instrument is referenced to USB ground; it is not isolated. Keep both probe inputs within about

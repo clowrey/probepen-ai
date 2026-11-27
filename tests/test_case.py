@@ -58,21 +58,50 @@ def test_pcb_zero_collision_and_component_clearances(built_case):
     assert (top & pcb).volume < 1e-3, "top_shell collides with PCB"
     assert (bot & pcb).volume < 1e-3, "bottom_shell collides with PCB"
 
-    # Exterior access probes for every external connector, window, button, and LED
-    nose_probe = Location((0.0, 0.0, case.Z_SPLIT)) * Cylinder(radius=1.8, height=12.0).rotate(Axis.Y, 90)
-    assert ((top + bot) & nose_probe).volume < 1e-3, "nose J2 probe tip opening obstructed"
+    shells = top + bot
 
-    lx0, ly0, lx1, ly1 = feat["lcd_window"]
-    lcd_probe = Location((0.5 * (lx0 + lx1), 0.0, 6.5)) * Box(lx1 - lx0 - 1.5, ly1 - ly0 - 1.5, 4.0)
-    assert (top & lcd_probe).volume < 1e-3, "LCD viewing window obstructed"
+    # WAGO wire entries: a 1.8 mm wire reaches each pole from in front of the nose
+    for py in case.WAGO_POLE_Y:
+        wire = Location((-3.0, py, case.WIRE_ENTRY_Z)) * Cylinder(radius=0.9, height=7.0).rotate(Axis.Y, 90)
+        assert (shells & wire).volume < 1e-3, f"WAGO wire entry at y={py} obstructed"
 
-    for bx, by in feat["buttons"]:
-        btn_probe = Location((bx, by, 6.5)) * Cylinder(radius=1.5, height=4.0)
-        assert (top & btn_probe).volume < 1e-3, f"button cutout at {(bx, by)} obstructed"
+    # WAGO release push-buttons reachable from above
+    jx = feat["part_centres"]["J5"][0]
+    for py in case.WAGO_POLE_Y:
+        push = Location((jx + 3.0, py, 7.0)) * Box(4.0, 2.0, 4.0)
+        assert (top & push).volume < 1e-3, f"WAGO push-button at y={py} covered"
 
+    # Front work-light LEDs (B side, fire -X) see out of the nose
     for dx, dy in feat["leds"]:
-        led_probe = Location((dx, dy, 6.5)) * Cylinder(radius=0.8, height=4.0)
-        assert (top & led_probe).volume < 1e-3, f"LED hole at {(dx, dy)} obstructed"
+        beam = Location((dx - 4.0, dy, -0.6)) * Cylinder(radius=0.6, height=8.0).rotate(Axis.Y, 90)
+        assert (shells & beam).volume < 1e-3, f"LED at {(dx, dy)} blocked"
+
+    # LCD on B.Cu: window through the bottom floor, glass not touching the shell
+    lx0, ly0, lx1, ly1 = feat["lcd_window"]
+    lcd_probe = Location((0.5 * (lx0 + lx1), 0.5 * (ly0 + ly1), -4.0)) * Box(lx1 - lx0 - 1.5, ly1 - ly0 - 1.5, 4.0)
+    assert (bot & lcd_probe).volume < 1e-3, "LCD viewing window obstructed"
+    gx0, gy0, gx1, gy1 = feat["lcd_glass"]
+    glass = Location((0.5 * (gx0 + gx1), 0.5 * (gy0 + gy1), -1.0)) * Box(gx1 - gx0, gy1 - gy0, 1.6)
+    assert (bot & glass).volume < 1e-3, "LCD glass collides with the bottom shell"
+    rim = Location((0.5 * (gx0 + gx1), 0.0, -1.95)) * Box(gx1 - gx0 - 1.0, gy1 - gy0, 0.15)
+    assert (bot & rim).volume > 1.0, "no ledge under the LCD glass rim"
+
+    # Side buttons: plunger clear at rest, slots cut either side of each flexure tab
+    for plunger in case.button_plungers(feat):
+        assert (top & plunger).volume < 1e-3, "button plunger touches the case at rest"
+    y_wall = -(feat["outline_mm"][1] / 2.0 + case.PCB_CLR_XY + case.WALL_THICK / 2.0)
+    for bx, _ in feat["buttons"]:
+        for sx in (-1, 1):
+            slot = Location((bx + sx * (case.TAB_HALF_X + case.TAB_SLOT / 2.0), y_wall, 4.0)) * Box(0.3, 3.0, 3.0)
+            assert (top & slot).volume < 1e-3, f"button {bx} flexure slot missing"
+        tab = Location((bx, y_wall, 4.0)) * Box(3.0, 1.0, 2.0)
+        assert (top & tab).volume > 1.0, f"button {bx} flexure tab missing"
+
+    # Trimmer screwdriver holes
+    for ref in ("CT1", "CT2"):
+        tx, ty = feat["part_centres"][ref]
+        bit = Location((tx, ty, -3.4)) * Cylinder(radius=0.9, height=3.0)
+        assert (bot & bit).volume < 1e-3, f"{ref} trimmer hole missing"
 
     cons = {c["ref"]: c for c in feat["connectors"]}
     j3 = cons["J3"]["plug_envelope"]
