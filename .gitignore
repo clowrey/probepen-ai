@@ -18,3 +18,4 @@ core.*
 hw/.render.kicad_pcb
 hw/.render.kicad_prl
 hw/.render.kicad_pro
+hw/out/tidy_*.json

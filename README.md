@@ -368,6 +368,7 @@ pytest), `gcc` and `arm-none-eabi-gcc`:
 | Board placement and zones | `kicad-python hw/gen_pcb.py` |
 | Board from the frozen routing | `kicad-python hw/route.py` |
 | Re-route from scratch | `KRT=<KiCadRoutingTools checkout> hw/tools/groute/run.sh` |
+| Straighten the routing | `kicad-python hw/tools/tidy_extract.py && python3 hw/tools/tidy_routes.py`, then the board step again |
 | Pin header for the firmware | `.venv/bin/python -m hw.tools.gen_pins_h` |
 | Case | `.venv/bin/python case/case.py` |
 | Images | `kicad-python docs/render_board.py`, then `docs/make_images.py`, `docs/fw_ui_preview.py`, `docs/case_views.py`, `docs/composite.py` (each with `.venv/bin/python`) |

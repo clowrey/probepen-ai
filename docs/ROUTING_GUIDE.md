@@ -113,6 +113,14 @@ locally are used; no paid or hosted routing service.
 6. `hw/tools/stitch_islands.py` gives stranded outer-layer ground pour pieces a via to their plane.
 7. `hw/route.py --freeze` writes the board's copper to `hw/routes.py`; `hw/route.py` rebuilds the
    board from it.
+8. `hw/tools/tidy_routes.py` straightens what the router left crooked, in `hw/routes.py` directly. It
+   splits each net into runs between pads, vias and branches and replaces any part of a run with a
+   straight or 45-degree path when that is shorter or has fewer bends and keeps clear of everything
+   else (other nets' copper, holes, keep-outs, fixed pours, the board edge). A run that ends in a pad
+   may end anywhere inside that pad, so traces enter pads straight. Runs that thread through their own
+   pads (the nose terminal) are left alone. It needs `kicad-python hw/tools/tidy_extract.py` first;
+   check with DRC afterwards, and if an outer ground pour piece is cut off, step 6 finds a via for it.
+   `hw/tools/plot_routes.py` draws one layer of `hw/routes.py` for review.
 
 ### What made the difference (2026-11-26/27)
 
