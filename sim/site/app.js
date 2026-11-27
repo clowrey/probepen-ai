@@ -203,7 +203,7 @@ const PRESETS = [
     pod: { kind: 1, freq: 1e6 }, cmds: ["MODE 3", "TB 4", "RUN 1"],
   },
   {
-    name: "Tips grounded (for CAL)", note: "Both tips on ground. This simulated unit reads about +47 mV on CH1 and −31 mV on CH2. Press CAL in the host app: the pen measures the offset, stores the correction in flash and applies it on both ranges. The firmware keeps one correction for both channels, so it removes their average (+8 mV).",
+    name: "Tips grounded (for CAL)", note: "Both tips on ground. This simulated unit reads about +47 mV on CH1 and −31 mV on CH2. Press CAL in the host app: the pen measures each channel's offset, stores the corrections in flash and applies them on both ranges.",
     sig: [{ kind: 0 }, { kind: 0 }], cmds: ["MODE 0", "GAIN 1", "TB 6", "RUN 1"],
   },
 ];
@@ -311,7 +311,8 @@ function updateNow() {
     ["Ranges", `CH1 ${rng(s.range[0])}, CH2 ${rng(s.range[1])}${s.auto ? ", auto" : ", fixed"}`],
     ["Trigger", scope ? `CH${s.trig_src + 1} ${s.slope ? "falling" : "rising"}, level ${s.trig_level} = ${eng(trigV, "V")}, ` +
       `<span class="${s.triggered ? "yes" : "no"}">${s.triggered ? "found" : "not found (free-running)"}</span>` : "–"],
-    ["Calibration", `zero offsets ${eng(s.off1, "V")} (±5 V), ${eng(s.off10, "V")} (±26 V); ${s.flash_writes} flash write${s.flash_writes === 1 ? "" : "s"}`],
+    ["Calibration", `zero corrections CH1 ${eng(s.off1[0], "V")}, CH2 ${eng(s.off1[1], "V")} (±5 V range); ` +
+      `${s.flash_writes} flash write${s.flash_writes === 1 ? "" : "s"}`],
   ];
   $("now").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
   syncHostControls(s);

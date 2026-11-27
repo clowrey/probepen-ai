@@ -112,7 +112,17 @@ def test_cal_zeroes_offset(sim):
     assert d.cmd("CAL") == "OK"
     d.run(200)
     info = d.info()
-    assert info["flash_writes"] == 1 and abs(info["off1"]) > 0.005
+    # the simulated unit reads +47 mV on CH1 and -31 mV on CH2 (+-5 V range): each channel gets its own correction
+    assert info["flash_writes"] == 1
+    assert abs(info["off1"][0] + 0.047) < 0.01 and abs(info["off1"][1] - 0.031) < 0.01, info   # corrections
+    d.run(300)
+    assert d.cmd("CAPTURE 1000").startswith("OK")
+    d.run(30)
+    d.out()
+    meas = d.cmd("MEAS?").split(";")
+    for part in meas[:2]:
+        vavg = float(part.split("VAVG=")[1].split()[0])
+        assert abs(vavg) < 0.015, meas
 
 
 def test_committed_wasm_matches_the_sources():

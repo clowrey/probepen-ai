@@ -64,7 +64,7 @@ typedef struct {
     uint8_t trig_src;           /* 0 = CH1, 1 = CH2 */
     scope_trig_slope_t trig_slope;
     uint32_t logic_thr_mv;
-    afe_cal_t cal;
+    afe_cal_t cal[2];           /* one calibration set per channel (CH1, CH2) */
 
     /* results of the last capture */
     scope_meas_t meas[2];

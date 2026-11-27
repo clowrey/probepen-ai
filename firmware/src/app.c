@@ -135,7 +135,8 @@ void app_init(app_t *app) {
     app->trig_src = 0u;
     app->trig_slope = TRIG_RISING;
     app->logic_thr_mv = logic_family_default_mv(LOGIC_FAMILY_CMOS33);
-    afe_cal_init_default(&app->cal);
+    afe_cal_init_default(&app->cal[0]);
+    afe_cal_init_default(&app->cal[1]);
     app->sample_rate_hz = app_sample_rate_hz(app);
     app->win_len = app_screen_samples(app);
 }
@@ -196,9 +197,10 @@ void app_button_event(app_t *app, uint8_t button, btn_event_t ev) {
 
 /* ---- processing ------------------------------------------------------------------------------ */
 
-static void range_scale(const app_t *app, afe_range_t r, float *code_scale, float *zero_code) {
-    float gain = (r == AFE_RANGE_10X) ? app->cal.gain_10x : app->cal.gain_1x;
-    float offs = (r == AFE_RANGE_10X) ? app->cal.offset_10x_v : app->cal.offset_1x_v;
+static void range_scale(const app_t *app, int ch, afe_range_t r, float *code_scale, float *zero_code) {
+    const afe_cal_t *cal = &app->cal[ch & 1];
+    float gain = (r == AFE_RANGE_10X) ? cal->gain_10x : cal->gain_1x;
+    float offs = (r == AFE_RANGE_10X) ? cal->offset_10x_v : cal->offset_1x_v;
     *code_scale = gain * 1.024f / 256.0f;        /* 1.024 V ADC span over 256 codes */
     *zero_code = 128.0f - offs / *code_scale;
 }
@@ -211,29 +213,27 @@ void app_process_scope(app_t *app, const uint16_t *ch_a, const uint16_t *ch_b, s
     app->sample_rate_hz = app_sample_rate_hz(app);
     for (int c = 0; c < 2; ++c) {
         float scale, zero;
-        range_scale(app, app->range[c], &scale, &zero);
+        range_scale(app, c, app->range[c], &scale, &zero);
         scope_measure_buffer(ch[c], ch[c] ? n : 0u, app->sample_rate_hz, scale, zero, app->trig_slope, &app->meas[c]);
     }
     if (app->cal_pending && ch_a && ch_b && n > 0u) {
-        /* Inputs shorted: the average left over is offset. It is converted to ADC codes (it comes from the
-         * gain stage and the ADC, after the range switch) and applied to both ranges; one calibration set
-         * serves both channels. */
-        float d_code = 0.0f;
+        /* Inputs shorted: what each channel still reads is its own offset. It is converted to ADC codes (it
+         * comes from the gain stage and the ADC, after the range switch) and applied to both of that
+         * channel's ranges. */
         for (int c = 0; c < 2; ++c) {
-            float scale, zero;
-            range_scale(app, app->range[c], &scale, &zero);
-            d_code += 0.5f * app->meas[c].vavg / scale;
+            float scale, zero, s1, s10, z;
+            range_scale(app, c, app->range[c], &scale, &zero);
+            float d_code = app->meas[c].vavg / scale;
+            range_scale(app, c, AFE_RANGE_1X, &s1, &z);
+            range_scale(app, c, AFE_RANGE_10X, &s10, &z);
+            app->cal[c].offset_1x_v -= d_code * s1;
+            app->cal[c].offset_10x_v -= d_code * s10;
         }
-        float s1, s10, z;
-        range_scale(app, AFE_RANGE_1X, &s1, &z);
-        range_scale(app, AFE_RANGE_10X, &s10, &z);
-        app->cal.offset_1x_v -= d_code * s1;
-        app->cal.offset_10x_v -= d_code * s10;
         app->cal_pending = false;
         app->cal_changed = true;
         for (int c = 0; c < 2; ++c) {
             float scale, zero;
-            range_scale(app, app->range[c], &scale, &zero);
+            range_scale(app, c, app->range[c], &scale, &zero);
             scope_measure_buffer(ch[c], n, app->sample_rate_hz, scale, zero, app->trig_slope, &app->meas[c]);
         }
     }
@@ -324,9 +324,9 @@ void app_set_dc(app_t *app, uint16_t raw_ch1, uint16_t raw_ch2, uint16_t raw_vbu
     if (!app) {
         return;
     }
-    app->dc_v[0] = afe_dc_sense_to_volts(&app->cal, app->range[0], raw_ch1);
-    app->dc_v[1] = afe_dc_sense_to_volts(&app->cal, app->range[1], raw_ch2);
-    app->vbus_v = (float)raw_vbus / 4096.0f * app->cal.vref_v * 2.0f;   /* R17/R18 100k:100k */
+    app->dc_v[0] = afe_dc_sense_to_volts(&app->cal[0], app->range[0], raw_ch1);
+    app->dc_v[1] = afe_dc_sense_to_volts(&app->cal[1], app->range[1], raw_ch2);
+    app->vbus_v = (float)raw_vbus / 4096.0f * app->cal[0].vref_v * 2.0f;   /* R17/R18 100k:100k */
 }
 
 /* ---- text ------------------------------------------------------------------------------------ */
@@ -535,7 +535,7 @@ static void fmt_timebase(uint32_t ns, char *out, size_t len) {
 }
 
 static float volts_per_div(const app_t *app, int ch) {
-    float gain = (app->range[ch] == AFE_RANGE_10X) ? app->cal.gain_10x : app->cal.gain_1x;
+    float gain = (app->range[ch] == AFE_RANGE_10X) ? app->cal[ch & 1].gain_10x : app->cal[ch & 1].gain_1x;
     return gain * 1.024f / 10.0f;   /* 1.024 V ADC span over 10 divisions: 1.0 V/div or 5.5 V/div */
 }
 
@@ -551,7 +551,7 @@ static void draw_header(const app_t *app, uint16_t *fb, const palette_t *p) {
     if (scope_mode(app->mode)) {
         char v[16];
         float scale, zero;
-        range_scale(app, app->range[app->trig_src & 1u], &scale, &zero);
+        range_scale(app, app->trig_src & 1u, app->range[app->trig_src & 1u], &scale, &zero);
         app_format_eng(((float)app->trig_level - zero) * scale, "V", v, sizeof v);
         snprintf(buf, sizeof buf, "T%u%c%s", (unsigned)(app->trig_src + 1u), app->trig_slope == TRIG_RISING ? '/' : '\\', v);
         lcd_fb_draw_text_scaled(fb, x, 1, buf, 1, app->triggered ? p->trig : p->dim);

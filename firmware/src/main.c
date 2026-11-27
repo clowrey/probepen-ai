@@ -305,15 +305,16 @@ static void capture_init(void) {
 #define CAL_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - 2u * FLASH_SECTOR_SIZE)
 
 static void cal_load(void) {
-    afe_cal_t cal;
-    if (calstore_unpack((const uint8_t *)(XIP_BASE + CAL_FLASH_OFFSET), &cal)) {
-        g_app.cal = cal;
+    afe_cal_t cal[2];
+    if (calstore_unpack((const uint8_t *)(XIP_BASE + CAL_FLASH_OFFSET), cal)) {
+        g_app.cal[0] = cal[0];
+        g_app.cal[1] = cal[1];
     }
 }
 
 static void cal_save(void) {
     static uint8_t page[CALSTORE_BYTES];
-    calstore_pack(&g_app.cal, page);
+    calstore_pack(g_app.cal, page);
     uint32_t irq = save_and_disable_interrupts();
     flash_range_erase(CAL_FLASH_OFFSET, FLASH_SECTOR_SIZE);
     flash_range_program(CAL_FLASH_OFFSET, page, FLASH_PAGE_SIZE);

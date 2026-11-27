@@ -485,12 +485,13 @@ EXPORT const char *sim_info(void) {
     snprintf(g_info, sizeof g_info,
              "{\"mode\":\"%s\",\"tb_ns\":%lu,\"fs\":%.1f,\"clkdiv\":%lu,\"peak_m\":%lu,\"screen\":%lu,"
              "\"capture\":%lu,\"cap_ms\":%lu,\"range\":[%d,%d],\"auto\":%d,\"trig_level\":%u,\"trig_src\":%u,"
-             "\"slope\":%d,\"triggered\":%d,\"run\":%d,\"flash_writes\":%lu,\"off1\":%.4f,\"off10\":%.4f}",
+             "\"slope\":%d,\"triggered\":%d,\"run\":%d,\"flash_writes\":%lu,\"off1\":[%.4f,%.4f],\"off10\":[%.4f,%.4f]}",
              MODES[g_app.mode], (unsigned long)app_timebase_ns(&g_app), (double)app_sample_rate_hz(&g_app),
              (unsigned long)app_clkdiv(&g_app), (unsigned long)app_peak_factor(&g_app),
              (unsigned long)app_screen_samples(&g_app), (unsigned long)n, (unsigned long)g_cap_ms,
              (int)g_app.range[0], (int)g_app.range[1], (int)g_app.auto_range, (unsigned)g_app.trig_level,
              (unsigned)g_app.trig_src, (int)g_app.trig_slope, (int)g_app.triggered, (int)g_app.run,
-             (unsigned long)g_flash_writes, (double)g_app.cal.offset_1x_v, (double)g_app.cal.offset_10x_v);
+             (unsigned long)g_flash_writes, (double)g_app.cal[0].offset_1x_v, (double)g_app.cal[1].offset_1x_v,
+             (double)g_app.cal[0].offset_10x_v, (double)g_app.cal[1].offset_10x_v);
     return g_info;
 }

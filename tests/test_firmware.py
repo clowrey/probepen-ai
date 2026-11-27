@@ -452,13 +452,15 @@ def test_peak_detect(core_lib):
 
 
 def test_calibration_record_round_trip(core_lib):
-    cal = (ctypes.c_float * 7)()
+    cal = (ctypes.c_float * 14)()                # CH1 and CH2 sets, 7 floats each
     core_lib.afe_cal_init_default(cal)
-    cal[4] = 0.031                               # a zero offset from CAL
+    core_lib.afe_cal_init_default(ctypes.byref(cal, 28))
+    cal[4] = 0.031                               # CH1 zero offset from CAL
+    cal[11] = -0.022                             # CH2's own
     page = (ctypes.c_uint8 * 256)()
     core_lib.calstore_pack.restype = ctypes.c_size_t
-    assert core_lib.calstore_pack(cal, page) == 8 + 28 + 2
-    back = (ctypes.c_float * 7)()
+    assert core_lib.calstore_pack(cal, page) == 8 + 56 + 2
+    back = (ctypes.c_float * 14)()
     assert core_lib.calstore_unpack(page, back)
     assert list(back) == list(cal)
     erased = (ctypes.c_uint8 * 256)(*([0xFF] * 256))
@@ -469,16 +471,30 @@ def test_calibration_record_round_trip(core_lib):
     core_lib.calstore_pack(cal, page)
     assert not core_lib.calstore_unpack(page, back)
 
+    # a version 1 record (one set for both channels, from older firmware) loads into both channels
+    import struct
+    v1 = [3.0, 0.978, 0.978, 9.803, 0.05, 53.56, 0.0]
+    body = struct.pack("<IHH7f", 0x50504341, 1, 7, *v1)
+    crc = 0xFFFF
+    for b in body:
+        crc ^= b << 8
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x1021) & 0xFFFF if crc & 0x8000 else (crc << 1) & 0xFFFF
+    old = (ctypes.c_uint8 * 256)(*(body + struct.pack("<H", crc) + b"\xff" * (256 - len(body) - 2)))
+    assert core_lib.calstore_unpack(old, back)
+    assert abs(back[4] - 0.05) < 1e-6 and abs(back[11] - 0.05) < 1e-6
+
     app = _app(core_lib)
     _cmd(core_lib, app, "CAL")
     n = 600
-    a = (ctypes.c_uint16 * n)(*([131] * n))             # shorted inputs reading 3 codes high
-    core_lib.app_process_scope(app, a, a, ctypes.c_size_t(n))
-    assert "VAVG=0.000" in _cmd(core_lib, app, "MEAS?").split(";")[0]
-    for gain in ("GAIN 1", "GAIN 10"):                   # both ranges zeroed by one CAL
+    a = (ctypes.c_uint16 * n)(*([131] * n))             # shorted inputs: CH1 reads 3 codes high,
+    b = (ctypes.c_uint16 * n)(*([126] * n))             # CH2 2 codes low
+    core_lib.app_process_scope(app, a, b, ctypes.c_size_t(n))
+    for gain in ("GAIN 1", "GAIN 10"):                   # each channel, both ranges, zeroed by one CAL
         _cmd(core_lib, app, gain)
-        core_lib.app_process_scope(app, a, a, ctypes.c_size_t(n))
-        assert "VAVG=0.000" in _cmd(core_lib, app, "MEAS?").split(";")[0], gain
+        core_lib.app_process_scope(app, a, b, ctypes.c_size_t(n))
+        meas = _cmd(core_lib, app, "MEAS?").split(";")
+        assert "VAVG=0.000" in meas[0] and "VAVG=0.000" in meas[1], (gain, meas)
 
 
 def test_lcd_panel_bytes(core_lib):

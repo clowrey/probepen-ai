@@ -23,8 +23,7 @@
 #define PICO_XOSC_STARTUP_DELAY_MULTIPLIER 64   /* small 2520 crystal: allow a slow start */
 #endif
 
-/* No UART on this board: stdio goes over USB */
-#define PICO_DEFAULT_UART_TX_PIN -1
-#define PICO_DEFAULT_UART_RX_PIN -1
+/* No UART on this board: stdio goes over USB. PICO_DEFAULT_UART* stay undefined (defining the pins
+ * as -1 still makes setup_default_uart() reach for uart_default). */
 
 #endif
