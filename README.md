@@ -160,6 +160,14 @@ DC-sense scaling.
 | 16..23 | ADCA_D7..D0 | 43, 44, 45 | BTN_DOWN_N, BTN_UP_N, BTN_MODE_N |
 | | | 46 | VBUS_SENSE (ADC6) |
 
+## Ordering
+
+`hw/export_jlc.py` writes the Gerbers, BOM and placement file for JLCPCB assembly to
+[`hw/out/jlc/`](hw/out/jlc/), and [`cost.md`](hw/out/jlc/cost.md) with live JLC prices and stock:
+about $9.80 per board for 30 assembled boards (2026-11-27), every part in stock. The AD9288, the LCD
+and the button caps are not in that figure: the AD9288 and the LCD are hand-soldered
+(`accessories.csv`).
+
 ## Building it from source
 
 In WSL (Ubuntu) with KiCad 10 (`kicad-python`, `kicad-cli`), the project `.venv` (build123d,
