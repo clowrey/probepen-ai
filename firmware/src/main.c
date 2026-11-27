@@ -17,10 +17,14 @@
 #include "probepen_scope.h"
 #include "probepen_usb.h"
 
+#include "probepen_calstore.h"
+
 #ifdef PICO_RP2350
 #include "hardware/adc.h"
 #include "hardware/dma.h"
+#include "hardware/flash.h"
 #include "hardware/gpio.h"
+#include "hardware/sync.h"
 #include "hardware/pio.h"
 #include "hardware/spi.h"
 #include "pico/stdlib.h"
@@ -229,6 +233,26 @@ static void capture_init(void) {
     g_cap_dma = dma_claim_unused_channel(true);
 }
 
+/* ---- calibration in the last flash sector ---------------------------------------------------- */
+
+#define CAL_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
+
+static void cal_load(void) {
+    afe_cal_t cal;
+    if (calstore_unpack((const uint8_t *)(XIP_BASE + CAL_FLASH_OFFSET), &cal)) {
+        g_app.cal = cal;
+    }
+}
+
+static void cal_save(void) {
+    static uint8_t page[CALSTORE_BYTES];
+    calstore_pack(&g_app.cal, page);
+    uint32_t irq = save_and_disable_interrupts();
+    flash_range_erase(CAL_FLASH_OFFSET, FLASH_SECTOR_SIZE);
+    flash_range_program(CAL_FLASH_OFFSET, page, FLASH_PAGE_SIZE);
+    restore_interrupts(irq);
+}
+
 /* ---- USB command line ------------------------------------------------------------------------ */
 
 static void usb_poll(void) {
@@ -257,6 +281,7 @@ static void usb_poll(void) {
 int main(void) {
     hal_init();
     app_init(&g_app);
+    cal_load();
     buttons_t btn;
     buttons_init(&btn);
     lcd_init_hw();
@@ -287,6 +312,10 @@ int main(void) {
             capture_finish();
             capturing = false;
             fresh = true;
+        }
+        if (g_app.cal_changed) {
+            cal_save();
+            g_app.cal_changed = false;
         }
         if (g_app.ask_pending) {
             char meas[320];

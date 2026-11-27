@@ -387,6 +387,36 @@ def test_host_client_reads_firmware_frames(core_lib):
     assert set(m["CH1"]) >= {"VPP", "VMIN", "VMAX", "F", "RANGE"} and m["TRIG"] == "NO"
 
 
+def test_calibration_record_round_trip(core_lib):
+    cal = (ctypes.c_float * 7)()
+    core_lib.afe_cal_init_default(cal)
+    cal[4] = 0.031                               # a zero offset from CAL
+    page = (ctypes.c_uint8 * 256)()
+    core_lib.calstore_pack.restype = ctypes.c_size_t
+    assert core_lib.calstore_pack(cal, page) == 8 + 28 + 2
+    back = (ctypes.c_float * 7)()
+    assert core_lib.calstore_unpack(page, back)
+    assert list(back) == list(cal)
+    erased = (ctypes.c_uint8 * 256)(*([0xFF] * 256))
+    assert not core_lib.calstore_unpack(erased, back)    # blank flash: keep the defaults
+    page[12] ^= 0x01
+    assert not core_lib.calstore_unpack(page, back)      # CRC catches a flipped bit
+    cal[3] = 100.0                                       # gain far from the design: refused
+    core_lib.calstore_pack(cal, page)
+    assert not core_lib.calstore_unpack(page, back)
+
+    app = _app(core_lib)
+    _cmd(core_lib, app, "CAL")
+    n = 600
+    a = (ctypes.c_uint16 * n)(*([131] * n))             # shorted inputs reading 3 codes high
+    core_lib.app_process_scope(app, a, a, ctypes.c_size_t(n))
+    assert "VAVG=0.000" in _cmd(core_lib, app, "MEAS?").split(";")[0]
+    for gain in ("GAIN 1", "GAIN 10"):                   # both ranges zeroed by one CAL
+        _cmd(core_lib, app, gain)
+        core_lib.app_process_scope(app, a, a, ctypes.c_size_t(n))
+        assert "VAVG=0.000" in _cmd(core_lib, app, "MEAS?").split(";")[0], gain
+
+
 def test_lcd_panel_bytes(core_lib):
     log = []
     CMD = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_uint8)
@@ -435,7 +465,8 @@ def test_hardware_path_type_checks_against_sdk_signatures(tmp_path):
     res = subprocess.run(
         [
             "arm-none-eabi-gcc", "-std=c11", "-mcpu=cortex-m33", "-mthumb", "-O2", "-Wall", "-Wextra", "-Werror",
-            "-DPICO_RP2350", f"-I{FW / 'include'}", f"-I{ROOT / 'tests' / 'fw_stubs'}", f"-I{tmp_path}",
+            "-DPICO_RP2350", "-include", str(FW / "boards" / "probepen_ai.h"),
+            f"-I{FW / 'include'}", f"-I{ROOT / 'tests' / 'fw_stubs'}", f"-I{tmp_path}",
             "-fsyntax-only", str(FW / "src" / "main.c"),
         ],
         capture_output=True, text=True, check=False,

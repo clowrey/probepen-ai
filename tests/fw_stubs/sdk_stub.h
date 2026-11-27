@@ -105,4 +105,13 @@ void pio_sm_set_clkdiv_int_frac(PIO pio, uint sm, uint16_t div_int, uint8_t div_
 uint pio_get_dreq(PIO pio, uint sm, bool is_tx);
 uint pio_encode_jmp(uint addr);
 
+/* hardware/flash, hardware/sync, addressmap */
+#define XIP_BASE 0x10000000u
+#define FLASH_PAGE_SIZE (1u << 8)
+#define FLASH_SECTOR_SIZE (1u << 12)
+void flash_range_erase(uint32_t flash_offs, size_t count);
+void flash_range_program(uint32_t flash_offs, const uint8_t *data, size_t count);
+uint32_t save_and_disable_interrupts(void);
+void restore_interrupts(uint32_t status);
+
 #endif

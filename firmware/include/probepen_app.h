@@ -81,6 +81,7 @@ typedef struct {
     /* requests for the main loop */
     bool ask_pending;           /* ASK held: send a snapshot to the host */
     bool cal_pending;           /* CAL: zero the offsets on the next capture (inputs shorted) */
+    bool cal_changed;           /* calibration updated: the main loop stores it in flash */
     uint16_t capture_req;       /* CAPTURE n: send n samples per channel after the next capture */
 } app_t;
 

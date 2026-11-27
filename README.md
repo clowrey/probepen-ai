@@ -145,7 +145,7 @@ The screens above are the firmware's own drawing code fed synthetic captures
 | UP / DOWN | slower / faster timebase | trigger level up / down (repeats) |
 
 USB (CDC serial, one command per line): `*IDN?`, `MODE n` (0..4), `TB n`, `GAIN 0|1|10` (0 = auto
-range), `TRIG code`, `RUN 0|1`, `CAL` (zero offsets with the inputs shorted), `MEAS?`, `CAPTURE n`
+range), `TRIG code`, `RUN 0|1`, `CAL` (zero the offsets with the inputs shorted; kept in the last flash sector), `MEAS?`, `CAPTURE n`
 (replies `OK n`, then one binary frame per channel: `AA 55 seq count16 samples16… crc16`).
 [`host/probepen.py`](host/probepen.py) speaks this protocol from a PC: `idn`, `meas`, `capture N`
 (CSV), `send "<command>"`, and `ask`, which waits for ASK presses and returns each snapshot for an

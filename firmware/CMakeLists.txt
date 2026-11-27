@@ -1,7 +1,9 @@
 cmake_minimum_required(VERSION 3.13)
 
+# Board header firmware/boards/probepen_ai.h: RP2354B (80-pin, 48 GPIOs), 2 MB stacked flash, USB stdio.
+set(PICO_BOARD_HEADER_DIRS ${CMAKE_CURRENT_LIST_DIR}/boards)
 if(NOT PICO_BOARD)
-    set(PICO_BOARD pico2 CACHE STRING "Target RP2350/RP2354B board")
+    set(PICO_BOARD probepen_ai CACHE STRING "Board header in firmware/boards")
 endif()
 
 if(DEFINED ENV{PICO_SDK_PATH})
@@ -18,6 +20,7 @@ add_library(probepen_core STATIC
     src/logic_probe.c
     src/lcd.c
     src/app.c
+    src/calstore.c
     src/usb_proto.c
 )
 target_include_directories(probepen_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -35,8 +38,9 @@ if(COMMAND pico_sdk_init)
         hardware_pio
         hardware_dma
         hardware_spi
-        hardware_pwm
         hardware_adc
+        hardware_flash
+        hardware_sync
     )
     pico_enable_stdio_usb(probepen_fw 1)
     pico_enable_stdio_uart(probepen_fw 0)

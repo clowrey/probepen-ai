@@ -199,14 +199,27 @@ void app_process_scope(app_t *app, const uint16_t *ch_a, const uint16_t *ch_b, s
         scope_measure_buffer(ch[c], ch[c] ? n : 0u, app->sample_rate_hz, scale, zero, app->trig_slope, &app->meas[c]);
     }
     if (app->cal_pending && ch_a && ch_b && n > 0u) {
-        /* inputs shorted: whatever average is left is offset; one calibration set serves both channels */
-        float avg = 0.5f * (app->meas[0].vavg + app->meas[1].vavg);
-        if (app->range[0] == AFE_RANGE_10X) {
-            app->cal.offset_10x_v -= avg;
-        } else {
-            app->cal.offset_1x_v -= avg;
+        /* Inputs shorted: the average left over is offset. It is converted to ADC codes (it comes from the
+         * gain stage and the ADC, after the range switch) and applied to both ranges; one calibration set
+         * serves both channels. */
+        float d_code = 0.0f;
+        for (int c = 0; c < 2; ++c) {
+            float scale, zero;
+            range_scale(app, app->range[c], &scale, &zero);
+            d_code += 0.5f * app->meas[c].vavg / scale;
         }
+        float s1, s10, z;
+        range_scale(app, AFE_RANGE_1X, &s1, &z);
+        range_scale(app, AFE_RANGE_10X, &s10, &z);
+        app->cal.offset_1x_v -= d_code * s1;
+        app->cal.offset_10x_v -= d_code * s10;
         app->cal_pending = false;
+        app->cal_changed = true;
+        for (int c = 0; c < 2; ++c) {
+            float scale, zero;
+            range_scale(app, app->range[c], &scale, &zero);
+            scope_measure_buffer(ch[c], n, app->sample_rate_hz, scale, zero, app->trig_slope, &app->meas[c]);
+        }
     }
     if (app->auto_range) {
         for (int c = 0; c < 2; ++c) {
