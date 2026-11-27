@@ -380,7 +380,7 @@ def write_project():
             "clearance": c,
             "track_width": w,
             "via_diameter": 0.40,
-            "via_drill": 0.20,
+            "via_drill": 0.25,
             "microvia_diameter": 0.3,
             "microvia_drill": 0.1,
             "diff_pair_width": 0.25,

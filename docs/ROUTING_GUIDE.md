@@ -39,7 +39,7 @@ Four layers: F.Cu (parts and signals), In1.Cu (ground), In2.Cu (ground and suppl
 
 ## 3. Vias
 
-- Always the smallest the design rules allow: 0.40 mm pad, 0.20 mm drill. There is no reason for a
+- Always 0.40 mm pad, 0.25 mm drill (JLC's standard via; a 0.20 mm drill adds about $40 per order in via, Kelvin-test and Tg155 charges). There is no reason for a
   larger via on this board.
 - No via in an SMD pad. Place it beside the pad with a short stub. (Exposed thermal pads are the
   exception.)

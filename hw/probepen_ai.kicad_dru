@@ -5,7 +5,9 @@
   (constraint clearance (min 0.092mm))
   (constraint track_width (min 0.092mm))
   (constraint via_diameter (min 0.40mm))
-  (constraint via_drill (min 0.20mm))
+  (constraint via_drill (min 0.25mm))
+  # JLC: via pad at least the drill + 0.10 mm (0.15 mm preferred): 0.40 mm on a 0.25 mm drill
+  (constraint annular_width (min 0.075mm))
   (constraint hole_clearance (min 0.25mm))
   (constraint edge_clearance (min 0.30mm))
   (constraint silk_clearance (min 0.15mm))
