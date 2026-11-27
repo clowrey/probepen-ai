@@ -1,4 +1,4 @@
-"""Write hw/probepen_ai.kicad_pcb (138 x 17.6 mm S-curve tapered outline, 4-layer stackup,
+"""Write hw/probepen_ai.kicad_pcb (132 x 17.6 mm S-curve tapered outline, 4-layer stackup,
 placement, rules, zones) and hw/out/board_features.json from hw/design.py and hardware/pcb_datum.py.
 
 Routing & placement rule: before routing traces, always check and optimize component rotations and
@@ -59,11 +59,11 @@ KICAD_FP = _find_kicad_fp()
 LOCAL_FP = HERE / "lib" / "ppa.pretty"
 
 # Board mechanical envelope (from hardware/pcb_datum.py)
-L = float(DATUM["length"])            # 138.0 mm (X: 0 .. 138)
+L = float(DATUM["length"])            # 132.0 mm (X: 0 .. 132)
 W_NOSE = float(DATUM["nose_width"])   # 14.0 mm  (X: 0 .. 18)
 HN_Y = W_NOSE / 2.0                   # 7.0 mm
 TX0, TX1 = (float(v) for v in DATUM["taper_x"])  # 18.0 .. 28.0
-W = float(DATUM["width"])             # 17.60 mm (X: 28 .. 138, exact 1.14" LCD glass width)
+W = float(DATUM["width"])             # 17.60 mm (X: 28 .. 132, exact 1.14" LCD glass width)
 HW_Y = W / 2.0                        # 8.80 mm
 THK = float(DATUM["thickness"])       # 1.6 mm
 R_NOSE = float(DATUM["nose_radius"])  # 2.0 mm
@@ -223,36 +223,36 @@ PLACE: dict[str, tuple] = {
     "R13": (105.8, 1.35, 180),
     "R12": (105.8, -0.25, 180),
 
-    # ---- Tail (x = 113..138): side header + protection, digital LDO, USB protection, USB-C -----
+    # ---- Tail (x = 107..132): side header + protection, digital LDO, USB protection, USB-C -----
     "J3":   (*_jst_kicad_xy(), 180),
-    "R46": (119.10, -0.8, 180),
-    "R45": (119.10, 0.4, 180),
-    "R44": (119.10, 1.6, 180),
-    "R43": (119.10, 2.8, 180),
-    "D2": (123.00, 0.4, 90),
-    "F2": (118.9, 4.8, 0),
-    "C56": (121.5, 3.4, 0),
-    "C3":   (119.4, 7.0, 0),
-    "U9":   (123.2, 5.7, 180),
-    "C2":   (127.0, 7.0, 0),
+    "R46": (113.10, -0.8, 180),
+    "R45": (113.10, 0.4, 180),
+    "R44": (113.10, 1.6, 180),
+    "R43": (113.10, 2.8, 180),
+    "D2": (117.00, 0.4, 90),
+    "F2": (112.90, 4.8, 0),
+    "C56": (115.50, 3.4, 0),
+    "C3":   (113.40, 7.0, 0),
+    "U9":   (117.20, 5.7, 180),
+    "C2":   (121.00, 7.0, 0),
     "H2":   (*DATUM["mount_hole_rear_xy"], 0),
-    "D1":   (127.6, -6.9, 0),
-    "F1":   (131.8, -6.9, 0),
-    "C1":   (134.2, -6.9, 270),
-    "R10":  (135.3, -6.9, 90),
-    "R11":  (136.4, -6.8, 90),
+    "D1":   (121.60, -6.9, 0),
+    "F1":   (125.80, -6.9, 0),
+    "C1":   (128.20, -6.9, 270),
+    "R10":  (129.30, -6.9, 90),
+    "R11":  (130.40, -6.8, 90),
     "J1":   (*DATUM["usbc_xy"], 90),
-    "R17":  (131.6, 7.0, 0),
-    "R18":  (134.0, 7.0, 0),
-    "C12":  (129.9, 7.2, 270),
+    "R17":  (125.60, 7.0, 0),
+    "R18":  (128.00, 7.0, 0),
+    "C12":  (123.90, 7.2, 270),
 
     # ---- Bottom-side DNP test pads (outside the LCD glass / FPC, x = 32..80) -------------------
-    "TP_5V": (122.8, 4.4, 0, "B"),
+    "TP_5V": (116.80, 4.4, 0, "B"),
     "TP_GND1": (84.0, 7.6, 0, "B"),
-    "TP_3V3D": (115.0, 4.4, 0, "B"),
-    "TP_BOOT": (120.2, 4.4, 0, "B"),
-    "TP_1V1": (117.6, 4.4, 0, "B"),
-    "TP_GND2": (123.8, -5.2, 0, "B"),
+    "TP_3V3D": (109.00, 4.4, 0, "B"),
+    "TP_BOOT": (114.20, 4.4, 0, "B"),
+    "TP_1V1": (111.60, 4.4, 0, "B"),
+    "TP_GND2": (117.80, -5.2, 0, "B"),
 }
 
 
@@ -302,7 +302,7 @@ def arc_geom(board: pcbnew.BOARD, layer: int, start, mid, end, w: float = 0.1):
 
 
 def outline(board: pcbnew.BOARD):
-    """Closed 138 x 17.60 mm pen outline (untapered when W_NOSE == W, otherwise C1 S-curve taper)."""
+    """Closed 132 x 17.60 mm pen outline (untapered when W_NOSE == W, otherwise C1 S-curve taper)."""
     rn, rt, k = R_NOSE, R_TAIL, 1.0 - math.sqrt(0.5)
     e = pcbnew.Edge_Cuts
 
@@ -592,8 +592,8 @@ def silkscreen(board: pcbnew.BOARD):
     title = text(board, "ProbePen-AI v1.0", 90.0, -0.5, 1.05, layer=B, bold=True)
     fit_text(board, title, [(x, y, 0, s) for s in (1.05, 0.9) for y in (-0.5, 0.5, -1.6, 1.6, -6.5, 6.5)
                             for x in (90.0, 92.5, 96.0, 100.0, 104.0, 108.0, 25.0)], "title")
-    pod = text(board, "IO0-3 3V3 GND", 119.5, -2.0, 0.8, layer=B, bold=True)
-    fit_text(board, pod, [(119.5 + dx, y, 0, 0.8) for y in (-2.0, -1.0, -6.8) for dx in (0, -2.0, 2.0)], "POD")
+    pod = text(board, "IO0-3 3V3 GND", 113.5, -2.0, 0.8, layer=B, bold=True)
+    fit_text(board, pod, [(113.5 + dx, y, 0, 0.8) for y in (-2.0, -1.0, -6.8) for dx in (0, -2.0, 2.0)], "POD")
     lcd_hint = text(board, "1.14/0.96 13P LCD", 89.5, 2.2, 0.8, layer=B, bold=True)
     fit_text(board, lcd_hint, [(x, y, 0, 0.8) for y in (2.2, 3.1, 1.3) for x in (89.5, 92.5)], "LCD")
 

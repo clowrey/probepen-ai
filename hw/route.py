@@ -20,7 +20,8 @@ ROOT = HERE.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from hardware.pcb_datum import point_in_pcb  # noqa: E402
+from hardware.pcb_datum import PCB as _PCB_DATUM, point_in_pcb  # noqa: E402
+DATUM_LEN = _PCB_DATUM["length"]
 from hw.gen_pcb import (  # noqa: E402
     AFE_X0, AFE_X1, AFE_Y0, AFE_Y1, HW_Y, L, MM, NET, OX, OY, PCB_FILE, R_NOSE, R_TAIL,
 )
@@ -591,7 +592,7 @@ def place_plane_vias(board: pcbnew.BOARD) -> tuple[int, list[tuple[str, str, str
         hw = stub_w / 2.0
         gx0 = max(0.5, round((cx - win) / step) * step)
         gy0 = max(-8.4, round((cy - win) / step) * step)
-        gx1 = min(137.5, round((cx + win) / step) * step)
+        gx1 = min(float(DATUM_LEN) - 0.5, round((cx + win) / step) * step)
         gy1 = min(8.4, round((cy + win) / step) * step)
 
         # Slice obstacles to the local window (+2 mm margin)

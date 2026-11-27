@@ -17,8 +17,8 @@ _MCU_X, _MCU_Y = (float(v) for v in _DATUM["rp2354b_xy"])
 IN2_RAILS = {
     # digital 3.3 V: a rail along each long edge, tied by one cross-bar tail-side of the LCD flex pads,
     # and two fingers under the ADC body for its digital supply pins 28 / 33
-    "+3V3_DIG": [(66.0, 6.0, _MCU_X - 5.2, 7.0), (113.0, 6.0, 125.0, 7.0), (113.0, -7.0, 114.0, 7.0),
-                 (_ADC_X - 2.2, -7.0, _MCU_X - 5.2, -6.0), (_MCU_X + 6.0, -7.0, 114.0, -6.0), (81.0, -7.0, 82.0, 7.0),
+    "+3V3_DIG": [(66.0, 6.0, _MCU_X - 5.2, 7.0), (107.0, 6.0, 119.0, 7.0), (107.0, -7.0, 108.0, 7.0),
+                 (_ADC_X - 2.2, -7.0, _MCU_X - 5.2, -6.0), (_MCU_X + 6.0, -7.0, 108.0, -6.0), (81.0, -7.0, 82.0, 7.0),
                  (_ADC_X + 2.2, -2.9, 81.0, -1.5), (_ADC_X + 2.2, 1.5, 81.0, 2.9)],
     # analog 3.3 V: north rail from the LDO, a centre rail under the gain-stage ICs, a rail over the
     # button row (south of the analog ground island, so the island's pads can drop vias to AGND), cross-bars at the clamps and at the LDO, and a finger to the ADC's analog supply pins
@@ -28,8 +28,8 @@ IN2_RAILS = {
     # 5 V from the USB end to the analog LDO's ferrite, along the north edge, with branches across the
     # tail and to the side header's ESD array
     "+5V_VBUS": [(39.0, -8.35, _MCU_X - 6.0, -7.45), (_MCU_X - 6.5, -8.5, _MCU_X + 7.0, -8.1),
-                 (_MCU_X + 6.5, -8.35, 133.5, -7.45), (129.6, -8.35, 130.4, 8.35), (122.0, 7.45, 133.5, 8.35),
-                 (122.5, -8.35, 123.5, -1.0)],
+                 (_MCU_X + 6.5, -8.35, 127.5, -7.45), (123.6, -8.35, 124.4, 8.35), (116.0, 7.45, 127.5, 8.35),
+                 (116.5, -8.35, 117.5, -1.0)],
     # 3.0 V reference to the MCU's ADC supply filter (R23): a quiet DC rail along the south edge
     "+3V0_REF": [(45.0, 7.4, _MCU_X - 6.0, 8.2), (_MCU_X - 6.5, 8.0, _MCU_X + 5.9, 8.4), (45.0, 6.0, 45.8, 8.2)],
 }

@@ -22,10 +22,10 @@ PCB = ROOT / "hw" / ".render.kicad_pcb"
 KCLI = shutil.which("kicad-cli") or str(Path.home() / ".local" / "bin" / "kicad-cli")
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
-BOARD_L = 138.0      # mm, nose to tail edge
+BOARD_L = 132.0      # mm, nose to tail edge
 LAYER_PAD = 24       # px of frame make_images.py puts round each layer image
 USB_OVERHANG = 1.0   # mm the USB-C shell sticks out past the tail
-CASE_X0, CASE_X1 = -1.95, 139.95   # mm, case extent along the board
+CASE_X0, CASE_X1 = -1.95, 133.95   # mm, case extent along the board
 
 
 def render(side: str, tmp: Path) -> Image.Image:

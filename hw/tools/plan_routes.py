@@ -890,7 +890,7 @@ class Board:
         Image.fromarray(img).resize(((i1 - i0 + 1) * scale, GH * scale), Image.NEAREST).save(dst)
 
 
-HEADER = '''"""Planned tracks for the nets whose geometry matters (ProbePen-AI, 138 x 17.60 mm, 4 layers).
+HEADER = '''"""Planned tracks for the nets whose geometry matters (ProbePen-AI, 132 x 17.60 mm, 4 layers).
 
 Written by hw/tools/plan_routes.py (see its PLAN table and CRITICAL_NETS): the high-impedance input
 and gain-stage nodes, the core regulator, the crystal, the USB pair and the ADC buses and clock,
@@ -1196,7 +1196,7 @@ def main(pads_json: str, mode: str = "all"):
         print("nets not in PLAN:", missing)
     print("FAILED:", bd.failed or "none")
     bd.write(ROOT / "hw" / ("routes_critical.py" if mode == "critical" else "routes.py"))
-    for k, (a, c) in enumerate(((0, 47), (45, 93), (90, 138))):
+    for k, (a, c) in enumerate(((0, 47), (45, 93), (90, 132))):
         bd.preview(f"/tmp/ppv/plan_{k}.png", a, c)
 
 

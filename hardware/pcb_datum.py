@@ -1,10 +1,10 @@
 """Single mechanical coordinate source of truth for KiCad and build123d.
 Origin (0, 0) = Front tip center of PCB. +X points toward USB-C tail.
 
-S-curve tapered pen outline (138.0 x 17.60 mm max, matching 1.14" LCD glass width):
+S-curve tapered pen outline (132.0 x 17.60 mm max, matching 1.14" LCD glass width):
 - Nose section (x = 0 .. 18 mm): 14.00 mm wide (Y in -7.00 .. +7.00 mm), corner radius 2.0 mm.
 - C1 two-arc S-curve taper (x = 18 .. 28 mm): widens smoothly from 14.00 mm to 17.60 mm.
-- Main body & tail (x = 28 .. 138 mm): 17.60 mm wide (Y in -8.80 .. +8.80 mm), tail radius 2.0 mm.
+- Main body & tail (x = 28 .. 132 mm): 17.60 mm wide (Y in -8.80 .. +8.80 mm), tail radius 2.0 mm.
 
 Note on Y convention:
 - KiCad coordinates use Y-down (positive Y toward bottom of screen / SW1..SW4 side edge).
@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 
 PCB = {
-    "length": 138.0,
+    "length": 132.0,
     "nose_width": 14.0,                  # Tapered 14.0 mm front nose (2x XL-3806UWC LEDs on B.Cu tip)
     "taper_x": (18.0, 28.0),             # C1 S-curve transition from 14.0 mm nose to 17.6 mm body
     "width": 17.60,                      # 17.60 mm across main body (exact 1.14" LCD glass width)
@@ -41,9 +41,9 @@ PCB = {
     "lcd_fpc_xy": (78.2, 0.0),           # 13P 0.70 mm-pitch solder pads on B.Cu (FPC tip at X = 78.85)
     "ad9288_xy": (71.0, 0.0),           # AD9288BSTZ-80 LQFP-48 dual 80 MSPS ADC (centered)
     "rp2354b_xy": (94.5, 0.0),          # RP2354B QFN-80, rotated -90 deg: pins 61-80 (regulator, USB) face the tail
-    "side_jst_xy": (119.5, 5.4),         # 6P JST-SH right-angle side header (USB-C side of MCU, CAD Y-up -> KiCad Y=-5.4)
-    "mount_hole_rear_xy": (127.4, 0.0),  # Unplated 2.2 mm M2 NPTH mounting hole #2 (against J1 USB-C)
-    "usbc_xy": (135.3, 0.0),             # 16P USB-C receptacle (1 mm tail overhang past X=138)
+    "side_jst_xy": (113.5, 5.4),         # 6P JST-SH right-angle side header (USB-C side of MCU, CAD Y-up -> KiCad Y=-5.4)
+    "mount_hole_rear_xy": (121.4, 0.0),  # Unplated 2.2 mm M2 NPTH mounting hole #2 (against J1 USB-C)
+    "usbc_xy": (129.3, 0.0),             # 16P USB-C receptacle (1 mm tail overhang past X=132)
 }
 
 

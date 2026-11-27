@@ -30,8 +30,8 @@ samples start to drop), take deep records, and receive ASK snapshots. The simula
 | **References and supplies** | REF3030 (3.000 V), two RT9013-33 LDOs (`+3V3_DIG`, and `+3V3_ANA` behind a 600 Ω ferrite); the analog ground island joins digital ground at one 0 Ω link (R16) |
 | **Logic pod** | 6-pin JST-SH side connector on GPIO0..3 (the 5 V tolerant pins), PTC-fused 3.3 V out, SRV05-4 ESD |
 | **Display and buttons** | 13-pin 0.7 mm LCD flex soldered to pads on the bottom side (SPI1), AO3401A backlight switch; four side-actuated buttons (ASK, MODE/BOOTSEL, UP, DOWN); two front white work-light LEDs |
-| **Board** | 138 × 17.6 mm, tapered to 14 mm at the nose, 4 layers (JLC04161H-7628), 1.6 mm, single-sided assembly on the top |
-| **Case** | Two-piece build123d pen shell, 142 × 21.5 × 12.2 mm; screws self-tap into the plastic (no inserts) |
+| **Board** | 132 × 17.6 mm, tapered to 14 mm at the nose, 4 layers (JLC04161H-7628), 1.6 mm, single-sided assembly on the top |
+| **Case** | Two-piece build123d pen shell, 136 × 21.5 × 12.2 mm; screws self-tap into the plastic (no inserts) |
 
 ## Scope specifications
 
@@ -287,11 +287,12 @@ To check on the first board:
 [`hw/out/jlc/`](hw/out/jlc/), and [`cost.md`](hw/out/jlc/cost.md) with live JLC prices and stock.
 
 **Checked on JLCPCB's own order page (2026-11-27), for 30 boards.** The Gerbers, BOM and CPL were
-uploaded and taken through to the quote, but not ordered.
+uploaded and taken through to the quote, but not ordered. The board was 138 mm long then; it is now
+6 mm shorter, which at this size should not change the PCB price.
 
 | | |
 |---|---|
-| PCB: 4 layers, 138 × 17.6 mm, JLC04161H-7628, standard (surcharge-free) vias | $34.00 |
+| PCB: 4 layers, 138 × 17.6 mm (now 132 mm), JLC04161H-7628, standard (surcharge-free) vias | $34.00 |
 | Economic assembly, top side, 42 part types, JLC confirms part placement | $198.61: parts $130.82, Extended-part fees $37.08, SMT $19.15, setup and stencil $9.79, nitrogen reflow $1.32, placement confirmation $0.45 |
 | Shipping (estimate) | about $42 |
 | **Total** | **about $269 after a $6 coupon, about $8.96 per board** |
