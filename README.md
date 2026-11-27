@@ -329,7 +329,10 @@ uploaded and taken through to the quote, but not ordered.
   0.4 mm. For multi-layer boards, if the via diameter ≥ 0.45 mm, the 0.2mm hole is also without an
   extra charge." The capabilities page charges 0.2–0.25 mm holes only "with via diameter less than
   0.45mm". **When ordering, select "0.3mm/(0.4/0.45mm)" and add a PCB remark:** "Vias 0.25 mm hole /
-  0.45 mm diameter, no via surcharge per your via rule." Confirm with JLC's chat if in doubt.
+  0.45 mm diameter, no via surcharge per your via rule." Also set "Confirm Production file: Yes" (free): JLC
+  sends its production file for approval before manufacturing, so any change in price shows up before
+  production starts. The form note was re-read on 2026-11-27; the form does not detect via sizes
+  itself.
   The 0.45 mm pads needed no re-routing; DRC is clean. (0.40 mm pads on 0.30 mm holes would also be
   free, but leave only a 0.05 mm ring against JLC's ±0.075 mm hole position tolerance.) The RP2354B
   footprint's thermal vias are 0.30 mm holes in 0.6 mm pads.
