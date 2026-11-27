@@ -20,7 +20,8 @@ typedef enum {
     USB_CMD_TRIG    = 7,
     USB_CMD_CAPTURE = 8,
     USB_CMD_TB      = 9,    /* TB n: timebase index */
-    USB_CMD_RUN     = 10    /* RUN 0|1: hold / run */
+    USB_CMD_RUN     = 10,   /* RUN 0|1: hold / run */
+    USB_CMD_STREAM  = 11    /* STREAM rate_hz [chmask]: continuous 8-bit samples; STREAM 0 stops */
 } usb_cmd_kind_t;
 
 typedef struct {

@@ -28,14 +28,19 @@
 #include "hardware/pio.h"
 #include "hardware/spi.h"
 #include "pico/stdlib.h"
+#include "pico/stdio/driver.h"
 #include "pico/stdio_usb.h"
 #include "ad9288_capture.pio.h"
 #include "pod_capture.pio.h"
 #endif
 
 #define CAPTURE_MAX 4096u
+/* STREAM: the DMA ring the ADC runs into continuously, 64 KB = 16384 words = 8 ms at 2 MS/s raw. The scope
+ * captures use its first CAPTURE_MAX words (their 16 KB ring is aligned too). */
+#define STREAM_RING_BITS 16u
+#define STREAM_RING_WORDS (1u << (STREAM_RING_BITS - 2u))
 
-static uint32_t g_words[CAPTURE_MAX] __attribute__((aligned(4u * CAPTURE_MAX)));   /* DMA ring in peak detect */
+static uint32_t g_words[STREAM_RING_WORDS] __attribute__((aligned(4u * STREAM_RING_WORDS)));   /* DMA rings */
 static uint16_t g_ch_a[CAPTURE_MAX];
 static uint16_t g_ch_b[CAPTURE_MAX];
 static uint8_t g_nib[CAPTURE_MAX];
@@ -175,6 +180,7 @@ static uint16_t adc_read_pin(uint pin) {
 
 /* ---- captures -------------------------------------------------------------------------------- */
 
+static bool g_capturing;
 static int g_adc_offset = -1;
 static int g_pod_offset = -1;
 static int g_cap_dma = -1;
@@ -298,6 +304,104 @@ static void capture_init(void) {
     }
 }
 
+/* ---- USB streaming (STREAM command) ----------------------------------------------------------- */
+
+#define STREAM_DMA_COUNT 0x0FFFFFFFu   /* words per DMA run (28-bit count): 134 s at 2 MS/s, then it restarts */
+static stream_t g_stream;
+static uint32_t g_stream_consumed;     /* raw words taken from the ring in this DMA run */
+static uint64_t g_stream_bytes_last;
+static uint32_t g_stream_t_last;
+
+static void stream_emit(const uint8_t *block, size_t len, void *ctx) {
+    (void)ctx;
+    stdio_usb.out_chars((const char *)block, (int)len);   /* straight to the CDC driver, no translation */
+}
+
+static void stream_dma_start(void) {
+    dma_channel_config c = dma_channel_get_default_config((uint)g_cap_dma);
+    channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
+    channel_config_set_read_increment(&c, false);
+    channel_config_set_write_increment(&c, true);
+    channel_config_set_ring(&c, true, STREAM_RING_BITS);
+    channel_config_set_dreq(&c, pio_get_dreq(pio0, 0u, false));
+    g_stream_consumed = 0u;
+    dma_channel_configure((uint)g_cap_dma, &c, g_words, &pio0->rxf[0], STREAM_DMA_COUNT, true);
+}
+
+static void stream_start(void) {
+    /* stop whatever capture is in flight */
+    dma_channel_abort((uint)g_cap_dma);
+    pio_sm_set_enabled(pio0, 0u, false);
+    pio_sm_set_enabled(pio1, 0u, false);
+    g_capturing = false;
+    g_stream = g_app.stream_plan;      /* the plan app.c made when it accepted the command */
+    gpio_put(PIN_CH1_GAIN_LO, g_app.range[0] == AFE_RANGE_10X);
+    gpio_put(PIN_CH2_GAIN_LO, g_app.range[1] == AFE_RANGE_10X);
+    pio_sm_set_clkdiv_int_frac(pio0, 0u, (uint16_t)g_stream.clkdiv, 0u);   /* two PIO cycles per sample */
+    pio_sm_clear_fifos(pio0, 0u);
+    pio_sm_restart(pio0, 0u);
+    pio_sm_exec(pio0, 0u, pio_encode_jmp((uint)g_adc_offset));
+    stream_dma_start();
+    pio_sm_set_enabled(pio0, 0u, true);
+    g_app.streaming = true;
+    g_app.stream_lost = 0u;
+    g_app.stream_bps = 0.0f;
+    g_stream_bytes_last = 0u;
+    g_stream_t_last = to_ms_since_boot(get_absolute_time());
+}
+
+static void stream_stop(void) {
+    pio_sm_set_enabled(pio0, 0u, false);
+    dma_channel_abort((uint)g_cap_dma);
+    stream_flush(&g_stream, stream_emit, NULL);
+    printf("STREAM END SAMPLES=%lu BLOCKS=%lu BYTES=%llu LOST=%lu LOSTSAMPLES=%lu\n",
+           (unsigned long)g_stream.out_index, (unsigned long)g_stream.blocks, (unsigned long long)g_stream.bytes,
+           (unsigned long)g_stream.lost_events, (unsigned long)g_stream.lost_samples);
+    fflush(stdout);
+    g_app.streaming = false;
+}
+
+/* Takes what the DMA has written since the last call, at most a few blocks' worth, so buttons and
+ * commands are still read in between. */
+static void stream_poll(uint32_t now_ms) {
+    if (!dma_channel_is_busy((uint)g_cap_dma)) {
+        /* the 28-bit count ran out (or the DMA stopped): drain what is left, then start a new run */
+        uint32_t rest = STREAM_DMA_COUNT - g_stream_consumed;
+        stream_skip_raw(&g_stream, rest, stream_emit, NULL);
+        stream_dma_start();
+        return;
+    }
+    uint32_t remaining = dma_channel_hw_addr((uint)g_cap_dma)->transfer_count & 0x0FFFFFFFu;
+    uint32_t written = STREAM_DMA_COUNT - remaining;
+    uint32_t avail = written - g_stream_consumed;
+    if (avail > STREAM_RING_WORDS - 512u) {
+        /* the host fell behind and the ring lapped: skip to half a ring behind the DMA */
+        uint32_t drop = avail - STREAM_RING_WORDS / 2u;
+        stream_skip_raw(&g_stream, drop, stream_emit, NULL);
+        g_stream_consumed += drop;
+        avail -= drop;
+    }
+    for (int pass = 0; pass < 8 && avail > 0u; ++pass) {
+        uint32_t idx = g_stream_consumed % STREAM_RING_WORDS;
+        uint32_t n = avail;
+        if (n > STREAM_RING_WORDS - idx) {
+            n = STREAM_RING_WORDS - idx;
+        }
+        if (n > 2048u) {
+            n = 2048u;
+        }
+        stream_push_words(&g_stream, &g_words[idx], n, stream_emit, NULL);
+        g_stream_consumed += n;
+        avail -= n;
+    }
+    if (now_ms - g_stream_t_last >= 500u) {
+        g_app.stream_bps = (float)(g_stream.bytes - g_stream_bytes_last) * 1000.0f / (float)(now_ms - g_stream_t_last);
+        g_app.stream_lost = g_stream.lost_events;
+        g_stream_bytes_last = g_stream.bytes;
+        g_stream_t_last = now_ms;
+    }
+}
+
 /* ---- calibration, one sector below the top of flash ------------------------------------------ */
 
 /* Not the last sector: for RP2350, picotool adds a UF2 block at 0x10FFFF00 (erratum E10 workaround),
@@ -355,7 +459,7 @@ int main(void) {
     lcd_init_hw();
     capture_init();
     capture_start();
-    bool capturing = true;
+    g_capturing = true;
     bool fresh = false;                /* a capture finished since the last draw */
     uint32_t last_draw = 0u;
 
@@ -373,13 +477,39 @@ int main(void) {
                        adc_read_pin(PIN_VBUS_SENSE));
             last_dc = now;
         }
+        if (g_app.stream_req) {
+            g_app.stream_req = false;
+            if (g_app.stream_want_hz > 0.0f) {
+                if (g_app.streaming) {
+                    stream_stop();
+                }
+                stream_start();
+                app_render(&g_app, g_fb, g_ch_a, g_ch_b, g_n, g_nib, g_n_nib);
+                lcd_flush();
+                last_draw = now;
+            } else if (g_app.streaming) {
+                stream_stop();
+                capture_start();
+                g_capturing = true;
+            }
+        }
+        if (g_app.streaming) {
+            stream_poll(now);
+            /* the LCD flush blocks for about 13 ms: refresh only while the ring holds far more than that */
+            if (now - last_draw >= 1000u && g_stream.raw_hz < 500e3f) {
+                app_render(&g_app, g_fb, g_ch_a, g_ch_b, g_n, g_nib, g_n_nib);
+                lcd_flush();
+                last_draw = now;
+            }
+            continue;
+        }
         if (dma_channel_is_busy((uint)g_cap_dma)) {
             capture_poll();
             continue;
         }
-        if (capturing) {
+        if (g_capturing) {
             capture_finish();
-            capturing = false;
+            g_capturing = false;
             fresh = true;
         }
         if (g_app.cal_changed) {
@@ -408,7 +538,7 @@ int main(void) {
         }
         if (g_app.run || g_app.cal_pending) {
             capture_start();
-            capturing = true;
+            g_capturing = true;
         }
     }
 }

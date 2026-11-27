@@ -18,6 +18,7 @@
 #include "probepen_lcd.h"
 #include "probepen_logic.h"
 #include "probepen_scope.h"
+#include "probepen_stream.h"
 #include "probepen_usb.h"
 
 #if defined(__wasm__)
@@ -318,7 +319,7 @@ static uint16_t dc_raw(int ch, double t) {
 
 /* ---- USB: bytes the device sends, as main.c writes them to stdout ------------------------------ */
 
-#define USB_OUT_MAX 65536u
+#define USB_OUT_MAX (4u * 1024u * 1024u)   /* room for 2 s of streaming between page frames */
 static uint8_t g_usb_out[USB_OUT_MAX];
 static size_t g_usb_len;
 static char g_usb_in[128];
@@ -349,13 +350,108 @@ static void send_frames(size_t start, size_t count) {
     }
 }
 
+/* ---- USB streaming (follows main.c stream_start / stream_poll / stream_stop) -------------------- */
+
+#define SIM_RING_WORDS 16384u          /* main.c's 64 KB DMA ring */
+static stream_t g_stream;
+static double g_stream_t0_ms;          /* when the stream's DMA started */
+static uint64_t g_raw_consumed;        /* raw words taken from the ring */
+static double g_usb_budget = 1.0e6;    /* bytes per second the simulated USB host accepts */
+static double g_usb_allow;             /* bytes it would accept right now */
+static double g_stream_last_ms;
+static uint64_t g_stream_bytes_last;
+static double g_stream_stat_ms;
+static float g_sya, g_syb;             /* anti-alias filter state at the raw rate */
+
+static void usb_put(const void *data, size_t len);
+
+static void sim_stream_emit(const uint8_t *block, size_t len, void *ctx) {
+    (void)ctx;
+    usb_put(block, len);
+    g_usb_allow -= (double)len;
+}
+
+static void sim_stream_start(double now_ms) {
+    g_capturing = false;
+    g_stream = g_app.stream_plan;
+    g_stream_t0_ms = now_ms;
+    g_raw_consumed = 0u;
+    g_usb_allow = 0.0;
+    g_stream_last_ms = g_stream_stat_ms = now_ms;
+    g_stream_bytes_last = 0u;
+    g_sya = g_syb = 0.0f;
+    g_app.streaming = true;
+    g_app.stream_lost = 0u;
+    g_app.stream_bps = 0.0f;
+}
+
+static void sim_stream_stop(void) {
+    char line[160];
+    stream_flush(&g_stream, sim_stream_emit, NULL);
+    snprintf(line, sizeof line, "STREAM END SAMPLES=%lu BLOCKS=%lu BYTES=%llu LOST=%lu LOSTSAMPLES=%lu",
+             (unsigned long)g_stream.out_index, (unsigned long)g_stream.blocks, (unsigned long long)g_stream.bytes,
+             (unsigned long)g_stream.lost_events, (unsigned long)g_stream.lost_samples);
+    usb_put(line, strlen(line));
+    usb_put("\n", 1u);
+    g_app.streaming = false;
+}
+
+static void sim_stream_poll(double now_ms) {
+    double dt = now_ms - g_stream_last_ms;
+    g_stream_last_ms = now_ms;
+    g_usb_allow += g_usb_budget * dt * 1e-3;
+    double cap = g_usb_budget * dt * 1e-3 + 65536.0;   /* no credit saved up beyond the host's buffers */
+    if (g_usb_allow > cap) {
+        g_usb_allow = cap;
+    }
+    double raw_hz = (double)g_stream.raw_hz;
+    uint64_t produced = (uint64_t)((now_ms - g_stream_t0_ms) * 1e-3 * raw_hz);
+    uint64_t avail = produced - g_raw_consumed;
+    /* The pen drains its ring continuously; the browser steps this model only every frame (or seldom, in
+     * a background tab). So within one step, first send what the USB budget allows, and only then count
+     * what no longer fits the ring as lost. A step longer than 2 s is a stalled page: skip it. */
+    if (dt > 2000.0) {
+        stream_skip_raw(&g_stream, (uint32_t)avail, sim_stream_emit, NULL);
+        g_raw_consumed += avail;
+        avail = 0u;
+    }
+    float alpha = 1.0f - expf(-2.0f * (float)M_PI * 31e6f / (float)raw_hz);
+    double per_word = (double)((g_stream.chmask == 3u) ? 2u : 1u) / (double)g_stream.avg;
+    while (avail > 0u && g_usb_allow > 0.0) {
+        uint32_t n = avail > 1024u ? 1024u : (uint32_t)avail;
+        uint32_t fit = (uint32_t)(g_usb_allow / per_word) + 1u;
+        if (n > fit) {
+            n = fit;
+        }
+        for (uint32_t i = 0u; i < n; ++i) {
+            double t = g_stream_t0_ms * 1e-3 + (double)(g_raw_consumed + i) / raw_hz;
+            g_words[i] = pio_word(adc_code(0, sig_value(&g_sig[0], t), &g_sya, alpha),
+                                  adc_code(1, sig_value(&g_sig[1], t), &g_syb, alpha));
+        }
+        stream_push_words(&g_stream, g_words, n, sim_stream_emit, NULL);
+        g_raw_consumed += n;
+        avail -= n;
+    }
+    if (avail > SIM_RING_WORDS - 512u) {   /* the USB host fell behind: the ring lapped */
+        uint64_t drop = avail - SIM_RING_WORDS / 2u;
+        stream_skip_raw(&g_stream, (uint32_t)drop, sim_stream_emit, NULL);
+        g_raw_consumed += drop;
+    }
+    if (now_ms - g_stream_stat_ms >= 500.0) {
+        g_app.stream_bps = (float)((double)(g_stream.bytes - g_stream_bytes_last) * 1000.0 / (now_ms - g_stream_stat_ms));
+        g_app.stream_lost = g_stream.lost_events;
+        g_stream_bytes_last = g_stream.bytes;
+        g_stream_stat_ms = now_ms;
+    }
+}
+
 /* ---- exported API ------------------------------------------------------------------------------ */
 
 static uint8_t g_buttons;
 static double g_last_dc = -1e9, g_last_draw = -1e9;
 static bool g_fresh;
 static uint32_t g_flash_writes;
-static char g_info[512];
+static char g_info[768];
 
 EXPORT void sim_init(void) {
     app_init(&g_app);
@@ -384,6 +480,12 @@ EXPORT void sim_set_signal(int ch, int kind, float vpp, float offset, float freq
     g_sig[ch].noise = noise < 0.0f ? 0.0f : noise;
 }
 
+/* Bytes per second the simulated USB host takes from a stream (full-speed CDC: about 1 MB/s, to be
+ * measured on a board). */
+EXPORT void sim_set_usb_budget(double bytes_per_s) {
+    g_usb_budget = bytes_per_s > 1000.0 ? bytes_per_s : 1000.0;
+}
+
 EXPORT void sim_set_pod(int kind, float freq) {
     g_pod_kind = kind;
     g_pod_freq = freq > 0.0f ? freq : 1.0f;
@@ -400,6 +502,27 @@ EXPORT int sim_step(double now_ms) {
         double t = now_ms * 1e-3;
         app_set_dc(&g_app, dc_raw(0, t), dc_raw(1, t), (uint16_t)(5.02f / 2.0f / 3.0f * 4096.0f));
         g_last_dc = now_ms;
+    }
+    if (g_app.stream_req) {
+        g_app.stream_req = false;
+        if (g_app.stream_want_hz > 0.0f) {
+            if (g_app.streaming) {
+                sim_stream_stop();
+            }
+            sim_stream_start(now_ms);
+        } else if (g_app.streaming) {
+            sim_stream_stop();
+            capture_start(now_ms);
+        }
+    }
+    if (g_app.streaming) {
+        sim_stream_poll(now_ms);
+        if (now_ms - g_last_draw >= 250.0) {
+            app_render(&g_app, g_fb, g_ch_a, g_ch_b, g_n, g_nib, g_n_nib);
+            g_last_draw = now_ms;
+            return 1;
+        }
+        return 0;
     }
     if (g_capturing) {
         if (now_ms < g_cap_end_ms) {
@@ -485,13 +608,16 @@ EXPORT const char *sim_info(void) {
     snprintf(g_info, sizeof g_info,
              "{\"mode\":\"%s\",\"tb_ns\":%lu,\"fs\":%.1f,\"clkdiv\":%lu,\"peak_m\":%lu,\"screen\":%lu,"
              "\"capture\":%lu,\"cap_ms\":%lu,\"range\":[%d,%d],\"auto\":%d,\"trig_level\":%u,\"trig_src\":%u,"
-             "\"slope\":%d,\"triggered\":%d,\"run\":%d,\"flash_writes\":%lu,\"off1\":[%.4f,%.4f],\"off10\":[%.4f,%.4f]}",
+             "\"slope\":%d,\"triggered\":%d,\"run\":%d,\"streaming\":%d,\"stream_rate\":%.3f,\"stream_raw\":%.1f,"
+             "\"stream_avg\":%lu,\"stream_bps\":%.0f,\"stream_lost\":%lu,\"usb_budget\":%.0f,\"flash_writes\":%lu,\"off1\":[%.4f,%.4f],\"off10\":[%.4f,%.4f]}",
              MODES[g_app.mode], (unsigned long)app_timebase_ns(&g_app), (double)app_sample_rate_hz(&g_app),
              (unsigned long)app_clkdiv(&g_app), (unsigned long)app_peak_factor(&g_app),
              (unsigned long)app_screen_samples(&g_app), (unsigned long)n, (unsigned long)g_cap_ms,
              (int)g_app.range[0], (int)g_app.range[1], (int)g_app.auto_range, (unsigned)g_app.trig_level,
              (unsigned)g_app.trig_src, (int)g_app.trig_slope, (int)g_app.triggered, (int)g_app.run,
-             (unsigned long)g_flash_writes, (double)g_app.cal[0].offset_1x_v, (double)g_app.cal[1].offset_1x_v,
+             (int)g_app.streaming, (double)g_app.stream_plan.rate_hz, (double)g_app.stream_plan.raw_hz,
+             (unsigned long)g_app.stream_plan.avg, (double)g_app.stream_bps, (unsigned long)g_app.stream_lost,
+             g_usb_budget, (unsigned long)g_flash_writes, (double)g_app.cal[0].offset_1x_v, (double)g_app.cal[1].offset_1x_v,
              (double)g_app.cal[0].offset_10x_v, (double)g_app.cal[1].offset_10x_v);
     return g_info;
 }

@@ -55,10 +55,51 @@ firmware change but no hardware change.
 | **Trigger level** | Any 8-bit code, 0–255. Holding UP/DOWN moves it 4 codes at a time (157 mV on ±5 V, 0.86 V on ±26 V); the USB command `TRIG n` sets an exact code. It is drawn as a tick on the left edge and shown in volts in the header |
 | **Trigger timing** | The trigger lands on the first sample past the level, with no interpolation between samples, so the trace can shift by up to one sample period (13.3 ns at 75 MS/s). Captures are taken back to back, and while a frame is being drawn and sent to the LCD (about 15–20 ms per frame, estimated), new edges are not seen. It is a display trigger, not a hardware trigger that catches every event |
 | **Timing accuracy** | Set by the ±10 ppm 12 MHz crystal. The frequency readout averages every crossing in the record, so its error is about one sample period divided by the record's duration |
-| **Voltage accuracy** | Offset: `CAL` with both tips on AGND zeroes both ranges, and the result is stored in flash. Gain: uncalibrated, the result depends on 1 % resistors, the 0.2 % REF3030 and the AD9288's own gain error, so expect a few percent. A two-point gain calibration routine exists (`afe_calibrate_two_point`) but no command is wired to it yet. Linearity is about ±½ LSB typical (AD9288 datasheet) |
+| **Voltage accuracy** | Offset: `CAL` with both tips on AGND zeroes both ranges of each channel separately, and the result is stored in flash. Gain: uncalibrated, the result depends on 1 % resistors, the 0.2 % REF3030 and the AD9288's own gain error, so expect a few percent. A two-point gain calibration routine exists (`afe_calibrate_two_point`) but no command is wired to it yet. Linearity is about ±½ LSB typical (AD9288 datasheet) |
 | **DC meter mode** | Reads each gain stage through the RP2354B's 12-bit ADC (`CHx_DC_SENSE`, 10 kΩ / 10 nF), slow but finer than the 8-bit scope ADC, plus VBUS |
 | **Logic pod** | 4 inputs (5 V tolerant), sampled at the scope's rate for the timebase, up to 75 MS/s, 4096 samples. Shows each line's level and edge count |
-| **USB** | Full speed (12 Mbit/s) CDC serial. Today the link sends a block on request: `CAPTURE n` (up to 4096) or a long press of ASK sends both channels as framed binary with a CRC, at 16 bits per sample, so a full 2 × 4096 record is 16 KB (about 15–20 ms). Continuous real-time streaming is not written yet. At the 0.8–1 MB/s a full-speed CDC link manages in practice, with 8-bit samples, it would carry about 400–500 kS/s per channel with both channels, or about 1 MS/s with one (*possible*) |
+| **USB capture** | Full speed (12 Mbit/s) CDC serial. `CAPTURE n` (up to 4096) or a long press of ASK sends the last capture of both channels as framed binary with a CRC, 16 bits per sample: a full 2 × 4096 record is 16 KB |
+| **USB streaming** | `STREAM rate [ch]` sends continuous 8-bit samples until `STREAM 0` or any button: any rate from about 1 S/s to 75 MS/s per channel, CH1, CH2 or both interleaved. The ADC runs at 75 MHz ÷ an integer. Below 1144 S/s the firmware averages several raw samples into each one, which gives less noise and finer resolution. The samples go out in 1 KB blocks with a CRC. Each block carries the index of its first sample, so the host sees exactly how many samples were lost if it falls behind. The pen shows the rate, the USB throughput and any losses on its screen. The USB serial buffer is raised from TinyUSB's 64 bytes to 4 KB for this. **Throughput:** a full-speed link carries at most 1.216 MB/s (19 packets of 64 bytes per millisecond); 0.8–1.1 MB/s is typical in practice. That gives about **1 MS/s on one channel, or 500 kS/s on each of two**, without losses. Faster rates still run, with the gaps marked. Not yet measured on a board; the simulator models the link as 1 MB/s. `host/probepen.py PORT stream RATE [CH] [SECONDS] [OUT]` records a stream and reports what it measured |
+
+## Decoding protocols on the pen
+
+Streaming raw samples is limited by USB to about 1 MB/s. Decoding a bus on the pen sends only the
+result: CAN frames, I²C transactions or UART bytes are a few kilobytes per second even on a busy bus.
+The firmware is open and built for this kind of change. The user interface, capture processing and
+streaming are plain C that compiles and is tested on a PC. A new decoder is a small module of the
+same kind: samples in, decoded messages out. It can be tested on recorded or synthetic signals, run
+in the [web simulator](https://clowrey.github.io/probepen-ai/), then flashed by drag-and-drop
+(hold MODE/BOOTSEL while plugging in). None of the decoders below exist yet; this section sets out
+what the hardware allows.
+
+**Two ways to decode.**
+- **Live:** one RP2354B core thresholds each sample and runs the bus state machine while the other
+  core keeps USB and the screen going. In plain C that is roughly 15–30 CPU cycles per sample, so
+  about **5–10 MS/s** can be decoded continuously (an estimate until it is measured). With 5–10
+  samples per bit, that covers buses up to about **1 Mbit/s**, every frame, indefinitely.
+- **Burst:** capture at up to 75 MS/s into RAM, then decode at leisure. Speed is no limit here, but
+  the record length is: 4096 samples (55 µs at 75 MS/s) today, and up to 96–390 k samples (1.3–5.2
+  ms) once the deep-record capture lands (see Record length above). Each burst catches one or more
+  frames, and some frames between bursts are missed.
+
+The two analog channels take the same signal at the same instant. Subtracting one from the other
+decodes differential buses (CAN, RS-485) as the receiver sees them, and also shows each wire's
+levels, which a logic analyser cannot. The logic pod's four 5 V-tolerant lines can be decoded by a PIO
+state machine directly, without the CPU touching each sample.
+
+| Bus | Bit rate | Connect | Live | Burst |
+|---|---|---|---|---|
+| **CAN 2.0** | 125 k–1 Mbit/s | CH1 = CAN_H, CH2 = CAN_L, AGND = bus ground; decode CH1 − CH2 (2 V dominant = 51 codes on ±5 V) | yes, at 4–8 MS/s: every frame | yes |
+| **CAN FD** | arbitration ≤ 1 Mbit/s, data 2, 5 or 8 Mbit/s | same | no: the data phase needs ≥ 40 MS/s per channel | **yes, up to 8 Mbit/s** (9.4 samples per bit at 75 MS/s; the 31 MHz input filter's 11 ns rise time is well inside a 125 ns bit). A 64-byte frame lasts about 0.2 ms at 5 Mbit/s (15 k samples) and 0.4 ms at 2 Mbit/s, so it needs the deep-record capture |
+| **I²C** | 100 k, 400 k, 1 MHz (Fm+), 3.4 MHz (Hs) | CH1 = SDA, CH2 = SCL; also shows the pull-up rise times | 100–400 kHz yes; 1 MHz probably (about 10 MS/s) | all, including 3.4 MHz (22 samples per bit) |
+| **UART, RS-232, RS-485, LIN** | to 1 Mbaud live, about 10 Mbaud burst | one tip per line (RS-232's ±12 V and LIN's 12 V fit the ±26 V range); RS-485 as CH1 − CH2 | yes | yes |
+| **SPI, quad SPI** | to about 20 MHz | logic pod: CS, SCK, MOSI, MISO, read by PIO on the clock edges | yes (PIO) | yes |
+| **1-Wire, WS2812, DShot, IR, PWM, SENT, Manchester** | ≤ 1 Mbit/s | one tip or a pod line | yes | yes |
+
+The analog inputs can also decode analog encodings that a logic analyser cannot see: amplitude and
+frequency keying, DTMF and modem tones, PWM duty as a value, sensor pulse amplitudes, video sync, and
+eye-pattern or rise-time checks on any of the buses above. The pen is not isolated: its ground is the
+USB host's ground, so connect AGND to the circuit's ground first.
 
 ## How it works
 
@@ -195,14 +236,21 @@ The screens above are the firmware's own drawing code fed synthetic captures
 USB (CDC serial, one command per line): `*IDN?`, `MODE n` (0..4), `TB n`, `GAIN 0|1|10` (0 = auto
 range), `TRIG code`, `RUN 0|1`, `CAL` (zero the offsets with the inputs shorted; kept in the last flash sector), `MEAS?`, `CAPTURE n`
 (replies `OK n`, then one binary frame per channel: `AA 55 seq count16 samples16… crc16`).
+`STREAM rate [ch]` replies `OK RATE= RAW= DIV= AVG= CH= BPS= LSB1= ZERO1= LSB2= ZERO2=` (volts =
+(code − ZERO) × LSB) and then streams blocks `A5 5A flags ch len16 first_index32 payload crc16` until
+`STREAM 0` or a button, ending with a `STREAM END …` summary line (see
+[`probepen_stream.h`](firmware/include/probepen_stream.h)).
 [`host/probepen.py`](host/probepen.py) speaks this protocol from a PC: `idn`, `meas`, `capture N`
-(CSV), `send "<command>"`, and `ask`, which waits for ASK presses and returns each snapshot for an
-assistant to look at.
+(CSV), `send "<command>"`, `stream RATE [CH] [SECONDS] [OUT]` (prints the bytes per second, samples per
+second and losses it measured; writes CSV volts or raw bytes), and `ask`, which waits for ASK presses
+and returns each snapshot for an assistant to look at.
 
 `firmware/include/probepen_pins.h` is generated from the GPIO map in `hw/design.py`
-(`python -m hw.tools.gen_pins_h`), and the tests check it against that map. A full Pico SDK build has
-not been run yet; the tests compile every source natively and for Cortex-M33, and type-check the
-hardware code path against the SDK 2.x signatures (`tests/fw_stubs`).
+(`python -m hw.tools.gen_pins_h`), and the tests check it against that map. The firmware builds
+against Pico SDK 2.2.0 (84 KB of code, 171 KB of RAM including the 64 KB streaming ring):
+`cmake -S firmware -B build -G Ninja -DPICO_SDK_PATH=...` then `ninja -C build` gives
+`probepen_fw.uf2`. The tests also compile every source natively and for Cortex-M33, and type-check
+the hardware code path against the SDK 2.x signatures (`tests/fw_stubs`).
 
 To check on the first board:
 

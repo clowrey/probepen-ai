@@ -24,7 +24,11 @@ int getchar_timeout_us(uint32_t timeout_us);
 #define PICO_ERROR_TIMEOUT (-1)
 #define PICO_OK 0
 void hard_assert(bool condition);
-typedef struct stdio_driver stdio_driver_t;
+typedef struct stdio_driver {
+    void (*out_chars)(const char *buf, int len);
+    void (*out_flush)(void);
+    int (*in_chars)(char *buf, int len);
+} stdio_driver_t;
 extern stdio_driver_t stdio_usb;
 void stdio_set_translate_crlf(stdio_driver_t *driver, bool translate);
 
@@ -83,6 +87,7 @@ void dma_channel_configure(uint channel, const dma_channel_config *config, volat
                            const volatile void *read_addr, uint transfer_count, bool trigger);
 void dma_channel_wait_for_finish_blocking(uint channel);
 bool dma_channel_is_busy(uint channel);
+void dma_channel_abort(uint channel);
 void dma_channel_unclaim(uint channel);
 
 /* hardware/pio */

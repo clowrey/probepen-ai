@@ -301,6 +301,20 @@ function updateNow() {
   const scope = s.mode !== "LOGIC" && s.mode !== "METER";
   const rng = (r) => (r ? "±26 V (214 mV/step)" : "±5 V (39 mV/step)");
   const trigV = (s.trig_level - 128) * LSB[s.range[s.trig_src]];
+  if (s.streaming) {
+    const nch = st.mask === 3 ? 2 : 1;
+    $("now").innerHTML = [
+      ["Mode", "USB stream"],
+      ["Samples", `${eng(s.stream_rate, "S/s")} per channel, ${nch === 2 ? "CH1 and CH2" : `CH${st.mask}`}, 8 bits`],
+      ["ADC", `${eng(s.stream_raw, "S/s")} (75 MHz ÷ ${Math.round(75e6 / s.stream_raw)})${s.stream_avg > 1 ? `, average of ${s.stream_avg} per sample` : ""}`],
+      ["Needs", `${eng(s.stream_rate * nch, "B/s")} of samples plus 12 bytes per 1 KB block`],
+      ["USB sends", `${eng(s.stream_bps, "B/s")} (link set to ${eng(s.usb_budget, "B/s")})`],
+      ["Losses", `<span class="${s.stream_lost ? "no" : "yes"}">${s.stream_lost} gap${s.stream_lost === 1 ? "" : "s"}</span>`],
+      ["Ranges", `CH1 ${rng(s.range[0])}, CH2 ${rng(s.range[1])}, fixed while streaming`],
+    ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+    syncHostControls(s);
+    return;
+  }
   const rows = [
     ["Mode", `${s.mode}${s.run ? "" : " (held)"}`],
     ["Timebase", s.mode === "METER" ? "–" : `${tbLabel(s.tb_ns)}, ${eng(s.tb_ns * 1e-8, "s")} across the screen`],
@@ -375,7 +389,9 @@ function pump() {
       if (!inbox.length) break;
       while (inbox.length) {
         const m = inbox.shift();
-        if (m.line !== undefined) {
+        if (m.block) {
+          onBlock(m);
+        } else if (m.line !== undefined) {
           onLine(m.line);
         } else {
           logLine("bin", `← frame CH${m.seq + 1}: ${m.samples.length} samples, ${m.total} bytes, CRC ${m.ok ? "ok" : "BAD"}`);
@@ -390,6 +406,19 @@ function pump() {
 function parse() {
   for (;;) {
     if (!rx.length) return;
+    if (rx[0] === 0xa5) {
+      if (rx.length < 10) return;
+      if (rx[1] !== 0x5a) { rx = rx.slice(1); continue; }
+      const len = rx[4] | (rx[5] << 8);
+      const total = 12 + len;
+      if (rx.length < total) return;
+      const b = rx.slice(0, total);
+      rx = rx.slice(total);
+      if (crc16(b, total - 2) !== (b[total - 2] | (b[total - 1] << 8))) { st.crc++; continue; }
+      const first = (b[6] | (b[7] << 8) | (b[8] << 16) | (b[9] << 24)) >>> 0;
+      inbox.push({ block: true, flags: b[2], chmask: b[3], first, payload: b.subarray(10, 10 + len), total });
+      continue;
+    }
     if (rx[0] === 0xaa) {
       if (rx.length < 5) return;
       const count = rx[3] | (rx[4] << 8);
@@ -430,6 +459,11 @@ function parseMeas(line) {
 }
 function onLine(line) {
   logLine("rx", `← ${line}`);
+  if (line.startsWith("STREAM END")) {   /* unsolicited, after the stream's last block */
+    st.on = false;
+    $("sStart").textContent = "Start";
+    return;
+  }
   if (line.startsWith("ASK ")) {
     const meas = parseMeas(line.slice(4));
     frameSink = { frames: [], done: (fr) => addSnapshot(meas, fr) };
@@ -446,6 +480,163 @@ function onFrame(seq, samples) {
     frameSink = null;
     s.done(s.frames);
   }
+}
+
+/* ---------- host app: streaming ---------- */
+const CAP = 262144;   // samples kept per channel for the chart and CSV
+const st = {
+  on: false, plan: null, mask: 3, a: new Uint8Array(CAP), b: new Uint8Array(CAP), w: 0, n: 0,
+  next: null, lost: 0, lostFlags: 0, crc: 0, samples: 0, bytes: 0, blocks: 0,
+  t0: 0, lastT: 0, lastBytes: 0, lastSamples: 0, bps: 0, sps: 0,
+};
+function onBlock(m) {
+  const nch = m.chmask === 3 ? 2 : 1;
+  const ns = m.payload.length / nch;
+  if (st.next !== null && m.first > st.next) st.lost += m.first - st.next;
+  st.next = m.first + ns;
+  st.lostFlags += m.flags & 1;
+  st.bytes += m.total;
+  st.blocks++;
+  st.samples += ns;
+  for (let i = 0; i < ns; i++) {
+    if (m.chmask === 3) {
+      st.a[st.w] = m.payload[2 * i];
+      st.b[st.w] = m.payload[2 * i + 1];
+    } else if (m.chmask === 1) {
+      st.a[st.w] = m.payload[i];
+    } else {
+      st.b[st.w] = m.payload[i];
+    }
+    st.w = (st.w + 1) % CAP;
+  }
+  st.n = Math.min(CAP, st.n + ns);
+}
+function streamStart() {
+  if (st.on) {
+    send("STREAM 0");
+    return;
+  }
+  const rate = parseSI($("sRate").value);
+  const ch = +$("sCh").value;
+  if (!(rate > 0)) {
+    note("stream rate: a number such as 100k or 1M (samples per second per channel)");
+    return;
+  }
+  ex.sim_set_usb_budget(+$("sBudget").value);
+  send(`STREAM ${rate} ${ch}`, (reply) => {
+    if (!reply.startsWith("OK")) {
+      note("the pen refused that stream rate (above 75 MS/s?)");
+      return;
+    }
+    const kv = {};
+    reply.split(/\s+/).slice(1).forEach((w) => { const [k, v] = w.split("="); kv[k] = +v; });
+    Object.assign(st, {
+      on: true, plan: kv, mask: ch, w: 0, n: 0, next: null, lost: 0, lostFlags: 0, crc: 0, samples: 0, bytes: 0,
+      blocks: 0, t0: performance.now(), lastT: performance.now(), lastBytes: 0, lastSamples: 0, bps: 0, sps: 0,
+    });
+    $("sStart").textContent = "Stop";
+    $("sCsv").disabled = false;
+    $("plotEmpty").style.display = "none";
+    const need = kv.BPS;
+    note(`streaming ${eng(kv.RATE, "S/s")} per channel (ADC ${eng(kv.RAW, "S/s")}, average of ${kv.AVG}): ` +
+      `${eng(need, "B/s")} of samples for a ${eng(+$("sBudget").value, "B/s")} link` +
+      (need > +$("sBudget").value ? " — more than the link carries, so samples will be lost" : ""));
+  });
+}
+function streamStats(t) {
+  if (!st.on || t - st.lastT < 400) return;
+  const dt = (t - st.lastT) / 1000;
+  st.bps = (st.bytes - st.lastBytes) / dt;
+  st.sps = (st.samples - st.lastSamples) / dt;
+  st.lastT = t;
+  st.lastBytes = st.bytes;
+  st.lastSamples = st.samples;
+  const lostPct = st.samples + st.lost ? (100 * st.lost) / (st.samples + st.lost) : 0;
+  $("sStats").innerHTML = `${eng(st.bps, "B/s")} on USB · ${eng(st.sps, "S/s")} per channel arriving · ` +
+    `${st.samples.toLocaleString()} samples · ` +
+    `<span class="${st.lost ? "bad" : "good"}">${st.lost ? `${st.lost.toLocaleString()} lost (${lostPct.toFixed(1)} %)` : "none lost"}</span>` +
+    (st.crc ? ` · <span class="bad">${st.crc} CRC errors</span>` : "");
+}
+function streamVolts(code, ch) {
+  const lsb = st.plan ? st.plan[ch ? "LSB2" : "LSB1"] : LSB[0];
+  const zero = st.plan ? st.plan[ch ? "ZERO2" : "ZERO1"] : 128;
+  return (code - zero) * lsb;
+}
+let lastStreamDraw = 0;
+function drawStream(t) {
+  if (!st.on || t - lastStreamDraw < 66 || !st.n) return;
+  lastStreamDraw = t;
+  const cv = $("plot");
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = Math.round(w * dpr);
+  cv.height = Math.round(h * dpr);
+  const g = cv.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = "#07090d";
+  g.fillRect(0, 0, w, h);
+  const rate = st.plan.RATE;
+  const win = Math.max(2, Math.min(st.n, Math.round(rate * +$("sWin").value)));   // the chosen window
+  const L = 52, R = 6, T = 8, B = 22, pw = w - L - R, ph = h - T - B;
+  const r1 = st.plan.LSB1 > 0.1 ? 27.5 : 5.1, r2 = st.plan.LSB2 > 0.1 ? 27.5 : 5.1;
+  const span = Math.max(st.mask & 1 ? r1 : 0, st.mask & 2 ? r2 : 0);
+  g.strokeStyle = "#1c2330";
+  for (let i = 0; i <= 10; i++) { const x = L + (pw * i) / 10; g.beginPath(); g.moveTo(x, T); g.lineTo(x, T + ph); g.stroke(); }
+  for (let j = 0; j <= 8; j++) { const y = T + (ph * j) / 8; g.beginPath(); g.moveTo(L, y); g.lineTo(L + pw, y); g.stroke(); }
+  const y = (v) => T + ph / 2 - (v / span) * (ph / 2);
+  const cols = Math.max(1, Math.floor(pw));
+  const draw = (buf, ch, col) => {
+    g.strokeStyle = col;
+    g.lineWidth = 1.4;
+    g.globalAlpha = 0.85;
+    g.beginPath();
+    if (win <= cols) {           // fewer samples than pixels: a line through them
+      for (let i = 0; i < win; i++) {
+        const x = L + (pw * i) / Math.max(1, win - 1);
+        const yy = y(streamVolts(buf[(st.w - win + i + CAP) % CAP], ch));
+        i ? g.lineTo(x, yy) : g.moveTo(x, yy);
+      }
+    } else {                     // more: each pixel column shows the min-max of its samples
+      let prevLo = null;
+      for (let c = 0; c < cols; c++) {
+        const i0 = Math.floor((c * win) / cols), i1 = Math.max(i0 + 1, Math.floor(((c + 1) * win) / cols));
+        let lo = 255, hi = 0;
+        for (let i = i0; i < i1; i++) {
+          const v = buf[(st.w - win + i + CAP) % CAP];
+          if (v < lo) lo = v;
+          if (v > hi) hi = v;
+        }
+        if (prevLo !== null) { hi = Math.max(hi, prevLo); lo = Math.min(lo, prevLo); }   // join neighbouring columns
+        const x = L + c + 0.5;
+        g.moveTo(x, y(streamVolts(hi, ch)));
+        g.lineTo(x, y(streamVolts(lo, ch)) + 0.5);
+        prevLo = buf[(st.w - win + i1 - 1 + CAP) % CAP];
+      }
+    }
+    g.stroke();
+    g.globalAlpha = 1;
+  };
+  if (st.mask & 2) draw(st.b, 1, "#3fc8e6");
+  if (st.mask & 1) draw(st.a, 0, "#ffd21f");
+  g.fillStyle = "#8b93a3";
+  g.font = "11px system-ui, sans-serif";
+  g.textAlign = "right";
+  for (let j = 0; j <= 4; j++) { const v = span - (j * span) / 2; g.fillText(eng(v, "V", 2), L - 6, y(v) + 4); }
+  g.textAlign = "center";
+  const dur = win / rate;
+  for (let i = 0; i <= 10; i += 2) g.fillText(`−${eng(dur * (1 - i / 10), "s", 3)}`, L + (pw * i) / 10, h - 6);
+}
+function streamCsv() {
+  const n = st.n, rate = st.plan ? st.plan.RATE : 1;
+  let out = "t_s" + (st.mask & 1 ? ",ch1_v" : "") + (st.mask & 2 ? ",ch2_v" : "") + "\n";
+  for (let i = 0; i < n; i++) {
+    const k = (st.w - n + i + CAP) % CAP;
+    out += (i / rate).toExponential(6);
+    if (st.mask & 1) out += "," + streamVolts(st.a[k], 0).toFixed(4);
+    if (st.mask & 2) out += "," + streamVolts(st.b[k], 1).toFixed(4);
+    out += "\n";
+  }
+  save(new Blob([out], { type: "text/csv" }), "probepen-stream.csv");
 }
 
 /* ---------- host app: controls ---------- */
@@ -467,6 +658,9 @@ function buildHost() {
   $("hMeas").addEventListener("click", () => send("MEAS?", (l) => showMeas(parseMeas(l))));
   $("hCap").addEventListener("click", capture);
   $("hCsv").addEventListener("click", downloadCsv);
+  $("sStart").addEventListener("click", streamStart);
+  $("sCsv").addEventListener("click", streamCsv);
+  $("sBudget").addEventListener("change", (e) => ex && ex.sim_set_usb_budget(+e.target.value));
   $("cmdForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const v = $("cmdLine").value.trim();
@@ -626,6 +820,8 @@ function frame(t) {
   ex.sim_set_buttons(buttons);
   if (ex.sim_step(t)) blit();
   pump();
+  streamStats(t);
+  drawStream(t);
   if (t - lastInfoT > 200) {
     updateNow();
     lastInfoT = t;

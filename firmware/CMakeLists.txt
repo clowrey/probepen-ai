@@ -29,6 +29,7 @@ add_library(probepen_core STATIC
     src/app.c
     src/calstore.c
     src/usb_proto.c
+    src/stream.c
 )
 target_include_directories(probepen_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_options(probepen_core PRIVATE -Wall -Wextra -Werror)
@@ -48,6 +49,13 @@ if(COMMAND pico_sdk_init)
         hardware_adc
         hardware_flash
         hardware_sync
+    )
+    # USB serial transmit: TinyUSB's default is a 64-byte buffer (one packet per write). Larger buffers let
+    # one write carry many packets, which streaming needs.
+    target_compile_definitions(probepen_fw PRIVATE
+        CFG_TUD_CDC_TX_BUFSIZE=4096
+        CFG_TUD_CDC_EP_BUFSIZE=512
+        CFG_TUD_CDC_RX_BUFSIZE=256
     )
     pico_enable_stdio_usb(probepen_fw 1)
     pico_enable_stdio_uart(probepen_fw 0)

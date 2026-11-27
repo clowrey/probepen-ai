@@ -84,6 +84,17 @@
           <input id="hCapN" value="1024" inputmode="numeric" aria-label="Samples per channel"> samples</span>
         <button id="hCsv" type="button" disabled>CSV</button>
       </div>
+      <div class="toolbar stream-bar">
+        <b>Stream</b>
+        <label>Rate <input id="sRate" value="100k" inputmode="decimal" aria-label="Samples per second per channel"></label>
+        <label>Channels <select id="sCh"><option value="3">CH1+2</option><option value="1">CH1</option><option value="2">CH2</option></select></label>
+        <label title="Bytes per second the computer takes from the pen. Full-speed USB serial manages about 1 MB/s; to be measured on a board.">USB link
+          <select id="sBudget"><option value="500000">0.5 MB/s</option><option value="1000000" selected>1 MB/s (full speed)</option><option value="1100000">1.1 MB/s (best case)</option></select></label>
+        <label>Window <select id="sWin"><option value="0.001">1 ms</option><option value="0.01" selected>10 ms</option><option value="0.1">100 ms</option><option value="1">1 s</option></select></label>
+        <button id="sStart" type="button">Start</button>
+        <button id="sCsv" type="button" disabled>CSV</button>
+        <span id="sStats" class="sstats"></span>
+      </div>
       <div class="plot-wrap"><canvas id="plot"></canvas><p class="plot-empty" id="plotEmpty"><span>Press
         <b>Capture</b> to read samples over USB, or hold <b>ASK</b> on the pen.</span></p></div>
       <div class="meas" id="meas"></div>

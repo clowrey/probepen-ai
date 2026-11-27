@@ -10,6 +10,7 @@
 
 #include "probepen_afe.h"
 #include "probepen_scope.h"
+#include "probepen_stream.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -84,6 +85,15 @@ typedef struct {
     bool cal_pending;           /* CAL: zero the offsets on the next capture (inputs shorted) */
     bool cal_changed;           /* calibration updated: the main loop stores it in flash */
     uint16_t capture_req;       /* CAPTURE n: send n samples per channel after the next capture */
+
+    /* USB streaming (STREAM command, see probepen_stream.h) */
+    bool stream_req;            /* the main loop starts the planned stream, or stops it (stream_want_hz 0) */
+    float stream_want_hz;
+    uint8_t stream_mask;
+    bool streaming;             /* set by the main loop while a stream runs */
+    stream_t stream_plan;       /* the plan of the running (or requested) stream */
+    float stream_bps;           /* measured bytes per second on USB, from the main loop */
+    uint32_t stream_lost;       /* lost-sample events so far */
 } app_t;
 
 void app_init(app_t *app);
@@ -106,6 +116,9 @@ void app_process_scope(app_t *app, const uint16_t *ch_a, const uint16_t *ch_b, s
 void app_process_logic(app_t *app, const uint8_t *nibbles, size_t n);
 /* Raw 12-bit MCU ADC readings of CH1_DC_SENSE, CH2_DC_SENSE and VBUS_SENSE (3.000 V reference). */
 void app_set_dc(app_t *app, uint16_t raw_ch1, uint16_t raw_ch2, uint16_t raw_vbus);
+
+/* The range flags and per-channel scale of a stream: volts = (code - zero) * lsb. */
+void app_stream_scale(const app_t *app, int ch, float *lsb_v, float *zero_code);
 
 /* One text command line in, one reply line out (no newline). Returns the reply length. */
 size_t app_usb_command(app_t *app, const char *line, char *reply, size_t max_len);

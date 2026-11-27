@@ -149,6 +149,13 @@ void app_button_event(app_t *app, uint8_t button, btn_event_t ev) {
     if (!app || ev == BTN_EV_NONE) {
         return;
     }
+    if (app->streaming) {   /* any button stops a USB stream */
+        if (ev == BTN_EV_SHORT || ev == BTN_EV_LONG) {
+            app->stream_want_hz = 0.0f;
+            app->stream_req = true;
+        }
+        return;
+    }
     switch (button) {
     case BTN_MODE:
         if (ev == BTN_EV_SHORT) {
@@ -320,6 +327,19 @@ void app_process_logic(app_t *app, const uint8_t *nibbles, size_t n) {
     app->triggered = false;
 }
 
+void app_stream_scale(const app_t *app, int ch, float *lsb_v, float *zero_code) {
+    float scale = 0.0f, zero = 128.0f;
+    if (app) {
+        range_scale(app, ch, app->range[ch & 1], &scale, &zero);
+    }
+    if (lsb_v) {
+        *lsb_v = scale;
+    }
+    if (zero_code) {
+        *zero_code = zero;
+    }
+}
+
 void app_set_dc(app_t *app, uint16_t raw_ch1, uint16_t raw_ch2, uint16_t raw_vbus) {
     if (!app) {
         return;
@@ -441,6 +461,33 @@ size_t app_usb_command(app_t *app, const char *line, char *reply, size_t max_len
                 w = snprintf(reply, max_len, "OK %lu", (unsigned long)app_timebase_ns(app));
             } else {
                 w = snprintf(reply, max_len, "ERR");
+            }
+            break;
+        case USB_CMD_STREAM:
+            if (cmd.arg_f <= 0.0f) {
+                app->stream_want_hz = 0.0f;
+                app->stream_req = true;
+                w = snprintf(reply, max_len, "OK");
+                break;
+            }
+            {
+                uint8_t flags = (uint8_t)((app->range[0] == AFE_RANGE_10X ? STREAM_FLAG_CH1_10X : 0u) |
+                                          (app->range[1] == AFE_RANGE_10X ? STREAM_FLAG_CH2_10X : 0u));
+                if (!stream_plan(&app->stream_plan, cmd.arg_f, (uint8_t)cmd.arg_i, APP_ADC_MAX_HZ, flags)) {
+                    w = snprintf(reply, max_len, "ERR");
+                    break;
+                }
+                float l1, z1, l2, z2;
+                app_stream_scale(app, 0, &l1, &z1);
+                app_stream_scale(app, 1, &l2, &z2);
+                app->stream_want_hz = cmd.arg_f;
+                app->stream_mask = (uint8_t)cmd.arg_i;
+                app->stream_req = true;
+                w = snprintf(reply, max_len, "OK RATE=%.3f RAW=%.1f DIV=%lu AVG=%lu CH=%d BPS=%.0f LSB1=%.5f ZERO1=%.2f LSB2=%.5f ZERO2=%.2f",
+                             (double)app->stream_plan.rate_hz, (double)app->stream_plan.raw_hz,
+                             (unsigned long)app->stream_plan.clkdiv, (unsigned long)app->stream_plan.avg,
+                             (int)cmd.arg_i, (double)stream_bytes_per_s(&app->stream_plan),
+                             (double)l1, (double)z1, (double)l2, (double)z2);
             }
             break;
         case USB_CMD_RUN:
@@ -679,6 +726,36 @@ static void render_meter(const app_t *app, uint16_t *fb, const palette_t *p) {
     lcd_fb_draw_text_scaled(fb, 2, FOOT_Y + LCD_GLYPH_H + 1, buf, 1, p->dim);
 }
 
+static void render_stream(const app_t *app, uint16_t *fb, const palette_t *p) {
+    const stream_t *s = &app->stream_plan;
+    char v[16], w[16], buf[64];
+    lcd_fb_rect(fb, 0, 0, (int)LCD_WIDTH, HDR_H - 1, lcd_rgb565(22, 26, 34));
+    lcd_fb_draw_text_scaled(fb, 2, 1, "USB STREAM", 1, p->text);
+    lcd_fb_draw_text_scaled(fb, (int)LCD_WIDTH - lcd_text_width("LIVE", 1) - 1, 1, "LIVE", 1, p->pod[0]);
+    int scale = LCD_WIDTH >= 200u ? 2 : 1;
+    int y = HDR_H + 4;
+    app_format_eng(s->rate_hz, "S/s", v, sizeof v);
+    snprintf(buf, sizeof buf, "%s %s", v, s->chmask == 3u ? "CH1+2" : (s->chmask == 1u ? "CH1" : "CH2"));
+    lcd_fb_draw_text_scaled(fb, 2, y, buf, scale, p->ch[0]);
+    y += scale * (LCD_GLYPH_H + 2) + 2;
+    app_format_eng(app->stream_bps, "B/s", v, sizeof v);
+    app_format_eng(stream_bytes_per_s(s), "B/s", w, sizeof w);
+    snprintf(buf, sizeof buf, "USB %s of %s", v, w);
+    lcd_fb_draw_text_scaled(fb, 2, y, buf, scale, app->stream_lost ? p->trig : p->text);
+    y += scale * (LCD_GLYPH_H + 2) + 2;
+    snprintf(buf, sizeof buf, "lost %lu   avg %lu   div %lu", (unsigned long)app->stream_lost,
+             (unsigned long)s->avg, (unsigned long)s->clkdiv);
+    lcd_fb_draw_text_scaled(fb, 2, y, buf, 1, app->stream_lost ? p->trig : p->dim);
+    for (int c = 0; c < 2; ++c) {
+        if (!(s->chmask & (1u << c))) {
+            continue;
+        }
+        snprintf(buf, sizeof buf, "CH%d %s", c + 1, app->range[c] == AFE_RANGE_10X ? "+-26V" : "+-5V");
+        lcd_fb_draw_text_scaled(fb, 2 + c * ((int)LCD_WIDTH / 2), FOOT_Y, buf, 1, p->ch[c]);
+    }
+    lcd_fb_draw_text_scaled(fb, 2, FOOT_Y + LCD_GLYPH_H + 1, "any button: stop", 1, p->dim);
+}
+
 void app_render(const app_t *app, uint16_t *fb, const uint16_t *ch_a, const uint16_t *ch_b, size_t n,
                 const uint8_t *nibbles, size_t n_nib) {
     if (!app || !fb) {
@@ -686,6 +763,10 @@ void app_render(const app_t *app, uint16_t *fb, const uint16_t *ch_a, const uint
     }
     palette_t p = palette();
     lcd_fb_clear(fb, p.bg);
+    if (app->streaming) {
+        render_stream(app, fb, &p);
+        return;
+    }
     draw_header(app, fb, &p);
     switch (app->mode) {
     case APP_MODE_LOGIC:

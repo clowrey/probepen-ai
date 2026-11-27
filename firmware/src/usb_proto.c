@@ -89,6 +89,15 @@ usb_cmd_t usb_parse_command(const char *line) {
         cmd.kind = USB_CMD_TB;
         cmd.arg_i = (int32_t)strtol(arg, NULL, 10);
         cmd.valid = (cmd.arg_i >= 0);
+    } else if (match_prefix_ci(line, "STREAM", &arg) && *arg != '\0') {
+        char *end = NULL;
+        cmd.kind = USB_CMD_STREAM;
+        cmd.arg_f = strtof(arg, &end);              /* output samples per second per channel, 0 = stop */
+        cmd.arg_i = 3;                              /* channel mask: both */
+        if (end && *end != '\0') {
+            cmd.arg_i = (int32_t)strtol(end, NULL, 10);
+        }
+        cmd.valid = end != arg && cmd.arg_f >= 0.0f && cmd.arg_i >= 1 && cmd.arg_i <= 3;
     } else if (match_prefix_ci(line, "RUN", &arg) && *arg != '\0') {
         cmd.kind = USB_CMD_RUN;
         cmd.arg_i = (int32_t)strtol(arg, NULL, 10);
