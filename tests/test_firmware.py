@@ -410,6 +410,39 @@ def test_lcd_panel_bytes(core_lib):
                    ("C", 0x2B), ("D", be(53, 53 + LCD_H - 1)), ("C", 0x2C)]
 
 
+def _pio_header(pio: Path, out_dir: Path) -> None:
+    """Stand-in for pico_generate_pio_header: program object, default config, and the .pio's c-sdk block."""
+    text = pio.read_text(encoding="utf8")
+    name = re.search(r"^\.program\s+(\w+)", text, re.M).group(1)
+    sdk = re.search(r"% c-sdk \{(.*?)%\}", text, re.S).group(1)
+    n_instr = len([ln for ln in text.split("% c-sdk")[0].splitlines()
+                   if ln.strip() and not ln.strip().startswith((";", ".", "%"))])
+    (out_dir / f"{pio.name}.h").write_text(
+        '#pragma once\n#include "hardware/pio.h"\n'
+        f"static const uint16_t {name}_program_instructions[{n_instr}] = {{0}};\n"
+        f"static const pio_program_t {name}_program = {{{name}_program_instructions, {n_instr}, -1, 0}};\n"
+        f"static inline pio_sm_config {name}_program_get_default_config(uint offset) {{\n"
+        f"    pio_sm_config c = pio_get_default_sm_config();\n"
+        f"    sm_config_set_wrap(&c, offset, offset + {n_instr - 1});\n    return c;\n}}\n" + sdk,
+        encoding="utf8",
+    )
+
+
+def test_hardware_path_type_checks_against_sdk_signatures(tmp_path):
+    """main.c's PICO_RP2350 path and the PIO init code, against the SDK 2.x signatures in tests/fw_stubs."""
+    for pio in FW.glob("*.pio"):
+        _pio_header(pio, tmp_path)
+    res = subprocess.run(
+        [
+            "arm-none-eabi-gcc", "-std=c11", "-mcpu=cortex-m33", "-mthumb", "-O2", "-Wall", "-Wextra", "-Werror",
+            "-DPICO_RP2350", f"-I{FW / 'include'}", f"-I{ROOT / 'tests' / 'fw_stubs'}", f"-I{tmp_path}",
+            "-fsyntax-only", str(FW / "src" / "main.c"),
+        ],
+        capture_output=True, text=True, check=False,
+    )
+    assert res.returncode == 0, res.stderr
+
+
 def test_arm_cortex_m33_cross_compile_all_sources(tmp_path):
     for src in sorted((FW / "src").glob("*.c")):
         obj = tmp_path / f"{src.stem}.o"

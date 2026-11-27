@@ -153,7 +153,7 @@ assistant to look at.
 
 `firmware/include/probepen_pins.h` is generated from the GPIO map in `hw/design.py`
 (`python -m hw.tools.gen_pins_h`), and the tests check it against that map. A full Pico SDK build has
-not been run yet; the tests compile every source natively and for Cortex-M33. To check on the first
+not been run yet; the tests compile every source natively and for Cortex-M33, and type-check the hardware code path against the SDK 2.x signatures (`tests/fw_stubs`). To check on the first
 board: the LCD window offsets and orientation (`LCD_X_OFFSET`, `LCD_Y_OFFSET`, `MADCTL`), and the
 DC-sense scaling.
 
