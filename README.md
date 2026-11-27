@@ -132,7 +132,7 @@ The layout rules (inner layers, vias, widths, critical nets, the MCU fan-out) ar
 - **Stackup:** `F.Cu` parts and signals; `In1.Cu` ground (GND, with the AGND island under the front
   end); `In2.Cu` ground plus the supply rails as wide tracks (`hw/rails.py`); `B.Cu` signals, the LCD
   pads and a 3.3 V pour under the MCU.
-- **Vias:** 0.40 / 0.30 mm everywhere (JLC's standard via: any hole under 0.3 mm adds about $40 per order in via, Kelvin-test and Tg155 charges), none in pads, 0.25 mm hole-to-copper (JLC lists 0.254 mm
+- **Vias:** 0.40 / 0.30 mm everywhere (JLC's standard via: any hole under 0.3 mm adds about $40 per order in via, Kelvin-test and Tg155 charges), with teardrops where tracks meet them (`hw/route.py`), none in pads, 0.25 mm hole-to-copper (JLC lists 0.254 mm
   via-to-track for multilayer boards).
 - **Nose:** no copper pours under the probe pads and dividers and no inner-layer copper there; one
   planned AGND trace ties the terminal, LEDs and tip capacitors back to the analog ground island.
@@ -317,7 +317,7 @@ uploaded and taken through to the quote, but not ordered.
   hole under 0.3 mm. With 0.20 mm vias, the 30 boards cost $73.53: a $18.35 via charge plus a
   $17.51 four-wire Kelvin test and $3.67 of Tg155 material, all added automatically. 0.25 mm costs
   $73.63. The 0.40 mm pads keep the routing
-  unchanged and meet JLC's minimum for that drill (pad at least drill + 0.10 mm). JLC prefers
+  unchanged and meet JLC's minimum for that drill (pad at least drill + 0.10 mm). Every via has teardrops (342 in all), so a slightly off-centre drill still leaves the track joined. JLC prefers
   0.45 mm, but 0.45 mm pads would need re-routing (24 hole-clearance errors). DRC is clean with a
   0.05 mm annular-ring rule.
 

@@ -971,10 +971,34 @@ def main():
 
     board = pcbnew.LoadBoard(str(PCB_FILE))
     add_frozen(board, routes)
+    for tr in board.GetTracks():
+        if tr.GetClass() == "PCB_VIA":
+            tr.SetTeardropsEnabled(True)              # copper fillets where tracks meet vias (0.05 mm annular ring)
     board.BuildConnectivity()
     pcbnew.ZONE_FILLER(board).Fill(board.Zones())
     pcbnew.SaveBoard(str(PCB_FILE), board)
-    print("routed and filled", PCB_FILE)
+    add_teardrops()
+    print("routed, teardropped and filled", PCB_FILE)
+
+
+def add_teardrops() -> None:
+    """KiCad builds the teardrop shapes when it refills zones through its own tool framework, which the
+    Python API does not reach; kicad-cli's DRC refill does. Runs it on the saved board (with the project
+    rules beside it) and saves the result."""
+    import shutil
+    import subprocess
+    import tempfile
+    cli = shutil.which("kicad-cli")
+    if not cli:
+        print("kicad-cli not found: vias are marked for teardrops, but the shapes are not drawn yet")
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run([cli, "pcb", "drc", "--refill-zones", "--save-board", "--format", "json",
+                        "-o", str(Path(tmp) / "drc.json"), str(PCB_FILE)],
+                       check=False, capture_output=True, cwd=str(PCB_FILE.parent))
+    import re
+    n = len(re.findall(r"\(teardrop\b(?!s)", PCB_FILE.read_text(encoding="utf8")))
+    print(f"teardrops: {n}")
 
 
 if __name__ == "__main__":
