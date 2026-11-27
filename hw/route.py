@@ -927,10 +927,11 @@ VIAS: (net, x, y, pad, drill)
 
 How this list was made (re-run after changing the circuit or the placement):
   1. hw/tools/plan_routes.py plans the nets whose geometry matters into hw/routes_critical.py.
-  2. hw/route.py --tracks-only draws and locks those.
-  3. Freerouting routes the remaining nets on F.Cu / B.Cu (hw/tools/freeroute_io.py).
-  4. hw/route.py --finish adds any missing plane vias and fills the zones.
-  5. hw/route.py --freeze writes the result here.
+  2. hw/route.py --tracks-only draws and locks those, with the fixed copper of hw/regulator_ck.py,
+     hw/rails.py and hw/escapes.py.
+  3. KiCadRoutingTools routes the remaining nets one group at a time (hw/tools/groute/), then the
+     supplies and grounds; vias are nudged clear, pour pieces stitched, unused stubs pruned.
+  4. hw/route.py --freeze writes the result here.
 See hw/tools/groute/run.sh and docs/ROUTING_GUIDE.md.
 """
 '''
