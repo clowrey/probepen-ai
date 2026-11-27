@@ -11,3 +11,7 @@ hw/datasheets/
 *.stl
 build/
 
+
+# crash dumps
+core
+core.*

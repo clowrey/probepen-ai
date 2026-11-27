@@ -34,7 +34,7 @@ _LIST = [
     # --- Active ICs ---------------------------------------------------------------------------
     Part(
         "rp2354b", "C39843328", "MCU_RaspberryPi:RP2354B",
-        "Package_DFN_QFN:QFN-80-1EP_10x10mm_P0.4mm_EP3.4x3.4mm_ThermalVias",
+        "rpi:RP2350_80QFN_minimal__RP2350-QFN-80-1EP_10x10_P0.4mm_EP3.4x3.4mm_ThermalVias",
         "RP2354B", mpn="RP2354B", basic=False, per_board=1,
         extra={
             "datasheet": "https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf",
@@ -112,7 +112,7 @@ _LIST = [
     # --- Magnetics, Crystal, Connectors, Switches, Mechanical, Protection ---------------------
     Part(
         "l_3u3", "C42411119", "Device:L",
-        "Inductor_SMD:L_Abracon_AOTA-B201610S",
+        "rpi:RP2350_80QFN_minimal__L_pol_2016",
         "3.3uH", mpn="AOTA-B201610S3R3-101-T", basic=False, per_board=1,
         extra={
             "datasheet": "https://abracon.com/datasheets/AOTA-B201610S.pdf",

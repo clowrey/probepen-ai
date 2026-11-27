@@ -362,12 +362,12 @@ def build() -> str:
 
 
 NETCLASS_RULES = {  # class: (track width, clearance within the class), mm
-    "Default": (0.2, 0.092),
-    "LV": (0.2, 0.092),
-    "POWER": (0.4, 0.092),
-    "ANALOG": (0.2, 0.092),
-    "USB": (0.25, 0.092),
-    "HIGHSPEED": (0.15, 0.092),
+    "Default": (0.15, 0.10),      # class clearance = the fab floor used for routing; hole spacing is its own rule
+    "LV": (0.15, 0.10),
+    "POWER": (0.3, 0.10),
+    "ANALOG": (0.18, 0.10),       # the planner spaces these wider; the hard rule is the fab floor
+    "USB": (0.18, 0.10),
+    "HIGHSPEED": (0.13, 0.10),
 }
 
 
@@ -379,8 +379,8 @@ def write_project():
             "name": name,
             "clearance": c,
             "track_width": w,
-            "via_diameter": 0.45,
-            "via_drill": 0.25,
+            "via_diameter": 0.40,
+            "via_drill": 0.20,
             "microvia_diameter": 0.3,
             "microvia_drill": 0.1,
             "diff_pair_width": 0.25,

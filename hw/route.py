@@ -286,6 +286,8 @@ def add_routes(board: pcbnew.BOARD, routes: dict):
                 add(t)
 
             def arc(a, m, b):
+                if math.dist(a, b) < MM(0.02):
+                    return
                 t = pcbnew.PCB_ARC(board)
                 t.SetStart(vec(a))
                 t.SetMid(vec(m))
@@ -554,6 +556,14 @@ def place_plane_vias(board: pcbnew.BOARD) -> tuple[int, list[tuple[str, str, str
                 return False
         return True
 
+    def in_smd_pad(x: float, y: float) -> bool:
+        """True when a via at (x, y) would overlap any surface-mount pad (no via-in-pad, any net)."""
+        m = vr + 0.05
+        for _onn, omask, x0, y0, x1, y1, _cx, _cy, _circ, _r in pad_obs:
+            if omask != 3 and x0 - m <= x <= x1 + m and y0 - m <= y <= y1 + m:
+                return True
+        return False
+
     added_vias = 0
     unplaced: list[tuple[str, str, str]] = []
     vr = DEFAULT_VIA[0] / 2.0
@@ -692,7 +702,7 @@ def place_plane_vias(board: pcbnew.BOARD) -> tuple[int, list[tuple[str, str, str
                             cur = prev[cur]
                         path.reverse()
                         return path, None
-                if via_drop_ok(px, py) and (math.hypot(px - cx, py - cy) > 0.20 or loc_seg_ok(cx, cy, px, py)):
+                if via_drop_ok(px, py) and not in_smd_pad(px, py) and (math.hypot(px - cx, py - cy) > 0.20 or loc_seg_ok(cx, cy, px, py)):
                     path = []
                     cur = (ix, iy)
                     while cur is not None:
@@ -787,11 +797,12 @@ def place_plane_vias(board: pcbnew.BOARD) -> tuple[int, list[tuple[str, str, str
             chosen = None
             for rad in radii:
                 if rad == 0.0:
-                    cands = [(cx, cy)]
-                else:
-                    cands = [(round(cx + dx * rad, 3), round(cy + dy * rad, 3)) for dx, dy in dirs]
+                    continue                           # never a via in the pad itself
+                cands = [(round(cx + dx * rad, 3), round(cy + dy * rad, 3)) for dx, dy in dirs]
                 for vx, vy in cands:
                     if not in_plane_poly(nn, vx, vy, inset=0.28):
+                        continue
+                    if in_smd_pad(vx, vy):
                         continue
                     # Via occupies all signal layers, drill cannot hit any drill, via-to-via >= 0.56 mm
                     if not point_clear(nn, via_sig_mask, vx, vy, vr + 0.01, check_drill=True, is_via=True):
@@ -845,18 +856,119 @@ def place_plane_vias(board: pcbnew.BOARD) -> tuple[int, list[tuple[str, str, str
     return added_vias, unplaced
 
 
+def add_frozen(board: pcbnew.BOARD, frozen):
+    """Draw the frozen tracks, arcs and vias of hw/routes.py exactly as listed."""
+    nets = board.GetNetsByName()
+
+    def pt(x, y):
+        return pcbnew.VECTOR2I(MM(OX + x), MM(OY + y))
+
+    for net, layer, w, x1, y1, x2, y2 in frozen.SEGMENTS:
+        t = pcbnew.PCB_TRACK(board)
+        t.SetStart(pt(x1, y1))
+        t.SetEnd(pt(x2, y2))
+        t.SetWidth(MM(w))
+        t.SetLayer(LAYERS[layer])
+        t.SetNet(nets[NET(net)])
+        board.Add(t)
+    for net, layer, w, x1, y1, xm, ym, x2, y2 in frozen.ARCS:
+        t = pcbnew.PCB_ARC(board)
+        t.SetStart(pt(x1, y1))
+        t.SetMid(pt(xm, ym))
+        t.SetEnd(pt(x2, y2))
+        t.SetWidth(MM(w))
+        t.SetLayer(LAYERS[layer])
+        t.SetNet(nets[NET(net)])
+        board.Add(t)
+    for net, x, y, size, drill in frozen.VIAS:
+        v = pcbnew.PCB_VIA(board)
+        v.SetPosition(pt(x, y))
+        v.SetWidth(MM(size))
+        v.SetDrill(MM(drill))
+        v.SetNet(nets[NET(net)])
+        board.Add(v)
+
+
+def freeze(board: pcbnew.BOARD, dst: Path):
+    """Write every track, arc and via of the board to hw/routes.py."""
+    names = {v: k for k, v in LAYERS.items()}
+    segs, arcs, vias = [], [], []
+
+    def xy(v):
+        return round(pcbnew.ToMM(v.x) - OX, 4), round(pcbnew.ToMM(v.y) - OY, 4)
+
+    for tr in board.GetTracks():
+        net = tr.GetNetname().lstrip("/")
+        cls = tr.GetClass()
+        if cls == "PCB_VIA":
+            vias.append((net, *xy(tr.GetPosition()), round(pcbnew.ToMM(tr.GetWidth(pcbnew.F_Cu)), 3), round(pcbnew.ToMM(tr.GetDrill()), 3)))
+        elif cls == "PCB_ARC":
+            if tr.GetLength() < MM(0.08):
+                continue
+            arcs.append((net, names[tr.GetLayer()], round(pcbnew.ToMM(tr.GetWidth()), 3), *xy(tr.GetStart()), *xy(tr.GetMid()), *xy(tr.GetEnd())))
+        elif tr.GetLength() >= MM(0.02):            # zero-length leftovers are dropped
+            segs.append((net, names[tr.GetLayer()], round(pcbnew.ToMM(tr.GetWidth()), 3), *xy(tr.GetStart()), *xy(tr.GetEnd())))
+    out = [FROZEN_HEADER, "SEGMENTS = ["]
+    out += [f"    {s!r}," for s in sorted(segs)]
+    out += ["]", "", "ARCS = ["] + [f"    {a!r}," for a in sorted(arcs)]
+    out += ["]", "", "VIAS = ["] + [f"    {v!r}," for v in sorted(vias)] + ["]", ""]
+    dst.write_text("\n".join(out), encoding="utf8", newline="\n")
+    print(f"froze {len(segs)} segments, {len(arcs)} arcs, {len(vias)} vias -> {dst}")
+
+
+FROZEN_HEADER = '''"""Every track, arc and via of the routed ProbePen-AI board, drawn exactly as listed by hw/route.py.
+
+Coordinates are board-datum mm (origin nose-tip centre, +X toward the USB-C tail, KiCad Y-down).
+SEGMENTS: (net, layer, width, x1, y1, x2, y2)      ARCS: (net, layer, width, x1, y1, xm, ym, x2, y2)
+VIAS: (net, x, y, pad, drill)
+
+How this list was made (re-run after changing the circuit or the placement):
+  1. hw/tools/plan_routes.py plans the nets whose geometry matters into hw/routes_critical.py.
+  2. hw/route.py --tracks-only draws and locks those.
+  3. Freerouting routes the remaining nets on F.Cu / B.Cu (hw/tools/freeroute_io.py).
+  4. hw/route.py --finish adds any missing plane vias and fills the zones.
+  5. hw/route.py --freeze writes the result here.
+See hw/tools/reroute.sh.
+"""
+'''
+
+
 def main():
+    if "--tracks-only" in sys.argv:                    # planned critical tracks, locked; no vias, no fill
+        from hw import regulator_ck, routes_critical
+        from hw.gen_pcb import DATUM
+        board = pcbnew.LoadBoard(str(PCB_FILE))
+        ux, uy = DATUM["rp2354b_xy"]
+
+        class _Tpl:                                    # the copied regulator copper, at U1's position
+            SEGMENTS = [(n, lay, w, ux + x1, uy + y1, ux + x2, uy + y2) for n, lay, w, x1, y1, x2, y2 in regulator_ck.TRACKS]
+            ARCS = []
+            VIAS = [(n, ux + x, uy + y, DEFAULT_VIA[0], DEFAULT_VIA[1]) for n, x, y in regulator_ck.VIAS]
+
+        add_frozen(board, _Tpl)
+        add_routes(board, routes_critical.ROUTES)
+        for tr in board.GetTracks():
+            tr.SetLocked(True)
+        pcbnew.SaveBoard(str(PCB_FILE), board)
+        print("drew planned tracks on", PCB_FILE)
+        return
+    if "--finish" in sys.argv or "--freeze" in sys.argv:
+        board = pcbnew.LoadBoard(str(PCB_FILE))
+        if "--finish" in sys.argv:
+            vcount, unplaced = place_plane_vias(board)
+            print(f"plane vias added: {vcount}, pads without a via: {unplaced}")
+            board.BuildConnectivity()
+            pcbnew.ZONE_FILLER(board).Fill(board.Zones())
+            pcbnew.SaveBoard(str(PCB_FILE), board)
+        if "--freeze" in sys.argv:
+            freeze(board, HERE / "routes.py")
+        return
     from hw import routes
 
     board = pcbnew.LoadBoard(str(PCB_FILE))
-    add_routes(board, routes.ROUTES)
-    vcount, unplaced = place_plane_vias(board)
+    add_frozen(board, routes)
     board.BuildConnectivity()
-    filler = pcbnew.ZONE_FILLER(board)
-    filler.Fill(board.Zones())
-    print(f"plane vias added: {vcount}, outside-polygon manual pads: {len(unplaced)}")
-    if unplaced:
-        print("  manual plane pads:", unplaced[:20])
+    pcbnew.ZONE_FILLER(board).Fill(board.Zones())
     pcbnew.SaveBoard(str(PCB_FILE), board)
     print("routed and filled", PCB_FILE)
 

@@ -32,6 +32,7 @@ sys.path.insert(0, str(ROOT))
 
 from hardware.pcb_datum import PCB as DATUM, half_width_at, point_in_pcb, scurve_params  # noqa: E402
 from hw import design  # noqa: E402
+from hw import regulator_ck  # noqa: E402
 from hw.parts import PARTS  # noqa: E402
 
 PCB_FILE = HERE / "probepen_ai.kicad_pcb"
@@ -136,13 +137,13 @@ PLACE: dict[str, tuple] = {
     "C4":   (43.2, -7.3, 0),
     "U10":  (46.9, -6.3, 0),
     "C5":   (50.6, -7.3, 0),
-    "U5": (54.3, -6.3, 0),
-    "C7": (57.3, -7.3, 0),
-    "R7": (59.4, -7.3, 0),
-    "R7B": (59.4, -6.1, 0),
-    "R7C": (59.4, -4.9, 0),
-    "R8": (61.6, -6.1, 0),
-    "C36": (61.6, -7.3, 0),
+    "U5": (46.5, 0.6, 0),
+    "C7": (50.0, 1.4, 0),
+    "R7": (50.0, 0.2, 0),
+    "R7B": (50.0, -1.0, 0),
+    "R7C": (50.0, -2.2, 0),
+    "R8": (51.7, -3.4, 90),
+    "C36": (43.0, -0.6, 90),
 
     "SW1":  (*DATUM["btn_ask_ai_xy"], 180),
     "SW2":  (*DATUM["btn_mode_xy"], 180),
@@ -151,78 +152,73 @@ PLACE: dict[str, tuple] = {
 
     "TP_3V3A":  (40.0, -3.6, 0),
     "TP_AGND":  (43.4, -3.6, 0),
-    "TP_3V0R":  (51.0, -3.6, 0),
-    "TP_REFM":  (57.4, -3.4, 0),
-    "TP_CH1":   (72.8, -6.9, 0),
-    "TP_CH2":   (72.8, 6.9, 0),
+    "TP_3V0R": (44.5, 3.5, 0),
+    "TP_REFM": (47.5, -3.3, 0),
+    "TP_CH1": (62.30, -6.9, 0),
+    "TP_CH2": (63.7, 5.65, 0),
 
     # ---- Gain stage (x = 63..72): U4 + U6 turned like U3, feedback parts stacked on the pins ----
-    "U4":   (65.0, 0.0, 270),
-    "C39":  (67.3, 1.3, 90),
-    "R4A":  (63.5, -3.9, 0),
-    "R5A":  (65.65, -3.9, 0),
-    "C40A": (65.65, -5.0, 0),
-    "R6A":  (65.65, -6.1, 0),
-    "R4B":  (62.85, 3.9, 0),
-    "R5B":  (65.0, 3.9, 0),
-    "C40B": (65.0, 5.0, 0),
-    "R6B":  (65.0, 6.1, 0),
-    "U6":   (70.3, 0.0, 270),
-    "R24":  (69.2, -6.9, 0),
-    "R24B": (69.2, 6.9, 0),
+    "U4": (55.25, 0.0, 270),
+    "C39": (57.6, 3.9, 0),
+    "R4A": (53.75, -3.9, 0),
+    "R5A": (55.90, -3.9, 0),
+    "C40A": (55.90, -5.0, 0),
+    "R6A": (55.90, -6.1, 0),
+    "R4B": (53.10, 3.9, 0),
+    "R5B": (55.25, 3.9, 0),
+    "C40B": (55.25, 5.0, 0),
+    "R6B": (55.25, 6.1, 0),
+    "U6": (59.80, 0.0, 270),
+    "R24": (58.70, -6.9, 0),
+    "R24B": (63.7, 7.5, 0),
 
     # ---- ADC (x = 73..90): input filters and reference caps at its pins, star ground beside it --
-    "R25A": (74.2, -2.9, 0),
-    "C42":  (74.2, -4.1, 180),
-    "C37A": (74.2, -1.6, 180),
-    "C44":  (74.2, -0.3, 180),
-    "C37B": (74.2, 1.6, 180),
-    "R25B": (74.2, 2.9, 0),
-    "C42B": (74.2, 4.1, 180),
+    "R25A": (63.70, -2.9, 0),
+    "C42": (63.70, -4.1, 180),
+    "C37A": (63.70, -1.6, 180),
+    "C44": (63.70, -0.3, 180),
+    "C37B": (63.70, 1.6, 180),
+    "R25B": (63.70, 2.9, 0),
+    "C42B": (63.70, 4.1, 180),
     "U2":   (*DATUM["ad9288_xy"], 0),
-    "C46":  (77.4, -5.6, 0),
-    "R36A": (77.4, -6.8, 0),
-    "C47":  (77.4, 5.6, 0),
-    "R36B": (77.4, 6.8, 0),
-    "C52A": (79.6, -6.2, 0),
-    "C52B": (79.6, 6.2, 0),
-    "C49":  (88.0, -0.5, 90),
-    "C52C": (88.0, 2.0, 90),
-    "R16":  (88.4, -3.4, 90),
+    "C46": (66.90, -5.6, 0),
+    "R36A": (66.90, -6.8, 0),
+    "C47": (66.90, 5.6, 0),
+    "R36B": (66.90, 6.8, 0),
+    "C52A": (69.10, -6.2, 0),
+    "C52B": (69.10, 6.2, 0),
+    "C49": (77.50, -0.5, 90),
+    "C52C": (77.50, 2.0, 90),
+    "R16": (77.90, -3.4, 90),
     "J4":   (*DATUM["lcd_fpc_xy"], 180, "B"),
 
     # LCD backlight switch and LCD supply cap, south-west of the ADC
     "R48": (116.5, 2.75, 0),
     "Q1": (115.2, 6.4, 0),
-    "R47": (109.4, -6.8, 0),
-    "C58":  (79.6, 7.9, 0),
+    "R47": (107.5, -7.3, 0),
+    "C58": (69.10, 7.9, 0),
 
     # ---- MCU (x = 93..113): crystal on the ADC side at pins 30/31, regulator on the tail side ---
-    "Y1": (94.2, 0.0, 180),
-    "C30": (94.5, -2.2, 0),
-    "C31": (92.9, 2.3, 0),
-    "R20": (95.0, 2.3, 180),
-    "R22": (93.8, 3.7, 0),
+    "Y1": (83.70, 0.0, 180),
+    "C30": (84.00, -2.2, 0),
+    "C31": (82.40, 2.3, 0),
+    "R20": (84.50, 2.3, 180),
+    "R22": (105.0, -7.3, 0),
     "U1":   (*DATUM["rp2354b_xy"], 270),
-    "C14": (107.40, -6.8, 0),
-    "C15": (103.40, -6.8, 0),
-    "C16": (107.60, 6.75, 0),
-    "C17": (111.7, -3.4, 0),
-    "C26": (105.40, -6.8, 0),
-    "C28": (105.70, 6.75, 0),
-    "C20": (109.50, 7.9, 0),
-    "C29": (109.50, 6.75, 0),
-    "R23": (111.60, 7.9, 0),
-    "C41": (107.60, 7.9, 0),
-    "C41B": (105.70, 7.9, 0),
+    "C14": (96.90, -7.9, 0),
+    "C15": (92.90, -7.9, 0),
+    "C16": (94.5, 8.0, 0),
+    "C17": (101.20, -3.4, 0),
+    "C26": (94.90, -7.9, 0),
+    "C28": (94.5, 7.0, 180),
+    "C20": (98.4, 8.0, 0),
+    "C29": (98.4, 7.0, 0),
+    "R23": (100.4, 8.0, 0),
+    "C41": (96.5, 7.0, 0),
+    "C41B": (96.5, 8.0, 0),
     # Core regulator, copied from the owner's proven RP2354B layout (offsets from U1's centre)
-    "C23": (111.20, 3.0, 270),
-    "C25": (112.20, 3.0, 270),
-    "L1": (113.80, 3.0, 90),
-    "C24": (111.65, 5.6, 270),
-    "R19": (112.70, 5.6, 270),
-    "R21": (111.7, -1.8, 0),
-    "D6": (113.6, -3.95, 90),
+    "R21": (101.20, -1.8, 0),
+    "D6": (103.10, -3.95, 90),
     "R13": (116.50, 1.1, 0),
     "R12": (116.50, -0.4, 0),
 
@@ -262,13 +258,25 @@ PLACE: dict[str, tuple] = {
 }
 
 
+# Core regulator parts: CellKeeper's offsets from the centre of U1 (hw/regulator_ck.py)
+_U1X, _U1Y = DATUM["rp2354b_xy"]
+PLACE.update({ref: (round(_U1X + dx, 4), round(_U1Y + dy, 4), rot) for ref, (dx, dy, rot) in regulator_ck.PARTS.items()})
+
+# 3D models kept in hw/lib/ppa.3dshapes (the RP2354B, inductor and USB-C models come from the owner's
+# CellKeeper board library)
+LOCAL_MODELS = {
+    "U1": "RP2354B_QFN80.step",
+    "L1": "Inductor_2016_AOTA-B201610.step",
+    "J1": "USB_C_Receptacle_HRO_TYPE-C-31-M-12.step",
+}
+
 # ----------------------------------------------------------------------------------------------
 _io = pcbnew.PCB_IO_KICAD_SEXPR()
 
 
 def load_fp(fpid: str) -> pcbnew.FOOTPRINT:
     lib, name = fpid.split(":")
-    path = LOCAL_FP if lib == "ppa" else KICAD_FP / f"{lib}.pretty"
+    path = LOCAL_FP if lib == "ppa" else HERE / "lib" / "rpi.pretty" if lib == "rpi" else KICAD_FP / f"{lib}.pretty"
     fp = _io.FootprintLoad(str(path), name)
     if fp is None:
         raise FileNotFoundError(f"Footprint not found: {fpid} (searched {path})")
@@ -652,6 +660,13 @@ def build() -> pcbnew.BOARD:
 
         if c.ref in ("J1", "J3", "J4", "J5", "U1"):
             fp.SetLocalZoneConnection(pcbnew.ZONE_CONNECTION_FULL)
+        if c.ref in ("LED1", "LED2"):                 # hand-soldered: thermal relief to any pour
+            fp.SetLocalZoneConnection(pcbnew.ZONE_CONNECTION_THERMAL)
+        if c.ref in LOCAL_MODELS:                     # parts KiCad's library has no 3D model for
+            fp.Models().clear()
+            m3d = pcbnew.FP_3DMODEL()
+            m3d.m_Filename = "${KIPRJMOD}/lib/ppa.3dshapes/" + LOCAL_MODELS[c.ref]
+            fp.Models().push_back(m3d)
         if c.ref == "J1":
             for it in list(fp.GraphicalItems()):
                 if it.GetLayer() == pcbnew.F_SilkS and it.GetBoundingBox().GetRight() / 1e6 - OX > L - 0.15:
@@ -726,34 +741,54 @@ def build() -> pcbnew.BOARD:
     taper_top = [(round(x, 4), round(-half_width_at(x, margin=inset), 4)) for x in taper_xs]
     taper_bot = [(round(x, 4), round(half_width_at(x, margin=inset), 4)) for x in reversed(taper_xs)]
 
+    # No copper is poured nose-side of the input dividers (x < AFE_X1) on any layer: the probe pads and the
+    # 1 Mohm nodes see no plane, and no ring of ground is left around the nose. AGND reaches the centre
+    # terminal pad by one wide track down the middle.
+    body_xs = [AFE_X1 + (TX1 - AFE_X1) * k / 4.0 for k in range(5)]
+    body_top = [(round(x, 4), round(-half_width_at(x, margin=inset), 4)) for x in body_xs]
+    body_bot = [(round(x, 4), round(half_width_at(x, margin=inset), 4)) for x in reversed(body_xs)]
     gnd_in1_poly = [
-        *_arc_pts(R_NOSE, -HN_Y + R_NOSE, rn_i, 180, 270),
-        *taper_top,
+        *body_top,
         *_arc_pts(L - R_TAIL, -HW_Y + R_TAIL, rt_i, 270, 360),
         *_arc_pts(L - R_TAIL, HW_Y - R_TAIL, rt_i, 0, 90),
-        *taper_bot,
-        *_arc_pts(R_NOSE, HN_Y - R_NOSE, rn_i, 90, 180),
+        *body_bot,
     ]
     zone(board, nets["GND"], [pcbnew.In1_Cu], gnd_in1_poly, priority=0, clearance=0.22, name="In1 GND", min_thickness=0.14)
 
     # Analog island: everything nose-side of the ADC's digital half, except the south strip that
     # carries the buttons. AGND on In1.Cu, +3V3_ANA on In2.Cu, and AGND again as a pour on F.Cu and
     # B.Cu. Digital GND / +3V3_DIG own the rest of the board, with GND pours on F.Cu and B.Cu.
-    isl_x1, isl_y1 = 83.2, 4.45
-    isl_xs = [1.0 + (TX1 - 1.0) * k / 12.0 for k in range(13)]
+    isl_x1, isl_y1 = float(DATUM["ad9288_xy"][0]) + 1.7, 4.45
     island = [
-        *[(round(x, 4), round(-half_width_at(x, margin=inset), 4)) for x in isl_xs],
+        *body_top,
         (isl_x1, round(-HW_Y + inset, 4)), (isl_x1, isl_y1), (31.0, isl_y1), (31.0, round(HW_Y - inset, 4)),
-        *[(round(x, 4), round(half_width_at(x, margin=inset), 4)) for x in reversed(isl_xs)],
+        *body_bot,
     ]
     zone(board, nets["AGND"], [pcbnew.In1_Cu], island, priority=1, clearance=0.40, name="In1 AGND", min_thickness=0.14)
     zone(board, nets["+3V3_DIG"], [pcbnew.In2_Cu], gnd_in1_poly, priority=0, clearance=0.22, name="In2 +3V3_DIG", min_thickness=0.14)
-    ana_3v3 = [(AFE_X1, round(-HW_Y + inset, 4)), (isl_x1, round(-HW_Y + inset, 4)), (isl_x1, isl_y1),
+    # the ADC's digital supply pins (15, 46) sit just tail-side of its analog pins: +3V3_ANA stops short of them
+    # +3V3_ANA reaches the ADC's centre (its analog supply pins 30/31 tap there) but stops short of the
+    # ADC's digital supply pins 15 / 46, which sit at the top and bottom just tail-side of the analog pins
+    ana_x1, ana_y = isl_x1 - 4.4, 3.2
+    ana_3v3 = [(AFE_X1, round(-HW_Y + inset, 4)), (ana_x1, round(-HW_Y + inset, 4)), (ana_x1, -ana_y),
+               (isl_x1, -ana_y), (isl_x1, ana_y), (ana_x1, ana_y), (ana_x1, isl_y1),
                (31.0, isl_y1), (31.0, round(HW_Y - inset, 4)), (AFE_X1, round(HW_Y - inset, 4))]
     zone(board, nets["+3V3_ANA"], [pcbnew.In2_Cu], ana_3v3, priority=1, clearance=0.40, name="In2 +3V3_ANA", min_thickness=0.14)
     for layer, tag in ((pcbnew.F_Cu, "F"), (pcbnew.B_Cu, "B")):
         zone(board, nets["GND"], [layer], gnd_in1_poly, priority=0, clearance=0.20, name=f"{tag} GND pour", min_thickness=0.15)
         zone(board, nets["AGND"], [layer], island, priority=1, clearance=0.25, name=f"{tag} AGND pour", min_thickness=0.15)
+
+    # ---- Core regulator copper copied from CellKeeper: local pours, +1V1 inside the pad ring, cut-outs ----
+    def rel(pts):
+        return [(round(_U1X + x, 4), round(_U1Y + y, 4)) for x, y in pts]
+
+    for net_name, prio, pts in regulator_ck.ZONES_F:
+        zone(board, nets[net_name], [pcbnew.F_Cu], rel(pts), priority=prio, full=True, clearance=0.15,
+             name=f"regulator {net_name}", min_thickness=0.1)
+    zone(board, None, [pcbnew.F_Cu], rel(regulator_ck.NO_POUR_F), rule_area=True, name="regulator inductor no-pour")
+    ko = zone(board, None, inner_layers, rel(regulator_ck.NO_INNER), rule_area=True, name="regulator switch-node cut-out")
+    ko.SetDoNotAllowTracks(True)
+    ko.SetDoNotAllowVias(True)
 
     silkscreen(board)
     place_references(board)

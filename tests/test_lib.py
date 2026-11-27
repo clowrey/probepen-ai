@@ -41,7 +41,8 @@ def _sym_pins(name: str) -> set[str]:
 
 def _fp_pads(fp: str) -> set[str]:
     lib, name = fp.split(":")
-    path = (PRETTY / f"{name}.kicad_mod") if lib == "ppa" else (KICAD_SHARE / "footprints" / f"{lib}.pretty" / f"{name}.kicad_mod")
+    path = ((PRETTY / f"{name}.kicad_mod") if lib == "ppa" else (LIB / "rpi.pretty" / f"{name}.kicad_mod") if lib == "rpi"
+            else (KICAD_SHARE / "footprints" / f"{lib}.pretty" / f"{name}.kicad_mod"))
     text = path.read_text(encoding="utf8")
     return {p for p in re.findall(r'\(pad "([^"]*)"', text) if p}
 

@@ -147,6 +147,8 @@ def _tp(ref: str, net: str, block: str) -> Comp:
     )
 
 
+_RPI_C0402 = "rpi:RP2350_80QFN_minimal__C_0402_1005Metric_small_pads"
+
 C = Comp
 COMPONENTS: list[Comp] = [
     # ---- USB-C, ESD, CC pulldowns, PTC fuse (usb) --------------------------------------------
@@ -210,11 +212,13 @@ COMPONENTS: list[Comp] = [
     # other IOVDD pins reach the +3V3 plane through vias inside the pad ring
     *[C(f"C{14 + i}", "c_100n_0402", {"1": "+3V3_DIG", "2": "GND"}, block="mcu") for i in range(4)],
     # Core buck regulator (VREG_VIN, VREG_AVDD RC filter, L1 3.3uH, +1V1_CORE caps, ADC_AVDD)
-    C("C23", "c_4u7_0402", {"1": "+3V3_DIG", "2": "GND"}, block="mcu"),
+    # Laid out exactly as on the owner's CellKeeper board (hw/regulator_ck.py): Raspberry Pi's small-pad
+    # 0402 and polarised 2016 inductor footprints let the parts sit against pins 61-65.
+    C("C23", "c_4u7_0402", {"1": "+3V3_DIG", "2": "GND"}, footprint=_RPI_C0402, block="mcu"),
     C("R19", "r_33r_0402", {"1": "+3V3_DIG", "2": "VREG_AVDD"}, block="mcu"),
-    C("C24", "c_4u7_0402", {"1": "VREG_AVDD", "2": "GND"}, block="mcu"),
-    C("L1", "l_3u3", {"1": "VREG_LX", "2": "+1V1_CORE"}, block="mcu"),
-    C("C25", "c_4u7_0402", {"1": "+1V1_CORE", "2": "GND"}, block="mcu"),
+    C("C24", "c_4u7_0402", {"1": "VREG_AVDD", "2": "GND"}, footprint=_RPI_C0402, block="mcu"),
+    C("L1", "l_3u3", {"1": "+1V1_CORE", "2": "VREG_LX"}, block="mcu"),
+    C("C25", "c_4u7_0402", {"1": "+1V1_CORE", "2": "GND"}, footprint=_RPI_C0402, block="mcu"),
     C("C26", "c_100n_0402", {"1": "+1V1_CORE", "2": "GND"}, block="mcu"),
     C("C28", "c_100n_0402", {"1": "+1V1_CORE", "2": "GND"}, block="mcu"),
     # ADC_AVDD: the 3.000 V reference through its own 33R + 1uF/100nF filter, so the MCU's ADC

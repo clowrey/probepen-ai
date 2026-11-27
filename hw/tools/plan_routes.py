@@ -47,7 +47,7 @@ PLANE_NETS = ("GND", "AGND", "+3V3_DIG", "+3V3_ANA")
 HV_NETS = ("CH1_TIP", "CH1_HV_MID", "CH2_TIP", "CH2_HV_MID")
 UNC = 30000              # id of pads that belong to no net
 WIDE_PAD_REFS = ("U3", "U4", "U6")   # footprints whose pads need 0.20 mm to every other net
-ISLAND_X1, ISLAND_Y1 = 83.2, 4.45    # analog island (AGND / +3V3_ANA), see hw/gen_pcb.py
+ISLAND_X1, ISLAND_Y1 = float(DATUM["ad9288_xy"][0]) + 1.7, 4.45    # analog island (AGND / +3V3_ANA), see hw/gen_pcb.py
 KEEPOUT = (1.0, 26.2, 6.0)           # x0, x1, |y|: no inner planes under the high-impedance input
 
 
@@ -80,10 +80,10 @@ ANALOG = {
     "+5V_ANA_IN", "LED1_A", "LED2_A",
 }
 NOSE_NETS = {"CH1_TIP", "CH1_HV_MID", "CH1_VDIV", "CH2_TIP", "CH2_HV_MID", "CH2_VDIV",
-             "LED1_A", "LED2_A", "+3V0_REF"}
+             "LED1_A", "LED2_A", "+3V0_REF", "AGND"}
 XTAL_NETS = {"XIN", "XOUT_RAW", "XOUT_XTAL", "GND"}
 NOSE_X = 32.0            # only NOSE_NETS may be routed nose-side of this, on either layer
-ANA_X1 = 73.0            # digital nets stay off F.Cu between NOSE_X and here (north of ANA_Y1)
+ANA_X1 = float(DATUM["ad9288_xy"][0]) - 8.5            # digital nets stay off F.Cu between NOSE_X and here (north of ANA_Y1)
 ANA_Y1 = 4.45
 
 
@@ -97,26 +97,24 @@ PLAN: list[tuple] = [
     (["CH1_HV_MID", "CH2_HV_MID"], dict(w=0.22, clr=HV_CLR, layers="F")),
     (["CH1_VDIV", "CH2_VDIV"], dict(w=0.15, clr=0.20, layers="FB", via=6.0)),
     # Gain stage: summing nodes first, then their neighbours
-    (["CH1_INV", "CH2_INV"], dict(w=0.15, clr=0.15, layers="F")),
-    (["CH1_SW_LO", "CH2_SW_LO"], dict(w=0.15, clr=0.15, layers="F")),
-    (["CH1_OUT", "CH2_OUT"], dict(w=0.18, clr=0.15, layers="F")),
-    (["ADCA_INP", "ADCB_INP", "ADC_VREF"], dict(w=0.15, clr=0.15, layers="F")),
+    (["CH1_INV", "CH2_INV"], dict(w=0.15, clr=0.14, layers="F")),
+    (["CH1_SW_LO", "CH2_SW_LO"], dict(w=0.15, clr=0.14, layers="F")),
+    (["CH1_OUT", "CH2_OUT"], dict(w=0.18, clr=0.14, layers="F")),
+    (["ADCA_INP", "ADCB_INP", "ADC_VREF"], dict(w=0.15, clr=0.14, layers="F")),
     (["CH1_VBUF", "CH2_VBUF"], dict(w=0.18, clr=0.18, layers="F")),
-    (["REF_T1", "REF_T2"], dict(w=0.15, clr=0.15, layers="F")),
-    ("REF_MID", dict(w=0.15, clr=0.15, layers="FB", via=8.0)),
+    (["REF_T1", "REF_T2"], dict(w=0.15, clr=0.14, layers="F")),
+    ("REF_MID", dict(w=0.15, clr=0.14, layers="FB", via=8.0)),
     # Core regulator, crystal, USB: short and on the top layer
-    ("VREG_LX", dict(w=0.20, clr=0.14, layers="F")),
-    ("VREG_AVDD", dict(w=0.20, clr=0.14, layers="F")),
     # ADC data buses, innermost lane first, top layer only (over solid ground)
     (_bus("ADCA_D"), dict(w=0.13, clr=0.14, layers="F", margin=5.0)),
     (_bus("ADCB_D"), dict(w=0.13, clr=0.14, layers="F", margin=5.0)),
-    (["ADC_ENCA", "ADC_ENCB"], dict(w=0.15, clr=0.15, layers="F")),
-    ("ADC_CLK_MCU", dict(w=0.15, clr=0.15, layers="FB", via=3.0)),
+    (["ADC_ENCA", "ADC_ENCB"], dict(w=0.15, clr=0.14, layers="F")),
+    ("ADC_CLK_MCU", dict(w=0.15, clr=0.14, layers="FB", via=3.0)),
     ("+1V1_CORE", dict(w=0.22, clr=0.14, layers="FB", via=3.0)),
     ("ADC_AVDD", dict(w=0.20, clr=0.14, layers="FB")),
     ("STUBS", dict(refs=("U1", "U2"))),               # supply-pin vias of the fine-pitch parts
-    (["CH1_DC_SENSE", "CH2_DC_SENSE", "VBUS_SENSE"], dict(w=0.15, clr=0.15, layers="FB", via=2.0, margin=20.0)),
-    (["XIN", "XOUT_RAW", "XOUT_XTAL"], dict(w=0.15, clr=0.15, layers="F")),
+    (["CH1_DC_SENSE", "CH2_DC_SENSE", "VBUS_SENSE"], dict(w=0.15, clr=0.14, layers="FB", via=2.0, margin=20.0)),
+    (["XIN", "XOUT_RAW", "XOUT_XTAL"], dict(w=0.15, clr=0.14, layers="F")),
     # USB full-speed pair: the second line runs alongside the first at a 0.15 mm gap
     ("USB_DP", dict(w=0.18, clr=0.14, layers="F")),
     ("USB_DM", dict(w=0.18, clr=0.14, layers="F", hug="USB_DP")),
@@ -134,11 +132,11 @@ PLAN: list[tuple] = [
     ("USB_CONN_DP", dict(w=0.18, clr=0.14, layers="FB", via=3.0)),
     ("USB_CONN_DM", dict(w=0.18, clr=0.14, layers="FB", via=3.0, hug="USB_CONN_DP")),
     (["USB_CC1", "USB_CC2"], dict(w=0.15, clr=0.14, layers="FB")),
-    ("VBUS_RAW", dict(w=0.35, clr=0.15, layers="FB", via=2.0)),
-    ("+5V_VBUS", dict(w=0.35, clr=0.15, layers="FB", via=2.0, margin=20.0)),
-    ("+5V_ANA_IN", dict(w=0.30, clr=0.15, layers="FB", via=3.0)),
-    ("+3V3_POD", dict(w=0.30, clr=0.15, layers="FB")),
-    ("+3V0_REF", dict(w=0.20, clr=0.15, layers="FB", via=4.0, margin=20.0)),
+    ("VBUS_RAW", dict(w=0.35, clr=0.14, layers="FB", via=2.0)),
+    ("+5V_VBUS", dict(w=0.35, clr=0.14, layers="FB", via=2.0, margin=20.0)),
+    ("+5V_ANA_IN", dict(w=0.30, clr=0.14, layers="FB", via=3.0)),
+    ("+3V3_POD", dict(w=0.30, clr=0.14, layers="FB")),
+    ("+3V0_REF", dict(w=0.20, clr=0.14, layers="FB", via=4.0, margin=20.0)),
 ]
 
 
@@ -151,7 +149,7 @@ class Board:
         for n in design.NETS:
             self.net_id[n] = len(self.net_id) + 1
         self.hv_ids = [self.net_id[n] for n in HV_NETS]
-        self.ana_names = {n for n, c in design.NETCLASS.items() if c == "ANALOG"}
+        self.ana_names = {n for n, c in design.NETCLASS.items() if c == "ANALOG" and "DC_SENSE" not in n}
         self.ana_ids = [self.net_id[n] for n in self.ana_names]
         self.own = [np.zeros((GH, GW), np.int16) for _ in range(2)]
         self.padmask = np.zeros((GH, GW), bool)
@@ -194,7 +192,7 @@ class Board:
                     i0, i1 = int(math.ceil(p["x0"] / RES - 1e-6)), int(math.floor(p["x1"] / RES + 1e-6))
                     j0, j1 = int(math.ceil((p["y0"] + HWY) / RES - 1e-6)), int(math.floor((p["y1"] + HWY) / RES + 1e-6))
                     self.wide[layer][j0:j1 + 1, i0:i1 + 1] = self.net_id.get(p["net"], UNC)
-        island = (self.xs < ISLAND_X1 - 0.5) & ((self.ys < ISLAND_Y1 - 0.5) | (self.xs < 30.5))
+        island = (self.xs < ISLAND_X1 - 0.5) & ((self.ys < ISLAND_Y1 - 0.5) | (self.xs < 30.5)) & (self.xs > KEEPOUT[1] + 0.5)
         digital = (self.xs > ISLAND_X1 + 0.5) | ((self.ys > ISLAND_Y1 + 0.5) & (self.xs > 31.5))
         keep = (self.xs > KEEPOUT[0] - 0.5) & (self.xs < KEEPOUT[1] + 0.5) & (np.abs(self.ys) < KEEPOUT[2] + 0.5)
         self.plane_ok = {"AGND": island & ~keep, "+3V3_ANA": island & ~keep & (self.xs > KEEPOUT[1] + 0.5),
@@ -207,6 +205,7 @@ class Board:
         self.cur: dict | None = None
         self.replay = False
         self.pad_dirty = False
+        self.centre = [np.zeros((GH, GW), np.int16) for _ in range(2)]   # touch-up: centre lines of frozen tracks
         self.xtal = None
         ys1 = [p for p in self.pads if p["ref"] == "Y1"]
         if ys1:
@@ -243,6 +242,11 @@ class Board:
         self.cur = keep
         self.replay = False
         self.pad_dirty = True
+        if "regulator" in self.units and not getattr(self, "_in_preload", False):
+            self._in_preload = True
+            preload_regulator(self)
+            self.cur = keep
+            self._in_preload = False
 
     def masks(self, net: str, w: float, clr: float):
         if self.pad_dirty:
@@ -472,7 +476,7 @@ class Board:
                 best[key] = dict(p, _a=area)
         return list(best.values())
 
-    def route(self, net, w=0.15, clr=0.14, layers="FB", via=2.5, margin=7.0, first=None, hug=None, gap=0.15):
+    def route(self, net, w=0.15, clr=0.14, layers="FB", via=2.5, margin=7.0, first=None, hug=None, gap=0.15, seed_idx=None):
         nid = self.net_id[net]
         pins = self.pins_of(net)
         fails: list[str] = []
@@ -508,6 +512,9 @@ class Board:
 
         for layer, j, i in seed(pins[0]):
             tree[layer][j, i] = True
+        if seed_idx is not None:                      # touch-up: the net's existing tracks are the tree
+            for layer in range(2):
+                tree[layer] |= self.centre[layer] == nid
         paths = self.cur["paths"]
         while todo:
             todo.sort(key=lambda p: min(math.hypot(p["x"] - q["x"], p["y"] - q["y"]) for q in done))
@@ -601,6 +608,91 @@ class Board:
         self.cur["paths"].append({"layer": "FB"[layer], "w": w, "pts": pts, "vias": [(mx(vi), my(vj))] if new else []})
         return []
 
+    def join_islands(self, net, w=0.15, clr=0.105, via=2.0):
+        """Touch-up: connect every separate piece of a net's copper (pads included) to its largest piece."""
+        nid = self.net_id[net]
+        labels, counts = [], []
+        for layer in range(2):
+            lab, n = ndimage.label(self.own[layer] == nid, structure=np.ones((3, 3)))
+            labels.append(lab)
+            counts.append(n)
+        parent = list(range(counts[0] + counts[1] + 1))
+
+        def find(a):
+            while parent[a] != a:
+                parent[a] = parent[parent[a]]
+                a = parent[a]
+            return a
+
+        both = (labels[0] > 0) & (labels[1] > 0) & self.padmask & ~self.base_pad | \
+               ((labels[0] > 0) & (labels[1] > 0) & self.base_pad)        # vias and through-hole pads tie the layers
+        for a, b in set(zip(labels[0][both].tolist(), labels[1][both].tolist())):
+            parent[find(a)] = find(counts[0] + b)
+        size: dict[int, int] = {}
+        for layer, off in ((0, 0), (1, counts[0])):
+            ids, cnt = np.unique(labels[layer][labels[layer] > 0], return_counts=True)
+            for i, c in zip(ids.tolist(), cnt.tolist()):
+                size[find(off + i)] = size.get(find(off + i), 0) + c
+        if len(size) < 2:
+            return []
+        main = max(size, key=size.get)
+        fails = []
+        blk, via_ok = self.masks(net, w, clr)
+        roots = {0: np.array([0] + [find(i) for i in range(1, counts[0] + 1)]),
+                 1: np.array([0] + [find(counts[0] + i) for i in range(1, counts[1] + 1)])}
+        comp = [roots[layer][labels[layer]] for layer in range(2)]
+        tree = [(comp[layer] == main) & ((self.centre[layer] == nid) | self.base_pad) for layer in range(2)]
+        for root in sorted(size, key=size.get, reverse=True):
+            if root == main:
+                continue
+            starts = []
+            for layer in range(2):
+                cand = (comp[layer] == root) & ((self.centre[layer] == nid) | self.base_pad)
+                js, is_ = np.nonzero(cand)
+                if len(js):
+                    k = len(js) // 2
+                    starts.append((layer, int(js[k]), int(is_[k])))
+            if not starts:
+                continue
+            tj, ti = np.nonzero(tree[0] | tree[1])
+            found = None
+            for mrg in (6.0, 15.0, 200.0):
+                sj, si = starts[0][1], starts[0][2]
+                win = (max(1, min(int(ti.min()), si) - int(mrg / RES)), max(1, min(int(tj.min()), sj) - int(mrg / RES)),
+                       min(GW - 2, max(int(ti.max()), si) + int(mrg / RES)), min(GH - 2, max(int(tj.max()), sj) + int(mrg / RES)))
+                found = self.search(blk, via_ok, starts, tree, [0, 1], via, win)
+                if found:
+                    break
+            if not found:
+                fails.append(f"{net}: island at ({mx(starts[0][2])}, {my(starts[0][1])})")
+                continue
+            runs, cur = [], [found[0]]
+            for a in found[1:]:
+                if a[0] != cur[-1][0]:
+                    runs.append(cur)
+                    cur = [a]
+                else:
+                    cur.append(a)
+            runs.append(cur)
+            for k, run in enumerate(runs):
+                layer = run[0][0]
+                poly = self.pull(blk[layer], [(j, i) for _, j, i in run])
+                cells = self._cells(poly)
+                self.stamp_track(nid, layer, cells, w)
+                for j, i in cells:
+                    tree[layer][j, i] = True
+                rec = {"layer": "FB"[layer], "w": w, "pts": [(mx(i), my(j)) for j, i in poly], "vias": []}
+                if k < len(runs) - 1:
+                    vj, vi = run[-1][1], run[-1][2]
+                    rec["vias"].append((mx(vi), my(vj)))
+                    self.stamp_via(nid, vj, vi)
+                    tree[0][vj, vi] = tree[1][vj, vi] = True
+                if len(poly) > 1 or rec["vias"]:
+                    self.cur["paths"].append(rec)
+            for layer in range(2):
+                tree[layer] |= (comp[layer] == root) & ((self.centre[layer] == nid) | self.base_pad)
+        return fails
+
     # -- output ----------------------------------------------------------------------------------
     def write(self, dst: Path):
         def fmt(pt):
@@ -639,12 +731,12 @@ class Board:
         Image.fromarray(img).resize(((i1 - i0 + 1) * scale, GH * scale), Image.NEAREST).save(dst)
 
 
-HEADER = '''"""Hand-planned 4-layer routes for ProbePen-AI (138 x 17.60 mm, JLC04161H-7628).
+HEADER = '''"""Planned tracks for the nets whose geometry matters (ProbePen-AI, 138 x 17.60 mm, 4 layers).
 
-Signals run on F.Cu and B.Cu only; In1.Cu (GND / AGND) and In2.Cu (+3V3_DIG / +3V3_ANA) stay solid
-planes, and hw/route.py connects plane pads with its own short stubs and vias. The tracks below were
-planned with hw/tools/plan_routes.py (see its PLAN table) and are drawn exactly as listed.
-Run: kicad-python hw/gen_pcb.py && kicad-python hw/route.py
+Written by hw/tools/plan_routes.py (see its PLAN table and CRITICAL_NETS): the high-impedance input
+and gain-stage nodes, the core regulator, the crystal, the USB pair and the ADC buses and clock,
+all on F.Cu / B.Cu. `hw/route.py --tracks-only` draws and locks them before the rest of the board
+is routed; the finished board's tracks are frozen in hw/routes.py.
 """
 from __future__ import annotations
 
@@ -665,8 +757,48 @@ CRITICAL_GROUPS = 24     # the first PLAN groups (analog chain, regulator, cryst
                          # never moved to make room for later nets
 
 
-def solve(pads_json: str, max_rips: int = 2):
+# Nets whose geometry matters: these are planned here and locked. `critical` mode routes only these
+# and leaves the rest of the board to Freerouting (hw/tools/freeroute_io.py).
+CRITICAL_NETS = (
+    "CH1_TIP", "CH2_TIP", "CH1_HV_MID", "CH2_HV_MID", "CH1_VDIV", "CH2_VDIV",
+    "CH1_INV", "CH2_INV", "CH1_SW_LO", "CH2_SW_LO", "CH1_OUT", "CH2_OUT",
+    "ADCA_INP", "ADCB_INP", "ADC_VREF", "CH1_VBUF", "CH2_VBUF", "REF_T1", "REF_T2", "REF_MID",
+    "XIN", "XOUT_RAW", "XOUT_XTAL", "USB_DP", "USB_DM",
+    "USB_CONN_DP", "USB_CONN_DM", "ADC_AVDD",
+    *_bus("ADCA_D"), *_bus("ADCB_D"), "ADC_ENCA", "ADC_ENCB", "ADC_CLK_MCU",
+)
+
+
+def preload_regulator(bd):
+    """Stamp the copied regulator copper (hw/regulator_ck.py) as fixed obstacles / existing net copper."""
+    from hw import regulator_ck
+    ux, uy = DATUM["rp2354b_xy"]
+    bd.begin("regulator", "GND", True)
+    idx = bd.cur["idx"]
+    bd.replay = True
+    for net, layer, w, x1, y1, x2, y2 in regulator_ck.TRACKS:
+        x1, y1, x2, y2 = ux + x1, uy + y1, ux + x2, uy + y2
+        n = max(1, int(math.hypot(x2 - x1, y2 - y1) / (RES / 2)))
+        cells = sorted({(gj(y1 + (y2 - y1) * k / n), gi(x1 + (x2 - x1) * k / n)) for k in range(n + 1)})
+        bd.stamp_track(bd.net_id[net], "FB".index(layer), cells, w + 0.1)
+        js, is_ = zip(*cells)
+        bd.centre["FB".index(layer)][np.array(js), np.array(is_)] = bd.net_id[net]
+    for net, x, y in regulator_ck.VIAS:
+        bd.stamp_via(bd.net_id[net], gj(uy + y), gi(ux + x))
+        bd.centre[0][gj(uy + y), gi(ux + x)] = bd.centre[1][gj(uy + y), gi(ux + x)] = bd.net_id[net]
+    # the +1V1 pour inside the pad ring and the small pours are copper too: keep other nets off them
+    for net, _prio, pts in regulator_ck.ZONES_F:
+        xs = [ux + p[0] for p in pts]
+        ys = [uy + p[1] for p in pts]
+        box = (bd.xs >= min(xs)) & (bd.xs <= max(xs)) & (bd.ys >= min(ys)) & (bd.ys <= max(ys))
+        bd.own[0][box & (bd.own[0] == 0)] = bd.net_id[net]
+    bd.replay = False
+    return idx
+
+
+def solve(pads_json: str, max_rips: int = 2, critical_only: bool = False):
     bd = Board(pads_json)
+    preload_regulator(bd)
     jobs: dict[str, dict] = {}
     order: list[str] = []
     def add_stubs(refs, crit):
@@ -683,13 +815,17 @@ def solve(pads_json: str, max_rips: int = 2):
 
     for g, (nets, opt) in enumerate(PLAN):
         if nets == "STUBS":
-            add_stubs(opt["refs"], True)
+            if not critical_only:
+                add_stubs(opt["refs"], True)
             continue
         for net in ([nets] if isinstance(nets, str) else nets):
-            if net in design.NETS:
+            if net in design.NETS and (not critical_only or net in CRITICAL_NETS):
                 jobs[net] = {"kind": "net", "net": net, "opt": opt, "crit": g < CRITICAL_GROUPS}
                 order.append(net)
-    add_stubs(None, False)
+    if critical_only:
+        order.sort(key=CRITICAL_NETS.index)
+    else:
+        add_stubs(None, False)
 
     def run(key):
         j = jobs[key]
@@ -757,17 +893,99 @@ def solve(pads_json: str, max_rips: int = 2):
 STUB_GND_REFS = ("U1", "U2", "U3", "U4", "U5", "U6", "U9", "U10", "D1", "D2", "J3", "J4", "Y1", "R16", "Q1")
 
 
-def main(pads_json: str):
-    bd = solve(pads_json)
+def touch_up(pads_json: str, spec_json: str):
+    """Close a few leftover connections on the frozen board (hw/routes.py) and append them to it.
+
+    spec: {"drop": [[x, y, r, "NET"], ...],     frozen items of NET (any net if omitted) with an end within r of (x, y)
+           "nets": ["NET", ...],                 signal nets to connect (pins join the existing copper)
+           "stubs": [["NET", "REF", "PIN"], ...] plane-net pads that need a via to their plane}
+    """
+    import importlib
+    from hw import routes as frozen
+    spec = json.loads(Path(spec_json).read_text(encoding="utf8"))
+    drop = spec.get("drop", [])
+
+    def gone(net, *pts):
+        return any(math.hypot(x - d[0], y - d[1]) <= d[2] and (len(d) < 4 or d[3] == net) for x, y in pts for d in drop)
+
+    segs = [t for t in frozen.SEGMENTS if not gone(t[0], (t[3], t[4]), (t[5], t[6]))]
+    arcs = [t for t in frozen.ARCS if not gone(t[0], (t[3], t[4]), (t[7], t[8]))
+            and math.hypot(t[7] - t[3], t[8] - t[4]) >= 0.08]          # crumbs are dropped
+    vias = [t for t in frozen.VIAS if not gone(t[0], (t[1], t[2]))]
+    segs += [tuple(t) for t in spec.get("add_segs", [])]            # explicit (net, layer, w, x1, y1, x2, y2)
+    vias += [(n, x, y, VIA[0], VIA[1]) for n, x, y in spec.get("add_vias", [])]
+    bd = Board(pads_json)
+    lay = {"F": 0, "B": 1}
+    bd.begin("frozen", "GND", True)
+    frozen_idx = bd.cur["idx"]
+    bd.replay = True                                   # stamp without recording
+    for net, layer, w, x1, y1, x2, y2 in segs + [(a[0], a[1], a[2], a[3], a[4], a[7], a[8]) for a in arcs]:
+        n = max(1, int(math.hypot(x2 - x1, y2 - y1) / (RES / 2)))
+        cells = sorted({(gj(y1 + (y2 - y1) * k / n), gi(x1 + (x2 - x1) * k / n)) for k in range(n + 1)})
+        bd.stamp_track(bd.net_id[net], lay[layer], cells, w)
+        js, is_ = zip(*cells)
+        bd.centre[lay[layer]][np.array(js), np.array(is_)] = bd.net_id[net]
+    for net, x, y, _size, _drill in vias:
+        bd.stamp_via(bd.net_id[net], gj(y), gi(x))
+        bd.centre[0][gj(y), gi(x)] = bd.centre[1][gj(y), gi(x)] = bd.net_id[net]
+    bd.replay = False
+    opts = {n: opt for nets, opt in PLAN if nets != "STUBS" for n in ([nets] if isinstance(nets, str) else nets)}
+    pad_xy = {(p["ref"], p["num"], p["k"]): (p["x"], p["y"]) for p in bd.pads}
+    notes = []
+    for net in spec.get("nets", []):
+        over = {}
+        if isinstance(net, dict):                      # {"net": ..., "w": ..., "clr": ...}
+            over = {k: v for k, v in net.items() if k != "net"}
+            net = net["net"]
+        bd.begin(net, net, False)
+        opt = dict(opts.get(net, dict(w=0.2, clr=0.14)), layers="FB", **over)
+        opt.pop("hug", None)
+        notes += bd.join_islands(net, w=opt.get("w", 0.15), clr=opt.get("clr", 0.105))
+    for net in spec.get("stitch", []):                 # every pad of a plane net with no via of its net nearby
+        have = [(x, y) for n, x, y, _s, _d in vias if n == net]
+        for p in bd.pins_of(net):
+            if p["f"] and p["b"]:
+                continue
+            if all(math.hypot(p["x"] - x, p["y"] - y) > 1.6 for x, y in have):
+                bd.begin(f"{net}@{p['ref']}.{p['num']}", net, False)
+                if not bd.plane_stub(net, p, reach=3.0):
+                    have += [v for r in bd.cur["paths"] for v in r["vias"]]
+    for net, ref, pin in spec.get("stubs", []):
+        bd.begin(f"{net}@{ref}.{pin}", net, False)
+        for p in bd.pins_of(net):
+            if p["ref"] == ref and p["num"] == pin:
+                notes += bd.plane_stub(net, p, w=0.15, clr=spec.get("stub_clr", 0.14), reach=4.5)
+    for key, u in bd.units.items():
+        if key == "frozen":
+            continue
+        for r in u["paths"]:
+            pts = [pad_xy[pt] if isinstance(pt[0], str) else pt for pt in r["pts"]]
+            for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
+                if math.hypot(x2 - x1, y2 - y1) > 0.02:
+                    segs.append((u["net"], r["layer"], r["w"], round(x1, 4), round(y1, 4), round(x2, 4), round(y2, 4)))
+            vias += [(u["net"], x, y, VIA[0], VIA[1]) for x, y in r["vias"]]
+    txt = Path(frozen.__file__).read_text(encoding="utf8")
+    head = txt[:txt.index("SEGMENTS = [")]
+    out = [head + "SEGMENTS = ["] + [f"    {t!r}," for t in sorted(segs)] + ["]", "", "ARCS = ["]
+    out += [f"    {t!r}," for t in sorted(arcs)] + ["]", "", "VIAS = ["] + [f"    {t!r}," for t in sorted(vias)] + ["]", ""]
+    Path(frozen.__file__).write_text("\n".join(out), encoding="utf8", newline="\n")
+    print("touch-up: not closed:", notes or "none")
+
+
+def main(pads_json: str, mode: str = "all"):
+    bd = solve(pads_json, critical_only=(mode == "critical"))
     planned = {n for nets, _ in PLAN if nets != "STUBS" for n in ([nets] if isinstance(nets, str) else nets)}
     missing = sorted(set(design.NETS) - planned - set(PLANE_NETS))
-    if missing:
+    if missing and mode != "critical":
         print("nets not in PLAN:", missing)
     print("FAILED:", bd.failed or "none")
-    bd.write(ROOT / "hw" / "routes.py")
+    bd.write(ROOT / "hw" / ("routes_critical.py" if mode == "critical" else "routes.py"))
     for k, (a, c) in enumerate(((0, 47), (45, 93), (90, 138))):
         bd.preview(f"/tmp/ppv/plan_{k}.png", a, c)
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:])
+    if len(sys.argv) > 2 and sys.argv[2].endswith(".json"):
+        touch_up(sys.argv[1], sys.argv[2])
+    else:
+        main(*sys.argv[1:])
