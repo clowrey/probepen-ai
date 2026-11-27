@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ProbePen-AI simulator</title>
+<meta name="description" content="The ProbePen-AI pen oscilloscope's own firmware user interface running in the browser on simulated signals, with a host app that drives it over its USB protocol.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <h1>ProbePen-AI simulator</h1>
+  <p class="lede">The pen's own firmware user interface, compiled to WebAssembly, running on simulated probe
+    signals. Press its side buttons, change what the tips are touching, or drive it from the host app at
+    the bottom, as a computer would over USB.</p>
+  <p class="links"><a href="https://github.com/clowrey/probepen-ai">Repository</a>
+    <a href="https://github.com/clowrey/probepen-ai#scope-specifications">Specifications</a>
+    <span id="status" class="status">Loading firmware…</span></p>
+</header>
+
+<main>
+  <section class="pen-wrap" aria-label="The pen">
+    <div class="pen" id="pen">
+      <img id="penImg" src="pen.png" alt="ProbePen-AI, screen side up, nose to the left">
+      <canvas id="lcdSmall" width="240" height="135" aria-label="Pen screen"></canvas>
+    </div>
+    <p class="hint">Side buttons: click or touch and hold. Keyboard: <kbd>A</kbd> ASK, <kbd>M</kbd> MODE,
+      <kbd>↑</kbd> UP, <kbd>↓</kbd> DOWN. Holding a button for 0.6 s gives its second function.</p>
+  </section>
+
+  <div class="grid">
+    <section class="card screen-card">
+      <h2>Screen <span class="sub">240 × 135, 1.14" IPS, drawn by the firmware</span></h2>
+      <canvas id="lcdBig" width="240" height="135"></canvas>
+      <div class="btnpad" id="btnpad"></div>
+      <table class="help">
+        <thead><tr><th>Button</th><th>Short press</th><th>Held</th></tr></thead>
+        <tbody>
+          <tr><td>ASK</td><td>run / hold</td><td>send a snapshot to the host app</td></tr>
+          <tr><td>MODE</td><td>CH1+2, CH1, CH2, LOGIC, METER</td><td>trigger source and slope</td></tr>
+          <tr><td>UP / DOWN</td><td>slower / faster timebase</td><td>trigger level up / down</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card now-card">
+      <h2>What the pen is doing</h2>
+      <dl id="now" class="now"></dl>
+    </section>
+
+    <section class="card sig-card">
+      <h2>Probe inputs <span class="sub">what the tips and the logic pod are touching</span></h2>
+      <div class="presets" id="presets"></div>
+      <p class="preset-note" id="presetNote"></p>
+      <div class="chans" id="chans"></div>
+      <fieldset class="pod">
+        <legend>Logic pod (4 lines, shown in LOGIC mode)</legend>
+        <label>Signals <select id="podKind">
+          <option value="0">4-bit counter</option>
+          <option value="1">SPI bus (CS, SCK, MOSI, MISO)</option>
+          <option value="2">UART + PWM</option>
+        </select></label>
+        <label>Clock / baud <input id="podFreq" value="1M" inputmode="decimal"></label>
+      </fieldset>
+    </section>
+  </div>
+
+  <section class="host" aria-label="Host app">
+    <div class="titlebar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      ProbePen Host <span class="sub" id="hostPort">USB serial, simulated</span></div>
+    <div class="host-body">
+      <div class="toolbar">
+        <label>Mode <select id="hMode"></select></label>
+        <label>Timebase <select id="hTb"></select></label>
+        <label>Range <select id="hGain">
+          <option value="0">Auto</option><option value="1">±5 V</option><option value="10">±26 V</option>
+        </select></label>
+        <label class="trig">Trigger level <input type="range" id="hTrig" min="0" max="255" value="128">
+          <output id="hTrigOut">128</output></label>
+        <button id="hRun" type="button">Hold</button>
+        <button id="hCal" type="button" title="Ground both tips first">CAL</button>
+        <button id="hMeas" type="button">Measure</button>
+        <span class="cap"><button id="hCap" type="button">Capture</button>
+          <input id="hCapN" value="1024" inputmode="numeric" aria-label="Samples per channel"> samples</span>
+        <button id="hCsv" type="button" disabled>CSV</button>
+      </div>
+      <div class="plot-wrap"><canvas id="plot"></canvas><p class="plot-empty" id="plotEmpty"><span>Press
+        <b>Capture</b> to read samples over USB, or hold <b>ASK</b> on the pen.</span></p></div>
+      <div class="meas" id="meas"></div>
+      <div class="host-cols">
+        <div class="console-wrap">
+          <div class="console" id="console" aria-live="polite"></div>
+          <form id="cmdForm" class="cmd"><input id="cmdLine" placeholder="Command, e.g. *IDN?  TB 5  TRIG 150  MEAS?" autocomplete="off"><button>Send</button></form>
+        </div>
+        <div class="snaps-wrap">
+          <h3>ASK snapshots</h3>
+          <p class="sub">Hold ASK on the pen: it sends its measurements and the samples on its screen. The real
+            host app (<code>host/probepen.py ask</code>) saves each one as JSON for an AI model to explain.</p>
+          <div id="snaps" class="snaps"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>Simulated parts: probe signals, the front end (divider, range switch, inverting gain stage, 31 MHz
+    anti-alias filter, and a small zero offset for CAL to find), the AD9288 and its PIO/DMA capture, logic pod,
+    DC-sense ADC, buttons and USB link. Everything on the screen and every USB reply comes from the firmware
+    in <code>firmware/src</code>. No board has been built yet.</footer>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

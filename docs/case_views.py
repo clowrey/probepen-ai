@@ -140,10 +140,10 @@ def render(actors, direction, up=(0, 0, 1), size=(2400, 1000), zoom=1.0, angle=1
     return im.crop(bbox) if bbox else im
 
 
-def screen_actor(feat: dict, cx: float) -> list[vtk.vtkActor]:
+def screen_actor(feat: dict, cx: float, png: Path | None = None) -> list[vtk.vtkActor]:
     """The firmware's own CH1+2 screen (docs/fw_ui_preview.py) on the LCD's visible area, facing down.
     Mapped so it reads the right way round when the pen is turned over about its long axis."""
-    png = ROOT / "docs" / "img" / "ui_screen.png"
+    png = png or ROOT / "docs" / "img" / "ui_screen.png"
     if not png.is_file():
         return []
     gx = [v for v in feat["lcd_window"]]
@@ -200,6 +200,39 @@ def row(ims: list[Image.Image], gap: int = 24) -> Image.Image:
     return out
 
 
+SIM_SITE = ROOT / "sim" / "site"
+
+
+def sim_assets(shot, feat: dict, tmp: Path) -> None:
+    """sim/site/pen.png (closed case, screen side up, nose left) and pen.json: where the LCD's visible
+    area and the four side buttons are, as fractions of the image, for the web simulator's overlay."""
+    key = tmp / "key.png"
+    Image.new("RGB", (240, 135), (255, 0, 255)).save(key)
+    keyed = np.asarray(shot(key).convert("RGB")).astype(int)
+    hit = (keyed[..., 0] > 230) & (keyed[..., 1] < 40) & (keyed[..., 2] > 230)
+    ys, xs = np.nonzero(hit)
+    h, w = hit.shape
+    x0, x1, y0, y1 = xs.min(), xs.max() + 1, ys.min(), ys.max() + 1
+    # parallel projection: mm -> px is linear; the LCD window fixes the scale and offset along x and y
+    wx0, wy0, wx1, wy1 = feat["lcd_window"]
+    sx = (x1 - x0) / (wx1 - wx0)
+    sy = (y1 - y0) / (wy1 - wy0)   # image y grows with board y in this view (camera up is -y)
+    names = ["ASK", "MODE", "UP", "DOWN"]
+    buttons = [{"name": n, "x": (x0 + (bx - wx0) * sx) / w, "y": (y0 + (by - wy0) * sy) / h}
+               for n, (bx, by) in zip(names, feat["buttons"])]
+    off = tmp / "off.png"   # the LCD dark: the page draws the live screen over it
+    Image.new("RGB", (240, 135), (8, 10, 14)).save(off)
+    plain = shot(off)
+    assert plain.size == (w, h), "the two renders must crop the same"
+    SIM_SITE.mkdir(parents=True, exist_ok=True)
+    small = plain.resize((1600, round(h * 1600 / w)), Image.LANCZOS)
+    small.save(SIM_SITE / "pen.png", optimize=True)
+    (SIM_SITE / "pen.json").write_text(json.dumps({
+        "lcd": {"x": x0 / w, "y": y0 / h, "w": (x1 - x0) / w, "h": (y1 - y0) / h},
+        "buttons": buttons, "aspect": w / h, "px_per_mm": sx * 1600 / w,
+    }, indent=1) + "\n", encoding="utf8")
+
+
 def case_views(img_dir: Path) -> None:
     feat = json.loads((ROOT / "hw" / "out" / "board_features.json").read_text(encoding="utf8"))
     parts = casemod.build_parts(feat)
@@ -220,8 +253,8 @@ def case_views(img_dir: Path) -> None:
         slabs = [a for a in raw if 1.4 < a.GetBounds()[5] - a.GetBounds()[4] < 1.8]
         z_shift = -min(a.GetBounds()[4] for a in slabs) if slabs else 0.0
 
-        def board(dz=0.0):
-            scr = screen_actor(feat, cx)
+        def board(dz=0.0, png=None):
+            scr = screen_actor(feat, cx, png)
             for a in scr:
                 t = vtk.vtkTransform()
                 t.Translate(0, 0, dz)
@@ -231,12 +264,14 @@ def case_views(img_dir: Path) -> None:
         def shell(shape, col, dz=0.0):
             return shift([shape_actor(shape, col)], dx=-cx, dz=dz)
 
-        closed = lambda: shell(bot, BOT_COL) + board() + shell(top, TOP_COL)  # noqa: E731
+        closed = lambda png=None: shell(bot, BOT_COL) + board(png=png) + shell(top, TOP_COL)  # noqa: E731
 
         # top-down and bottom-up, orthographic, for the board composite
         render(closed(), (0, 0, 1), up=(0, 1, 0), parallel=True, size=(3000, 600)).save(img_dir / "case_top_down.png")
         # screen side up: turned over about the long axis, so the nose stays on the left and the LCD reads
         render(closed(), (0, 0, -1), up=(0, -1, 0), parallel=True, size=(3000, 600)).save(img_dir / "case_bottom_up.png")
+        sim_assets(lambda png: render(closed(png), (0, 0, -1), up=(0, -1, 0), parallel=True, size=(3000, 600)),
+                   feat, Path(tmp))
 
         # assembled: from above (WAGO, buttons, USB) and from below (LCD through its window)
         a1 = label(render(closed(), (-0.45, -0.80, 0.60), zoom=1.25), "Closed case, from above")
