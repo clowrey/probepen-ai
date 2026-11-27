@@ -286,14 +286,14 @@ To check on the first board:
 [`hw/out/jlc/`](hw/out/jlc/), and [`cost.md`](hw/out/jlc/cost.md) with live JLC prices and stock.
 
 **Checked on JLCPCB's own order page (2026-11-27), for 30 boards.** The Gerbers, BOM and CPL were
-uploaded and taken through to the cart, but not ordered.
+uploaded and taken through to the quote, but not ordered.
 
 | | |
 |---|---|
-| PCB: 4 layers, 138 × 17.6 mm, JLC04161H-7628, 0.2 mm vias (the quoted design; now 0.30 mm, see below) | $73.53, of which the 0.2 mm via costs $18.35 plus a $17.51 four-wire Kelvin test and $3.67 for Tg155, all added automatically |
-| Economic assembly, top side, 42 part types | $198.16: parts $130.82, Extended-part fees $37.08, SMT $19.15, setup and stencil $9.79, nitrogen reflow $1.32 |
-| Shipping (estimate) | $42.20 |
-| **Total** | **$307.89 after a $6 coupon, about $10.26 per board** |
+| PCB: 4 layers, 138 × 17.6 mm, JLC04161H-7628, 0.30 mm vias | $34.00 |
+| Economic assembly, top side, 42 part types, JLC confirms part placement | $198.61: parts $130.82, Extended-part fees $37.08, SMT $19.15, setup and stencil $9.79, nitrogen reflow $1.32, placement confirmation $0.45 |
+| Shipping (estimate) | about $42 |
+| **Total** | **about $269 after a $6 coupon, about $8.96 per board** |
 
 - **Not in the assembled price:** the AD9288 and the LCD (hand-soldered; see below for where to buy
   the AD9288), and the WAGO 2060 terminal. JLC places the WAGO only with Standard assembly, which costs
@@ -313,9 +313,10 @@ uploaded and taken through to the cart, but not ordered.
   so JLC's engineers check it.
 - **JLC's matcher** leaves BOM lines with letter-suffixed designators (C32B, R25A, …) unticked
   ("there may be multiple types of parts"). They are the right parts: tick them.
-- **Vias changed to a 0.30 mm drill after this quote,** including the RP2354B footprint's nine
-  thermal vias. JLC charges for any hole under 0.3 mm: its 0.25 mm option costs $73.63, about the same
-  as 0.20 mm. At 0.30 mm the board drops to about $35 for 30. The 0.40 mm pads keep the routing
+- **Vias are 0.30 mm,** including the RP2354B footprint's nine thermal vias. JLC charges for any
+  hole under 0.3 mm. With 0.20 mm vias, the 30 boards cost $73.53: a $18.35 via charge plus a
+  $17.51 four-wire Kelvin test and $3.67 of Tg155 material, all added automatically. 0.25 mm costs
+  $73.63. The 0.40 mm pads keep the routing
   unchanged and meet JLC's minimum for that drill (pad at least drill + 0.10 mm). JLC prefers
   0.45 mm, but 0.45 mm pads would need re-routing (24 hole-clearance errors). DRC is clean with a
   0.05 mm annular-ring rule.
