@@ -931,7 +931,7 @@ How this list was made (re-run after changing the circuit or the placement):
   3. Freerouting routes the remaining nets on F.Cu / B.Cu (hw/tools/freeroute_io.py).
   4. hw/route.py --finish adds any missing plane vias and fills the zones.
   5. hw/route.py --freeze writes the result here.
-See hw/tools/reroute.sh.
+See hw/tools/groute/run.sh and docs/ROUTING_GUIDE.md.
 """
 '''
 
