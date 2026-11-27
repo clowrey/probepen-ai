@@ -1,10 +1,10 @@
 """docs/img/board_layers.jpg: the README's top image. Top-down views only, all at one scale and lined up
 at the nose: the four copper layers, all layers together, the populated board from above and below
-(DNP parts fitted), and the closed case from above.
+(DNP parts fitted), and the closed case screen side up.
 
     kicad-python docs/render_board.py          # hw/.render.kicad_pcb with the DNP parts shown
     .venv/bin/python docs/make_images.py layers
-    .venv/bin/python docs/case_views.py        # case_top_down.png
+    .venv/bin/python docs/case_views.py        # case_bottom_up.png
     .venv/bin/python docs/composite.py
 """
 from __future__ import annotations
@@ -61,10 +61,10 @@ def main() -> None:
             # flipped over about its long axis) keeps the nose on the left like every other panel
             im = im.rotate(180)
         panels.append((cap, im, x_nose))
-    case = Image.open(IMG / "case_top_down.png").convert("RGBA")
+    case = Image.open(IMG / "case_bottom_up.png").convert("RGBA")
     w = round((CASE_X1 - CASE_X0) * ppm)
     case = case.resize((w, round(case.height * w / case.width)), Image.LANCZOS)
-    panels.append(("Case, top", case, x_nose + round(CASE_X0 * ppm)))
+    panels.append(("Case, screen side up", case, x_nose + round(CASE_X0 * ppm)))
 
     font = ImageFont.truetype(FONT, 22)
     cap_h, gap = 30, 14

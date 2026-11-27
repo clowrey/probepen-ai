@@ -235,7 +235,8 @@ def case_views(img_dir: Path) -> None:
 
         # top-down and bottom-up, orthographic, for the board composite
         render(closed(), (0, 0, 1), up=(0, 1, 0), parallel=True, size=(3000, 600)).save(img_dir / "case_top_down.png")
-        render(closed(), (0, 0, -1), up=(0, 1, 0), parallel=True, size=(3000, 600)).save(img_dir / "case_bottom_up.png")
+        # screen side up: turned over about the long axis, so the nose stays on the left and the LCD reads
+        render(closed(), (0, 0, -1), up=(0, -1, 0), parallel=True, size=(3000, 600)).save(img_dir / "case_bottom_up.png")
 
         # assembled: from above (WAGO, buttons, USB) and from below (LCD through its window)
         a1 = label(render(closed(), (-0.45, -0.80, 0.60), zoom=1.25), "Closed case, from above")
