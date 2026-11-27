@@ -8,7 +8,7 @@ is routed; the finished board's tracks are frozen in hw/routes.py.
 from __future__ import annotations
 
 ROUTES: dict = {}
-VIA = (0.40, 0.30)
+VIA = (0.45, 0.25)
 
 
 def t(net, *pts, w=0.15, layer="F", vias=()):

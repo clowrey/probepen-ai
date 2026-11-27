@@ -39,7 +39,7 @@ Four layers: F.Cu (parts and signals), In1.Cu (ground), In2.Cu (ground and suppl
 
 ## 3. Vias
 
-- Always 0.40 mm pad, 0.30 mm drill: JLC's standard via. Any hole under 0.3 mm adds about $40 per order in via, Kelvin-test and Tg155 charges. 0.40 mm is JLC's minimum pad for that drill. There is no reason for a
+- Always 0.45 mm pad, 0.25 mm hole: a 0.10 mm ring at JLC's standard price (a 0.2 or 0.25 mm hole is free once the pad is 0.45 mm or more). Smaller pads on small holes add about $40 per order. There is no reason for a
   larger via on this board.
 - No via in an SMD pad. Place it beside the pad with a short stub. (Exposed thermal pads are the
   exception.)
