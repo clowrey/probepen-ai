@@ -137,6 +137,11 @@ def test_pio_programs_syntax_and_pin_widths():
     assert design.GPIO["ADC_CLK"] == 24
     assert ".program pod_capture" in pod
     assert "in pins, 4" in pod
+    # SDK 2.x rejects pio_set_gpio_base() once a program is loaded: main.c must set it first
+    main = (FW / "src" / "main.c").read_text(encoding="utf8")
+    init = main[main.index("static void capture_init"):]
+    assert init.index("pio_set_gpio_base(pio0") < init.index("pio_add_program(pio0")
+    assert "pio_set_gpio_base(pio," not in adc.split("% c-sdk")[1].split("{", 2)[2]
 
 
 def test_afe_calibration_and_autorange(core_lib):

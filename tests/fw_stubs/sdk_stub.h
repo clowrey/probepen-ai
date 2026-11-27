@@ -22,6 +22,8 @@ static inline void tight_loop_contents(void) {}
 bool stdio_init_all(void);
 int getchar_timeout_us(uint32_t timeout_us);
 #define PICO_ERROR_TIMEOUT (-1)
+#define PICO_OK 0
+void hard_assert(bool condition);
 typedef struct stdio_driver stdio_driver_t;
 extern stdio_driver_t stdio_usb;
 void stdio_set_translate_crlf(stdio_driver_t *driver, bool translate);

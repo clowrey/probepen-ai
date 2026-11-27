@@ -270,6 +270,10 @@ static void capture_finish(void) {
 }
 
 static void capture_init(void) {
+    /* GPIO16..47 window first: the SDK will not move the base once PIO0 holds a program */
+    int rc = pio_set_gpio_base(pio0, AD9288_GPIO_BASE);   /* not inside the assert: it may compile out */
+    hard_assert(rc == PICO_OK);
+    (void)rc;
     g_adc_offset = pio_add_program(pio0, &ad9288_capture_program);
     ad9288_capture_program_init(pio0, 0u, (uint)g_adc_offset, 2.0f);
     g_pod_offset = pio_add_program(pio1, &pod_capture_program);

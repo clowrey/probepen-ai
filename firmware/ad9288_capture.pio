@@ -23,8 +23,9 @@
 #define AD9288_GPIO_BASE 16u
 #define AD9288_CLK_PIN   24u
 
+/* Call pio_set_gpio_base(pio, AD9288_GPIO_BASE) BEFORE pio_add_program(): the SDK refuses to move the
+ * GPIO base of a PIO block that already holds instructions. Pin numbers below are absolute GPIOs. */
 static inline void ad9288_capture_program_init(PIO pio, uint sm, uint offset, float clkdiv) {
-    pio_set_gpio_base(pio, AD9288_GPIO_BASE);
     pio_sm_config c = ad9288_capture_program_get_default_config(offset);
     for (uint pin = 16; pin < 24; ++pin) {
         pio_gpio_init(pio, pin);
