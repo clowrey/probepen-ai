@@ -3,6 +3,26 @@
 Owner-requested review, 2026-11-26. Please read this before continuing, act on it in the
 generator scripts (`hw/design.py`, tests), and delete each item once it is handled.
 
+## Status 2026-11-27 (branch `relayout`)
+
+Handled since these notes were written:
+
+- Section 1: REF_MID now equals the divider's resting voltage (0.9785 V vs 0.9781 V), the low range
+  is about ±26 V (R6x 330R) and the tests check both ranges at the buffer's input limits.
+- Section 2: firmware ported to the AD9288 and the current pin map (it cross-compiles; a full Pico
+  SDK build is still to do); README and AGENTS.md rewritten; the board is routed with no unconnected
+  items (see README status line).
+- Section 3: U1 rotated, the core regulator copied from CellKeeper, the 2520 crystal (C284154) with
+  15 pF Basic load capacitors placed at pins 30/31.
+- Section 4: re-placed and re-routed from scratch; the rules that came out of it are in
+  `docs/ROUTING_GUIDE.md`. Two deviations: the DC-sense 10 nF capacitors sit beside their 10k
+  resistors at the source (the MCU side has no room), and there are no SWD/RUN test pads (programming
+  is over USB).
+
+Still open: the TLV3501 logic probe was dropped from `design.py` (owner to confirm), docs images
+other than the board composite, `hardware/SCHEMATIC_WIRING_SPEC.md`, the JLC export and cost table,
+and the anti-alias filter question in section 4 item 9.
+
 ## 1. Front-end range on negative inputs (single-supply AFE)
 
 Checked from `hw/design.py`, still true at commit 984339e (2026-11-26). Per channel: 940k from the tip into

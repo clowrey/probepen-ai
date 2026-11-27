@@ -24,7 +24,10 @@ typedef struct {
     bool triggered;
 } scope_meas_t;
 
-size_t scope_unpack_pio30(const uint32_t *words, size_t n_words, uint16_t *out_samples, size_t max_samples);
+#define SCOPE_CODE_MAX 255u   /* AD9288: 8-bit codes */
+
+/* One PIO word per sample: channel A in bits 0..7 (bit-reversed), channel B in bits 16..23. */
+size_t scope_unpack_ad9288(const uint32_t *words, size_t n_words, uint16_t *out_a, uint16_t *out_b, size_t max_samples);
 size_t scope_find_trigger(
     const uint16_t *samples,
     size_t count,

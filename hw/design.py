@@ -47,33 +47,36 @@ class Comp:
 #   word bits  0..7  = GPIO16..23 = ADCA_D7..D0 (bit-reversed: byte = __rbit(word) >> 24)
 #   word bits 16..23 = GPIO32..39 = ADCB_D0..D7
 # The pin order follows the board so the two 8-bit buses reach the MCU without crossing.
-# RP2354B ADC0..ADC7 are GPIO40..47 (not 5 V tolerant): DC sense and VBUS sense. Buttons: GPIO4..7.
+# RP2354B ADC0..ADC7 are GPIO40..47 (not 5 V tolerant): DC sense and VBUS sense; three buttons use
+# GPIO43..45 as plain inputs (the pins on the button side of the board), the fourth GPIO5 on the north side.
 # POD_CH0..3 sit on 5 V tolerant GPIO0..3, the pins facing the side header (PIO1, GPIOBASE = 0).
 GPIO = {
     "POD_CH0": 0,
     "POD_CH1": 1,
     "POD_CH2": 2,
     "POD_CH3": 3,
-    "BTN_DOWN_N": 4,
-    "BTN_UP_N": 5,
-    "BTN_MODE_N": 6,
-    "BTN_ASK_AI_N": 7,
-    "ADC_S1": 12,
-    "ADC_S2": 13,
-    "LCD_BLK_GATE_N": 14,
+    "BTN_ASK_AI_N": 5,    # north pin 2: a plain input, so it leaves the ADC pins to the sense lines
+    "LCD_BLK_GATE_N": 9,
+    "CH1_GAIN_LO": 10,    # north side, beside CH2_GAIN_LO: both go to the gain switch U6
+    "CH2_GAIN_LO": 13,
+    "ADC_S1": 14,
+    "ADC_S2": 15,
     **{f"ADCA_D{i}": 23 - i for i in range(8)},
     "ADC_CLK": 24,
+    # LCD: in the same top-to-bottom order as the LCD flex pads (CS, RST, DC above the crystal, SCK and MOSI
+    # below the debug pins), so the bus reaches J4 without crossing itself
     "LCD_CS_N": 25,
-    "LCD_SCK": 26,        # SPI1 SCK
-    "LCD_MOSI": 27,       # SPI1 TX
-    "LCD_DC": 28,
-    "LCD_RST_N": 29,
-    "CH1_GAIN_LO": 30,
-    "CH2_GAIN_LO": 31,
+    "LCD_RST_N": 26,
+    "LCD_DC": 27,
+    "LCD_SCK": 30,        # SPI1 SCK
+    "LCD_MOSI": 31,       # SPI1 TX
     **{f"ADCB_D{i}": 32 + i for i in range(8)},
-    "CH2_DC_SENSE": 40,   # ADC0
-    "CH1_DC_SENSE": 41,   # ADC1
-    "VBUS_SENSE": 42,     # ADC2
+    "CH1_DC_SENSE": 40,   # ADC0
+    "CH2_DC_SENSE": 42,   # ADC2 (GPIO41 left free beside the core-supply pin)
+    "BTN_DOWN_N": 43,     # buttons: on the MCU side that faces the button edge of the board
+    "BTN_UP_N": 44,
+    "BTN_MODE_N": 45,
+    "VBUS_SENSE": 46,     # ADC6
 }
 
 # RP2354B QFN-80 pin -> GPIO number (RP2350 Datasheet Table 1674, QFN-80 column)
@@ -112,8 +115,8 @@ def _rp2354b_pins() -> dict[str, str]:
         "51": "+1V1_CORE",  # DVDD
         "30": "XIN",
         "31": "XOUT_RAW",
-        "33": "SWCLK",
-        "34": "SWDIO",
+        "33": "NC",         # SWCLK: no debug pads in this revision (programmed over USB)
+        "34": "NC",         # SWDIO
         "35": "RUN_N",
         "59": "ADC_AVDD",   # +3V0_REF through R23 (3.000 V >= 2.97 V min for full ADC spec)
         "61": "VREG_AVDD",
@@ -238,9 +241,8 @@ COMPONENTS: list[Comp] = [
     C("D6", "d_1n5819ws", {"1": "BTN_MODE_N", "2": "BOOT_KEY"}, block="mcu"),  # 1=K, 2=A
     C("R22", "r_10k_0402", {"1": "+3V3_DIG", "2": "RUN_N"}, block="mcu"),
     _tp("TP_BOOT", "BOOT_KEY", "mcu"),
-    _tp("TP_RUN", "RUN_N", "mcu"),
-    _tp("TP_SWCLK", "SWCLK", "mcu"),
-    _tp("TP_SWDIO", "SWDIO", "mcu"),
+    # No SWD / RUN test pads in this revision: the MCU is programmed over USB (BOOT_KEY), and the pads had no room
+    # on the MCU's nose side beside the crystal and the LCD lines. SWCLK / SWDIO stay unconnected (internal pulls).
     _tp("TP_GND1", "GND", "mcu"),
 
     # ---- Analog Front End: Dual-Channel Single-Supply 2-Gain (CH1 & CH2) + 1.000 V Ref (afe) -
@@ -305,7 +307,7 @@ COMPONENTS: list[Comp] = [
     C("C40A", "c_4p7_0402", {"1": "CH1_INV", "2": "CH1_OUT"}, block="afe"),
     C("R6A", "r_330r_0402", {"1": "CH1_INV", "2": "CH1_SW_LO"}, block="afe"),
     C("R24", "r_10k_0402", {"1": "CH1_OUT", "2": "CH1_DC_SENSE"}, block="afe"),
-    C("C41", "c_10n_0402", {"1": "CH1_DC_SENSE", "2": "GND"}, block="mcu"),   # at the MCU ADC pin
+    C("C41", "c_10n_0402", {"1": "CH1_DC_SENSE", "2": "AGND"}, block="afe"),  # beside R24, on the analog ground island
     _tp("TP_CH1", "CH1_OUT", "afe"),
 
     C("R4B", "r_510r_0402", {"1": "CH2_VBUF", "2": "CH2_INV"}, block="afe"),
@@ -313,7 +315,7 @@ COMPONENTS: list[Comp] = [
     C("C40B", "c_4p7_0402", {"1": "CH2_INV", "2": "CH2_OUT"}, block="afe"),
     C("R6B", "r_330r_0402", {"1": "CH2_INV", "2": "CH2_SW_LO"}, block="afe"),
     C("R24B", "r_10k_0402", {"1": "CH2_OUT", "2": "CH2_DC_SENSE"}, block="afe"),
-    C("C41B", "c_10n_0402", {"1": "CH2_DC_SENSE", "2": "GND"}, block="mcu"),  # at the MCU ADC pin
+    C("C41B", "c_10n_0402", {"1": "CH2_DC_SENSE", "2": "GND"}, block="afe"),   # beside R24B
     _tp("TP_CH2", "CH2_OUT", "afe"),
     _tp("TP_REFM", "REF_MID", "afe"),
 

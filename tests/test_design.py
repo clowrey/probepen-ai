@@ -51,9 +51,6 @@ def test_rp2354b_pin_completeness():
     assert design.pin_net("U1", "30") == "XIN"
     assert design.pin_net("R20", "1") == "XOUT_RAW"
     assert design.pin_net("R22", "2") == "RUN_N"
-    assert design.pin_net("TP_SWCLK", "1") == "SWCLK"
-    assert design.pin_net("TP_SWDIO", "1") == "SWDIO"
-    assert design.pin_net("TP_RUN", "1") == "RUN_N"
     assert design.pin_net("TP_BOOT", "1") == "BOOT_KEY"
     # Every power supply domain on U1 has decoupling caps
     iovdd_caps = [
@@ -147,7 +144,7 @@ def test_pio_and_adc_gpio_windows():
     for name in ("CH1_DC_SENSE", "VBUS_SENSE", "CH2_DC_SENSE"):
         assert 40 <= design.GPIO[name] <= 47, (name, design.GPIO[name])
     # LCD on SPI1: SCK = GPIO26, TX = GPIO27
-    assert design.GPIO["LCD_SCK"] == 26 and design.GPIO["LCD_MOSI"] == 27
+    assert design.GPIO["LCD_SCK"] == 30 and design.GPIO["LCD_MOSI"] == 31   # SPI1 SCK / TX
 
 
 def test_buttons_and_lcd_pinout():

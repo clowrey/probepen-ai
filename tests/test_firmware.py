@@ -65,10 +65,11 @@ def core_lib(tmp_path_factory):
     lib.afe_autorange_select.argtypes = [ctypes.c_int, ctypes.c_float, ctypes.c_bool]
     lib.afe_autorange_select.restype = ctypes.c_int
 
-    lib.scope_unpack_pio30.argtypes = [
-        ctypes.POINTER(ctypes.c_uint32), ctypes.c_size_t, ctypes.POINTER(ctypes.c_uint16), ctypes.c_size_t,
+    lib.scope_unpack_ad9288.argtypes = [
+        ctypes.POINTER(ctypes.c_uint32), ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_uint16), ctypes.POINTER(ctypes.c_uint16), ctypes.c_size_t,
     ]
-    lib.scope_unpack_pio30.restype = ctypes.c_size_t
+    lib.scope_unpack_ad9288.restype = ctypes.c_size_t
     lib.scope_measure_buffer.argtypes = [
         ctypes.POINTER(ctypes.c_uint16), ctypes.c_size_t, ctypes.c_float, ctypes.c_float,
         ctypes.c_float, ctypes.c_int, ctypes.POINTER(ScopeMeas),
@@ -123,11 +124,17 @@ def test_gpio_header_matches_design_py_1_to_1():
 
 
 def test_pio_programs_syntax_and_pin_widths():
-    ms9280 = (FW / "ms9280_capture.pio").read_text(encoding="utf8")
+    adc = (FW / "ad9288_capture.pio").read_text(encoding="utf8")
     pod = (FW / "pod_capture.pio").read_text(encoding="utf8")
-    assert ".program ms9280_capture" in ms9280
-    assert ".side_set 1" in ms9280
-    assert "in pins, 10" in ms9280
+    assert ".program ad9288_capture" in adc
+    assert ".side_set 1" in adc
+    assert "in pins, 32" in adc
+    # the PIO window GPIO16..47 must hold both 8-bit buses and the clock pin
+    a = [design.GPIO[f"ADCA_D{i}"] for i in range(8)]
+    b = [design.GPIO[f"ADCB_D{i}"] for i in range(8)]
+    assert sorted(a) == list(range(16, 24)) and a == [23 - i for i in range(8)]
+    assert b == list(range(32, 40))
+    assert design.GPIO["ADC_CLK"] == 24
     assert ".program pod_capture" in pod
     assert "in pins, 4" in pod
 
@@ -135,11 +142,11 @@ def test_pio_programs_syntax_and_pin_widths():
 def test_afe_calibration_and_autorange(core_lib):
     cal_buf = (ctypes.c_float * 7)()
     core_lib.afe_cal_init_default(cal_buf)
-    assert abs(core_lib.afe_code_to_volts(cal_buf, 0, 512) - 0.0) < 1e-4
+    assert abs(core_lib.afe_code_to_volts(cal_buf, 0, 128) - 0.0) < 1e-4
 
     # Simulate 2-point factory calibration compensating a 1% gain error + 40 mV offset
-    assert core_lib.afe_calibrate_two_point(cal_buf, 0, 112, -1.96, 912, 1.98)
-    v_mid = core_lib.afe_code_to_volts(cal_buf, 0, 512)
+    assert core_lib.afe_calibrate_two_point(cal_buf, 0, 28, -1.96, 228, 1.98)
+    v_mid = core_lib.afe_code_to_volts(cal_buf, 0, 128)
     assert abs(v_mid - 0.01) < 1e-3
     code_rt = core_lib.afe_volts_to_code(cal_buf, 0, 1.25)
     assert abs(core_lib.afe_code_to_volts(cal_buf, 0, code_rt) - 1.25) < 0.01
@@ -150,19 +157,25 @@ def test_afe_calibration_and_autorange(core_lib):
 
 
 def test_scope_capture_unpack_measure_and_decimate(core_lib):
-    w = (ctypes.c_uint32 * 2)((100 << 20) | (512 << 10) | 900, (321 << 20) | (654 << 10) | 777)
-    out = (ctypes.c_uint16 * 6)()
-    assert core_lib.scope_unpack_pio30(w, 2, out, 6) == 6
-    assert list(out) == [100, 512, 900, 321, 654, 777]
+    def rbit8(v):
+        return int(f"{v:08b}"[::-1], 2)
 
-    # Synthetic 1 MHz sine sampled at 35 MSPS (1024 samples)
-    fs = 35_000_000.0
+    # one PIO word per sample: channel A bit-reversed in bits 0..7, channel B in bits 16..23
+    a_codes, b_codes = [0x01, 0x80, 0x5A], [0x00, 0xFF, 0x3C]
+    w = (ctypes.c_uint32 * 3)(*((bv << 16) | rbit8(av) | (1 << 8) for av, bv in zip(a_codes, b_codes)))
+    out_a = (ctypes.c_uint16 * 3)()
+    out_b = (ctypes.c_uint16 * 3)()
+    assert core_lib.scope_unpack_ad9288(w, 3, out_a, out_b, 3) == 3
+    assert list(out_a) == a_codes and list(out_b) == b_codes
+
+    # Synthetic 1 MHz sine sampled at 40 MSPS (1024 samples, 8-bit codes)
+    fs = 40_000_000.0
     n = 1024
     samp = (ctypes.c_uint16 * n)(
-        *(int(round(512 + 300 * math.sin(2.0 * math.pi * 1_000_000.0 * i / fs))) for i in range(n))
+        *(int(round(128 + 75 * math.sin(2.0 * math.pi * 1_000_000.0 * i / fs))) for i in range(n))
     )
     meas = ScopeMeas()
-    core_lib.scope_measure_buffer(samp, n, ctypes.c_float(fs), ctypes.c_float(5.0 / 1024.0), ctypes.c_float(512.0), 0, ctypes.byref(meas))
+    core_lib.scope_measure_buffer(samp, n, ctypes.c_float(fs), ctypes.c_float(5.0 / 256.0), ctypes.c_float(128.0), 0, ctypes.byref(meas))
     assert meas.triggered is True
     assert 2.7 < meas.vpp < 3.1
     assert 960_000.0 < meas.freq_hz < 1_040_000.0

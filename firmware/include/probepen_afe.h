@@ -15,8 +15,8 @@ typedef enum {
 
 typedef struct {
     float vref_v;          /* REF3030 nominal reference (3.000 V) */
-    float mid_bias_1x_v;   /* AFE mid-scale bias in 1x mode (1.000 V) */
-    float mid_bias_10x_v;  /* AFE mid-scale bias in 10x mode (1.000 V) */
+    float mid_bias_1x_v;   /* AFE mid-scale bias in 1x mode (REF_MID, 0.978 V) */
+    float mid_bias_10x_v;  /* AFE mid-scale bias in 10x mode (REF_MID, 0.978 V) */
     float gain_1x;         /* Calibrated 1x V/V factor (nominal 5.000 / 2.000 scale) */
     float offset_1x_v;     /* Calibrated 1x zero offset (V) */
     float gain_10x;        /* Calibrated 10x V/V factor (compensates 100 ppm divider) */

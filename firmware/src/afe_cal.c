@@ -1,9 +1,11 @@
 #include "probepen_afe.h"
 #include <math.h>
 
-/* MS9280 10-bit nominal range: 1.000 Vp-p centered around 1.000 V (codes 0..1023 -> 0.5..1.5 V). */
-#define ADC_COUNTS   1024.0f
-#define ADC_MID_CODE 512.0f
+/* AD9288 8-bit: 1.0 Vp-p input span centred on the front end's mid-scale bias (REF_MID, 0.978 V),
+ * codes 0..255 with mid-scale at 128. */
+#define ADC_COUNTS   256.0f
+#define ADC_MID_CODE 128.0f
+#define ADC_MAX_CODE 255u
 #define ADC_SPAN_V   1.000f
 
 void afe_cal_init_default(afe_cal_t *cal) {
@@ -11,8 +13,8 @@ void afe_cal_init_default(afe_cal_t *cal) {
         return;
     }
     cal->vref_v = 3.000f;
-    cal->mid_bias_1x_v = 1.000f;
-    cal->mid_bias_10x_v = 1.000f;
+    cal->mid_bias_1x_v = 0.978f;
+    cal->mid_bias_10x_v = 0.978f;
     cal->gain_1x = 5.000f;    /* 1x divider: +-2.5 V input -> +-0.5 V at ADC */
     cal->offset_1x_v = 0.0f;
     cal->gain_10x = 50.000f;  /* 10x attenuator: +-25 V input -> +-0.5 V at ADC */
@@ -23,7 +25,7 @@ float afe_code_to_volts(const afe_cal_t *cal, afe_range_t range, uint16_t adc_co
     if (!cal) {
         return 0.0f;
     }
-    uint16_t clamped = (adc_code > 1023u) ? 1023u : adc_code;
+    uint16_t clamped = (adc_code > ADC_MAX_CODE) ? ADC_MAX_CODE : adc_code;
     float v_adc_delta = ((float)clamped - ADC_MID_CODE) * (ADC_SPAN_V / ADC_COUNTS);
     if (range == AFE_RANGE_10X) {
         return v_adc_delta * cal->gain_10x + cal->offset_10x_v;
@@ -45,8 +47,8 @@ uint16_t afe_volts_to_code(const afe_cal_t *cal, afe_range_t range, float volts)
     if (fcode <= 0.0f) {
         return 0u;
     }
-    if (fcode >= 1023.0f) {
-        return 1023u;
+    if (fcode >= (float)ADC_MAX_CODE) {
+        return ADC_MAX_CODE;
     }
     return (uint16_t)lroundf(fcode);
 }

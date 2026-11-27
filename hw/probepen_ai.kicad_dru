@@ -10,6 +10,13 @@
   (constraint edge_clearance (min 0.30mm))
   (constraint silk_clearance (min 0.15mm))
 )
+(rule "MCU core"
+  # Inside the RP2354B pad ring: the +1V1 pour on top (CellKeeper layout), the exposed pad and its ground vias,
+  # ground on the inner layers and the +3V3 pour on the bottom that feeds the IOVDD pins. Only supply and
+  # ground tracks there, on any layer; other nets may pass by via.
+  (constraint disallow track)
+  (condition "A.intersectsArea('mcu_core_b') && A.NetName != '/+3V3_DIG' && A.NetName != '/+1V1_CORE' && A.NetName != '/GND'")
+)
 (rule "POWER netclass"
   (condition "A.NetClass == 'POWER'")
   (constraint track_width (min 0.12mm))

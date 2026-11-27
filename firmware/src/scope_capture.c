@@ -1,22 +1,28 @@
 #include "probepen_scope.h"
 #include <stddef.h>
 
-size_t scope_unpack_pio30(const uint32_t *words, size_t n_words, uint16_t *out_samples, size_t max_samples) {
-    if (!words || !out_samples || max_samples == 0u) {
+static uint8_t rbit8(uint8_t b) {
+    b = (uint8_t)((b & 0xF0u) >> 4 | (b & 0x0Fu) << 4);
+    b = (uint8_t)((b & 0xCCu) >> 2 | (b & 0x33u) << 2);
+    b = (uint8_t)((b & 0xAAu) >> 1 | (b & 0x55u) << 1);
+    return b;
+}
+
+size_t scope_unpack_ad9288(const uint32_t *words, size_t n_words, uint16_t *out_a, uint16_t *out_b, size_t max_samples) {
+    if (!words || max_samples == 0u) {
         return 0u;
     }
-    size_t out_idx = 0u;
-    for (size_t i = 0u; i < n_words && out_idx < max_samples; ++i) {
+    size_t n = (n_words < max_samples) ? n_words : max_samples;
+    for (size_t i = 0u; i < n; ++i) {
         uint32_t w = words[i];
-        out_samples[out_idx++] = (uint16_t)((w >> 20u) & 0x3FFu);
-        if (out_idx < max_samples) {
-            out_samples[out_idx++] = (uint16_t)((w >> 10u) & 0x3FFu);
+        if (out_a) {
+            out_a[i] = rbit8((uint8_t)(w & 0xFFu));           /* GPIO16..23 = ADCA_D7..D0 */
         }
-        if (out_idx < max_samples) {
-            out_samples[out_idx++] = (uint16_t)(w & 0x3FFu);
+        if (out_b) {
+            out_b[i] = (uint16_t)((w >> 16u) & 0xFFu);       /* GPIO32..39 = ADCB_D0..D7 */
         }
     }
-    return out_idx;
+    return n;
 }
 
 size_t scope_find_trigger(
@@ -36,8 +42,8 @@ size_t scope_find_trigger(
     }
     uint16_t lo_arm = (level_code > hysteresis) ? (uint16_t)(level_code - hysteresis) : 0u;
     uint16_t hi_arm = (uint16_t)(level_code + hysteresis);
-    if (hi_arm > 1023u) {
-        hi_arm = 1023u;
+    if (hi_arm > SCOPE_CODE_MAX) {
+        hi_arm = SCOPE_CODE_MAX;
     }
 
     bool armed = false;
@@ -91,11 +97,11 @@ void scope_measure_buffer(
         return;
     }
 
-    uint16_t smin = 1023u;
+    uint16_t smin = SCOPE_CODE_MAX;
     uint16_t smax = 0u;
     double sum = 0.0;
     for (size_t i = 0u; i < count; ++i) {
-        uint16_t s = samples[i] & 0x3FFu;
+        uint16_t s = samples[i] & SCOPE_CODE_MAX;
         if (s < smin) {
             smin = s;
         }
@@ -127,7 +133,7 @@ void scope_measure_buffer(
         size_t last_cross = 0u;
         size_t periods = 0u;
         for (size_t i = 0u; i < count; ++i) {
-            uint16_t s = samples[i] & 0x3FFu;
+            uint16_t s = samples[i] & SCOPE_CODE_MAX;
             if (s <= arm_lo) {
                 armed = true;
             } else if (armed && s >= mid_code) {
@@ -168,10 +174,10 @@ void scope_decimate_min_max(
         if (i1 > count) {
             i1 = count;
         }
-        uint16_t smin = 1023u;
+        uint16_t smin = SCOPE_CODE_MAX;
         uint16_t smax = 0u;
         for (size_t i = i0; i < i1; ++i) {
-            uint16_t s = samples[i] & 0x3FFu;
+            uint16_t s = samples[i] & SCOPE_CODE_MAX;
             if (s < smin) {
                 smin = s;
             }
@@ -179,8 +185,8 @@ void scope_decimate_min_max(
                 smax = s;
             }
         }
-        uint32_t y_hi = ((uint32_t)(1023u - smax) * max_y) / 1023u;
-        uint32_t y_lo = ((uint32_t)(1023u - smin) * max_y) / 1023u;
+        uint32_t y_hi = ((uint32_t)(SCOPE_CODE_MAX - smax) * max_y) / SCOPE_CODE_MAX;
+        uint32_t y_lo = ((uint32_t)(SCOPE_CODE_MAX - smin) * max_y) / SCOPE_CODE_MAX;
         out_ymin[col] = (uint8_t)y_hi;
         out_ymax[col] = (uint8_t)y_lo;
     }

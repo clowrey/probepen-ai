@@ -32,7 +32,7 @@ sys.path.insert(0, str(ROOT))
 
 from hardware.pcb_datum import PCB as DATUM, half_width_at, point_in_pcb, scurve_params  # noqa: E402
 from hw import design  # noqa: E402
-from hw import regulator_ck  # noqa: E402
+from hw import rails, regulator_ck  # noqa: E402
 from hw.parts import PARTS  # noqa: E402
 
 PCB_FILE = HERE / "probepen_ai.kicad_pcb"
@@ -72,6 +72,7 @@ R_TAIL = float(DATUM["tail_radius"])  # 2.0 mm
 # KiCad drawing-sheet origin for datum (0, 0)
 OX, OY = 20.0, 50.0
 
+ISL_NOTCH_X, ISL_NOTCH_Y = float(DATUM["ad9288_xy"][0]) - 5.0, -4.4   # AGND island notch north of the ADC
 AFE_X0, AFE_X1 = DATUM["afe_cutout_x"]
 AFE_Y0, AFE_Y1 = DATUM["afe_cutout_y"]
 LCD_X0, LCD_X1 = DATUM["lcd_glass_x"]
@@ -181,46 +182,46 @@ PLACE: dict[str, tuple] = {
     "R25B": (63.70, 2.9, 0),
     "C42B": (63.70, 4.1, 180),
     "U2":   (*DATUM["ad9288_xy"], 0),
-    "C46": (66.90, -5.6, 0),
+    "C46": (66.90, -5.6, 180),
     "R36A": (66.90, -6.8, 0),
-    "C47": (66.90, 5.6, 0),
+    "C47": (66.90, 5.6, 180),
     "R36B": (66.90, 6.8, 0),
     "C52A": (69.10, -6.2, 0),
     "C52B": (69.10, 6.2, 0),
     "C49": (77.50, -0.5, 90),
     "C52C": (77.50, 2.0, 90),
-    "R16": (77.90, -3.4, 90),
+    "R16": (79.55, -0.98, 0),
     "J4":   (*DATUM["lcd_fpc_xy"], 180, "B"),
 
     # LCD backlight switch and LCD supply cap, south-west of the ADC
-    "R48": (116.5, 2.75, 0),
-    "Q1": (115.2, 6.4, 0),
-    "R47": (107.5, -7.3, 0),
+    "R48": (82.2, -4.6, 180),
+    "Q1": (85.8, -4.8, 180),
+    "R47": (88.45, -5.5, 270),
     "C58": (69.10, 7.9, 0),
 
     # ---- MCU (x = 93..113): crystal on the ADC side at pins 30/31, regulator on the tail side ---
-    "Y1": (83.70, 0.0, 180),
-    "C30": (84.00, -2.2, 0),
-    "C31": (82.40, 2.3, 0),
-    "R20": (84.50, 2.3, 180),
-    "R22": (105.0, -7.3, 0),
+    "Y1": (86.3, 0.0, 180),
+    "C30": (86.3, -2.0, 0),
+    "C31": (84.9, 2.1, 0),
+    "R20": (87.3, 2.1, 180),
+    "R22": (84.9, 3.4, 0),
     "U1":   (*DATUM["rp2354b_xy"], 270),
-    "C14": (96.90, -7.9, 0),
+    "C14": (96.7, -6.7, 90),
     "C15": (92.90, -7.9, 0),
-    "C16": (94.5, 8.0, 0),
+    "C16": (96.4, 8.0, 0),
     "C17": (101.20, -3.4, 0),
-    "C26": (94.90, -7.9, 0),
-    "C28": (94.5, 7.0, 180),
+    "C26": (94.7, -6.7, 90),
+    "C28": (94.7, 6.7, 270),
     "C20": (98.4, 8.0, 0),
     "C29": (98.4, 7.0, 0),
-    "R23": (100.4, 8.0, 0),
-    "C41": (96.5, 7.0, 0),
-    "C41B": (96.5, 8.0, 0),
+    "R23": (101.0, 7.8, 0),
+    "C41": (59.0, -5.7, 0),
+    "C41B": (65.7, 7.9, 0),
     # Core regulator, copied from the owner's proven RP2354B layout (offsets from U1's centre)
     "R21": (101.20, -1.8, 0),
     "D6": (103.10, -3.95, 90),
-    "R13": (116.50, 1.1, 0),
-    "R12": (116.50, -0.4, 0),
+    "R13": (105.8, 1.35, 180),
+    "R12": (105.8, -0.25, 180),
 
     # ---- Tail (x = 113..138): side header + protection, digital LDO, USB protection, USB-C -----
     "J3":   (*_jst_kicad_xy(), 180),
@@ -246,15 +247,12 @@ PLACE: dict[str, tuple] = {
     "C12":  (129.9, 7.2, 270),
 
     # ---- Bottom-side DNP test pads (outside the LCD glass / FPC, x = 32..80) -------------------
-    "TP_5V": (122.8, 6.5, 0, "B"),
+    "TP_5V": (122.8, 4.4, 0, "B"),
     "TP_GND1": (84.0, 7.6, 0, "B"),
-    "TP_3V3D": (115.0, 6.5, 0, "B"),
-    "TP_BOOT": (120.2, 6.5, 0, "B"),
-    "TP_RUN": (120.2, -6.5, 0, "B"),
-    "TP_1V1": (117.6, 6.5, 0, "B"),
-    "TP_GND2": (122.8, -6.5, 0, "B"),
-    "TP_SWCLK": (115.0, -6.5, 0, "B"),
-    "TP_SWDIO": (117.6, -6.5, 0, "B"),
+    "TP_3V3D": (115.0, 4.4, 0, "B"),
+    "TP_BOOT": (120.2, 4.4, 0, "B"),
+    "TP_1V1": (117.6, 4.4, 0, "B"),
+    "TP_GND2": (123.8, -5.2, 0, "B"),
 }
 
 
@@ -411,6 +409,13 @@ def write_dru():
   (constraint hole_clearance (min 0.25mm))
   (constraint edge_clearance (min 0.30mm))
   (constraint silk_clearance (min 0.15mm))
+)
+(rule "MCU core"
+  # Inside the RP2354B pad ring: the +1V1 pour on top (CellKeeper layout), the exposed pad and its ground vias,
+  # ground on the inner layers and the +3V3 pour on the bottom that feeds the IOVDD pins. Only supply and
+  # ground tracks there, on any layer; other nets may pass by via.
+  (constraint disallow track)
+  (condition "A.intersectsArea('mcu_core_b') && A.NetName != '/+3V3_DIG' && A.NetName != '/+1V1_CORE' && A.NetName != '/GND'")
 )
 (rule "POWER netclass"
   (condition "A.NetClass == 'POWER'")
@@ -594,7 +599,7 @@ def silkscreen(board: pcbnew.BOARD):
         "TP_AGND": "AGND", "TP_3V3A": "3V3A", "TP_3V0R": "3V0R",
         "TP_CH1": "CH1", "TP_CH2": "CH2", "TP_REFM": "REF",
         "TP_3V3D": "3V3D", "TP_5V": "5V", "TP_1V1": "1V1",
-        "TP_GND2": "GND", "TP_SWCLK": "SWCLK", "TP_SWDIO": "SWDIO", "TP_RUN": "RUN",
+        "TP_GND2": "GND",
         "TP_BOOT": "BOOT", "TP_GND1": "GND",
     }
     for ref, lbl in tp_labels.items():
@@ -703,11 +708,18 @@ def build() -> pcbnew.BOARD:
         ]
 
     inner_layers = [pcbnew.In1_Cu, pcbnew.In2_Cu]
-    zone(
+    afe_ko = zone(
         board, None, inner_layers,
         [(AFE_X0, AFE_Y0), (AFE_X1, AFE_Y0), (AFE_X1, AFE_Y1), (AFE_X0, AFE_Y1)],
         rule_area=True, name="AFE high-Z keepout",
     )
+    afe_ko.SetDoNotAllowTracks(True)                 # no inner-layer jumpers under the probe pads and dividers
+    # named area for the "MCU core: bottom layer" rule (hw/probepen_ai.kicad_dru); it bans nothing by itself
+    ux, uy = DATUM["rp2354b_xy"]
+    core = zone(board, None, [pcbnew.F_Cu, pcbnew.In1_Cu, pcbnew.In2_Cu, pcbnew.B_Cu],
+                [(ux - 4.4, uy - 4.4), (ux + 4.4, uy - 4.4), (ux + 4.4, uy + 4.4), (ux - 4.4, uy + 4.4)],
+                rule_area=True, name="mcu_core_b")
+    core.SetDoNotAllowZoneFills(False)
     for href in ("H1", "H2"):
         hx, hy = PLACE[href][:2]
         r_npth_m2 = 1.45  # 1.10 mm radius + 0.35 mm circular inner-plane clearance around unplated M2 hole
@@ -761,19 +773,18 @@ def build() -> pcbnew.BOARD:
     isl_x1, isl_y1 = float(DATUM["ad9288_xy"][0]) + 1.7, 4.45
     island = [
         *body_top,
-        (isl_x1, round(-HW_Y + inset, 4)), (isl_x1, isl_y1), (31.0, isl_y1), (31.0, round(HW_Y - inset, 4)),
+        # notch north of the ADC body: its digital side (data bus, digital supply decoupling) sits over GND
+        (ISL_NOTCH_X, round(-HW_Y + inset, 4)), (ISL_NOTCH_X, ISL_NOTCH_Y), (isl_x1, ISL_NOTCH_Y),
+        (isl_x1, isl_y1), (31.0, isl_y1), (31.0, round(HW_Y - inset, 4)),
         *body_bot,
     ]
     zone(board, nets["AGND"], [pcbnew.In1_Cu], island, priority=1, clearance=0.40, name="In1 AGND", min_thickness=0.14)
-    zone(board, nets["+3V3_DIG"], [pcbnew.In2_Cu], gnd_in1_poly, priority=0, clearance=0.22, name="In2 +3V3_DIG", min_thickness=0.14)
-    # the ADC's digital supply pins (15, 46) sit just tail-side of its analog pins: +3V3_ANA stops short of them
-    # +3V3_ANA reaches the ADC's centre (its analog supply pins 30/31 tap there) but stops short of the
-    # ADC's digital supply pins 15 / 46, which sit at the top and bottom just tail-side of the analog pins
-    ana_x1, ana_y = isl_x1 - 4.4, 3.2
-    ana_3v3 = [(AFE_X1, round(-HW_Y + inset, 4)), (ana_x1, round(-HW_Y + inset, 4)), (ana_x1, -ana_y),
-               (isl_x1, -ana_y), (isl_x1, ana_y), (ana_x1, ana_y), (ana_x1, isl_y1),
-               (31.0, isl_y1), (31.0, round(HW_Y - inset, 4)), (AFE_X1, round(HW_Y - inset, 4))]
-    zone(board, nets["+3V3_ANA"], [pcbnew.In2_Cu], ana_3v3, priority=1, clearance=0.40, name="In2 +3V3_ANA", min_thickness=0.14)
+    # In2.Cu is ground as well (GND, AGND under the front end), with the supply rails of hw/rails.py drawn on it as tracks (hw/route.py)
+    zone(board, nets["GND"], [pcbnew.In2_Cu], gnd_in1_poly, priority=0, clearance=0.22, name="In2 GND", min_thickness=0.14)
+    zone(board, nets["AGND"], [pcbnew.In2_Cu], island, priority=1, clearance=0.40, name="In2 AGND", min_thickness=0.14)
+    bx0, by0, bx1, by1 = rails.B_POUR_3V3
+    zone(board, nets["+3V3_DIG"], [pcbnew.B_Cu], [(bx0, by0), (bx1, by0), (bx1, by1), (bx0, by1)], priority=5,
+         clearance=0.2, name="B +3V3_DIG under MCU", min_thickness=0.15)
     for layer, tag in ((pcbnew.F_Cu, "F"), (pcbnew.B_Cu, "B")):
         zone(board, nets["GND"], [layer], gnd_in1_poly, priority=0, clearance=0.20, name=f"{tag} GND pour", min_thickness=0.15)
         zone(board, nets["AGND"], [layer], island, priority=1, clearance=0.25, name=f"{tag} AGND pour", min_thickness=0.15)

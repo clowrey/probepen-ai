@@ -903,10 +903,13 @@ def freeze(board: pcbnew.BOARD, dst: Path):
         if cls == "PCB_VIA":
             vias.append((net, *xy(tr.GetPosition()), round(pcbnew.ToMM(tr.GetWidth(pcbnew.F_Cu)), 3), round(pcbnew.ToMM(tr.GetDrill()), 3)))
         elif cls == "PCB_ARC":
+            # a very short arc is written as a straight segment: dropping it would break the connection
             if tr.GetLength() < MM(0.08):
+                if tr.GetLength() >= MM(0.001):
+                    segs.append((net, names[tr.GetLayer()], round(pcbnew.ToMM(tr.GetWidth()), 3), *xy(tr.GetStart()), *xy(tr.GetEnd())))
                 continue
             arcs.append((net, names[tr.GetLayer()], round(pcbnew.ToMM(tr.GetWidth()), 3), *xy(tr.GetStart()), *xy(tr.GetMid()), *xy(tr.GetEnd())))
-        elif tr.GetLength() >= MM(0.02):            # zero-length leftovers are dropped
+        elif tr.GetLength() >= MM(0.001):           # only zero-length leftovers are dropped
             segs.append((net, names[tr.GetLayer()], round(pcbnew.ToMM(tr.GetWidth()), 3), *xy(tr.GetStart()), *xy(tr.GetEnd())))
     out = [FROZEN_HEADER, "SEGMENTS = ["]
     out += [f"    {s!r}," for s in sorted(segs)]
@@ -935,15 +938,17 @@ See hw/tools/reroute.sh.
 
 def main():
     if "--tracks-only" in sys.argv:                    # planned critical tracks, locked; no vias, no fill
-        from hw import regulator_ck, routes_critical
+        from hw import escapes, rails, regulator_ck, routes_critical
         from hw.gen_pcb import DATUM
         board = pcbnew.LoadBoard(str(PCB_FILE))
         ux, uy = DATUM["rp2354b_xy"]
 
         class _Tpl:                                    # the copied regulator copper, at U1's position
-            SEGMENTS = [(n, lay, w, ux + x1, uy + y1, ux + x2, uy + y2) for n, lay, w, x1, y1, x2, y2 in regulator_ck.TRACKS]
+            SEGMENTS = [(n, lay, w, ux + x1, uy + y1, ux + x2, uy + y2) for n, lay, w, x1, y1, x2, y2 in regulator_ck.TRACKS] + rails.segments() + list(escapes.TRACKS)
             ARCS = []
-            VIAS = [(n, ux + x, uy + y, DEFAULT_VIA[0], DEFAULT_VIA[1]) for n, x, y in regulator_ck.VIAS]
+            VIAS = [(n, ux + x, uy + y, DEFAULT_VIA[0], DEFAULT_VIA[1]) for n, x, y in regulator_ck.VIAS] + \
+                   [(n, x, y, DEFAULT_VIA[0], DEFAULT_VIA[1]) for n, x, y in rails.TIE_VIAS] + \
+                   [(n, x, y, DEFAULT_VIA[0], DEFAULT_VIA[1]) for n, x, y in escapes.VIAS]
 
         add_frozen(board, _Tpl)
         add_routes(board, routes_critical.ROUTES)
@@ -954,9 +959,7 @@ def main():
         return
     if "--finish" in sys.argv or "--freeze" in sys.argv:
         board = pcbnew.LoadBoard(str(PCB_FILE))
-        if "--finish" in sys.argv:
-            vcount, unplaced = place_plane_vias(board)
-            print(f"plane vias added: {vcount}, pads without a via: {unplaced}")
+        if "--finish" in sys.argv:                     # plane and rail vias are planned (hw/tools/plan_routes.py)
             board.BuildConnectivity()
             pcbnew.ZONE_FILLER(board).Fill(board.Zones())
             pcbnew.SaveBoard(str(PCB_FILE), board)

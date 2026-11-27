@@ -26,7 +26,7 @@ if(COMMAND pico_sdk_init)
     pico_sdk_init()
 
     add_executable(probepen_fw src/main.c)
-    pico_generate_pio_header(probepen_fw ${CMAKE_CURRENT_LIST_DIR}/ms9280_capture.pio)
+    pico_generate_pio_header(probepen_fw ${CMAKE_CURRENT_LIST_DIR}/ad9288_capture.pio)
     pico_generate_pio_header(probepen_fw ${CMAKE_CURRENT_LIST_DIR}/pod_capture.pio)
     target_link_libraries(probepen_fw
         probepen_core

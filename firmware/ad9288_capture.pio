@@ -1,0 +1,46 @@
+; AD9288 dual 8-bit ADC capture (RP2354B PIO0, GPIO base 16)
+; Pins (hw/design.py GPIO):
+;   IN  = GPIO16..47 read as one 32-bit word per sample:
+;         bits  0..7  = GPIO16..23 = ADCA_D7..D0 (bit-reversed: byte A = rbit8(word & 0xFF))
+;         bits 16..23 = GPIO32..39 = ADCB_D0..D7
+;   Side-set = GPIO24 (ADC_CLK, the encode clock of both channels)
+; Two PIO cycles per sample: the clock rises, then both buses are read while it is low. The AD9288 data
+; outputs change a few ns after the rising edge, so they are settled by the falling edge.
+; sysclk 150 MHz with clkdiv 1.875 -> 40 MSPS; clkdiv 1.0 -> 75 MSPS (AD9288-80 is rated to 80 MSPS).
+
+.program ad9288_capture
+.side_set 1
+
+.wrap_target
+    nop             side 1    ; ADC_CLK high: the ADC starts a conversion, data of an earlier sample appears
+    in pins, 32     side 0    ; ADC_CLK low: read both 8-bit buses (autopush every 32 bits = one sample)
+.wrap
+
+% c-sdk {
+#include "hardware/clocks.h"
+#include "hardware/pio.h"
+
+#define AD9288_GPIO_BASE 16u
+#define AD9288_CLK_PIN   24u
+
+static inline void ad9288_capture_program_init(PIO pio, uint sm, uint offset, float clkdiv) {
+    pio_set_gpio_base(pio, AD9288_GPIO_BASE);
+    pio_sm_config c = ad9288_capture_program_get_default_config(offset);
+    for (uint pin = 16; pin < 24; ++pin) {
+        pio_gpio_init(pio, pin);
+    }
+    for (uint pin = 32; pin < 40; ++pin) {
+        pio_gpio_init(pio, pin);
+    }
+    pio_gpio_init(pio, AD9288_CLK_PIN);
+    pio_sm_set_consecutive_pindirs(pio, sm, 16, 8, false);
+    pio_sm_set_consecutive_pindirs(pio, sm, 32, 8, false);
+    pio_sm_set_consecutive_pindirs(pio, sm, AD9288_CLK_PIN, 1, true);
+    sm_config_set_in_pins(&c, AD9288_GPIO_BASE);
+    sm_config_set_sideset_pins(&c, AD9288_CLK_PIN);
+    sm_config_set_in_shift(&c, false, true, 32);
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
+    sm_config_set_clkdiv(&c, clkdiv);
+    pio_sm_init(pio, sm, offset, &c);
+}
+%}

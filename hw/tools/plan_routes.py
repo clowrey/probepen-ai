@@ -30,7 +30,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from hardware.pcb_datum import PCB as DATUM, half_width_at, point_in_pcb  # noqa: E402
-from hw import design  # noqa: E402
+from hw import design, rails  # noqa: E402
 
 RES = 0.05
 BL = float(DATUM["length"])
@@ -43,7 +43,7 @@ ANA_CLR = 0.22           # ANALOG net class to anything else (net class clearanc
 VIA_HALO = 0.10          # extra keep-off round a via so its hole clears neighbouring copper by 0.25
 VIA = (0.40, 0.20)       # via pad / drill: the smallest the design rules allow
 VIA_R = VIA[0] / 2.0
-PLANE_NETS = ("GND", "AGND", "+3V3_DIG", "+3V3_ANA")
+PLANE_NETS = ("GND", "AGND", "+3V3_DIG", "+3V3_ANA", "+5V_VBUS")
 HV_NETS = ("CH1_TIP", "CH1_HV_MID", "CH2_TIP", "CH2_HV_MID")
 UNC = 30000              # id of pads that belong to no net
 WIDE_PAD_REFS = ("U3", "U4", "U6")   # footprints whose pads need 0.20 mm to every other net
@@ -80,8 +80,19 @@ ANALOG = {
     "+5V_ANA_IN", "LED1_A", "LED2_A",
 }
 NOSE_NETS = {"CH1_TIP", "CH1_HV_MID", "CH1_VDIV", "CH2_TIP", "CH2_HV_MID", "CH2_VDIV",
-             "LED1_A", "LED2_A", "+3V0_REF", "AGND"}
+             "LED1_A", "LED2_A", "+3V0_REF", "AGND", "+3V3_ANA"}
+FANOUT_NETS = (           # MCU pins that leave by a via just outside the chip (docs/ROUTING_GUIDE.md, fan-out)
+    "LCD_BLK_GATE_N", "CH2_GAIN_LO", "ADC_S1", "ADC_S2",
+    "LCD_CS_N", "LCD_SCK", "LCD_MOSI", "LCD_DC", "LCD_RST_N", "RUN_N", "CH1_GAIN_LO",
+    "CH1_DC_SENSE", "QSPI_SS_N", "BTN_ASK_AI_N",
+)
+FANOUT_FIRST = ("LCD_CS_N",)   # boxed in by the planned ADC clock trace: placed before every other fan-out
+MAX_JUMPER = 8.0         # mm: longest signal run allowed on an inner layer (docs/ROUTING_GUIDE.md, section 2)
+FAST_NETS = {"USB_DP", "USB_DM", "USB_CONN_DP", "USB_CONN_DM", "ADC_CLK", "ADC_CLK_MCU", "ADC_ENCA", "ADC_ENCB",
+             "LCD_SCK", "LCD_MOSI", "XIN", "XOUT_RAW", "XOUT_XTAL",
+             *[f"ADC{c}_D{i}" for c in "AB" for i in range(8)]}        # never jumpered through an inner layer
 XTAL_NETS = {"XIN", "XOUT_RAW", "XOUT_XTAL", "GND"}
+NOSE_AGND_X = 27.0       # AGND pads nose-side of this are joined by one planned trace (no pours there)
 NOSE_X = 32.0            # only NOSE_NETS may be routed nose-side of this, on either layer
 ANA_X1 = float(DATUM["ad9288_xy"][0]) - 8.5            # digital nets stay off F.Cu between NOSE_X and here (north of ANA_Y1)
 ANA_Y1 = 4.45
@@ -116,8 +127,9 @@ PLAN: list[tuple] = [
     (["CH1_DC_SENSE", "CH2_DC_SENSE", "VBUS_SENSE"], dict(w=0.15, clr=0.14, layers="FB", via=2.0, margin=20.0)),
     (["XIN", "XOUT_RAW", "XOUT_XTAL"], dict(w=0.15, clr=0.14, layers="F")),
     # USB full-speed pair: the second line runs alongside the first at a 0.15 mm gap
-    ("USB_DP", dict(w=0.18, clr=0.14, layers="F")),
-    ("USB_DM", dict(w=0.18, clr=0.14, layers="F", hug="USB_DP")),
+    # D- first: its pin sits against the copied regulator copper, so it has the only way out
+    ("USB_DM", dict(w=0.15, clr=0.11, layers="F")),
+    ("USB_DP", dict(w=0.15, clr=0.11, layers="F", hug="USB_DM")),
     # Everything else
     (["LCD_SCK", "LCD_MOSI", "LCD_CS_N", "LCD_DC", "LCD_RST_N"], dict(w=0.15, clr=0.14, layers="FB", via=2.0)),
     (["LCD_BLK_GATE_N", "LCD_BLK_SW"], dict(w=0.15, clr=0.14, layers="FB", via=2.0)),
@@ -133,7 +145,6 @@ PLAN: list[tuple] = [
     ("USB_CONN_DM", dict(w=0.18, clr=0.14, layers="FB", via=3.0, hug="USB_CONN_DP")),
     (["USB_CC1", "USB_CC2"], dict(w=0.15, clr=0.14, layers="FB")),
     ("VBUS_RAW", dict(w=0.35, clr=0.14, layers="FB", via=2.0)),
-    ("+5V_VBUS", dict(w=0.35, clr=0.14, layers="FB", via=2.0, margin=20.0)),
     ("+5V_ANA_IN", dict(w=0.30, clr=0.14, layers="FB", via=3.0)),
     ("+3V3_POD", dict(w=0.30, clr=0.14, layers="FB")),
     ("+3V0_REF", dict(w=0.20, clr=0.14, layers="FB", via=4.0, margin=20.0)),
@@ -194,9 +205,27 @@ class Board:
                     self.wide[layer][j0:j1 + 1, i0:i1 + 1] = self.net_id.get(p["net"], UNC)
         island = (self.xs < ISLAND_X1 - 0.5) & ((self.ys < ISLAND_Y1 - 0.5) | (self.xs < 30.5)) & (self.xs > KEEPOUT[1] + 0.5)
         digital = (self.xs > ISLAND_X1 + 0.5) | ((self.ys > ISLAND_Y1 + 0.5) & (self.xs > 31.5))
+        notch_x, notch_y = float(DATUM["ad9288_xy"][0]) - 5.0, -4.4      # GND north of the ADC (hw/gen_pcb.py)
+        island &= ~((self.xs > notch_x - 0.5) & (self.ys < notch_y + 0.5))
+        digital |= (self.xs > notch_x + 0.5) & (self.ys < notch_y - 0.5)
         keep = (self.xs > KEEPOUT[0] - 0.5) & (self.xs < KEEPOUT[1] + 0.5) & (np.abs(self.ys) < KEEPOUT[2] + 0.5)
-        self.plane_ok = {"AGND": island & ~keep, "+3V3_ANA": island & ~keep & (self.xs > KEEPOUT[1] + 0.5),
-                         "GND": digital, "+3V3_DIG": digital}
+        def boxes(rects, inset=0.3):
+            m = np.zeros((GH, GW), bool)
+            for x0, y0, x1, y1 in rects:
+                k = inset if inset < 0 else min(inset, min(x1 - x0, y1 - y0) / 2 - 0.05)   # narrow rails: centre line
+                m |= (self.xs >= x0 + k) & (self.xs <= x1 - k) & (self.ys >= y0 + k) & (self.ys <= y1 - k)
+            return m
+
+        rail = {n: boxes(r) for n, r in rails.IN2_RAILS.items()}
+        any_rail = boxes([r for rs in rails.IN2_RAILS.values() for r in rs], inset=-0.45)   # rails plus their gap
+        self.plane_ok = dict(rail)
+        self.plane_ok.update({"AGND": island & ~keep & ~any_rail, "GND": digital & ~any_rail,
+                              "+3V3_DIG": rail["+3V3_DIG"] | boxes([rails.B_POUR_3V3], inset=0.4)})
+        # no via of another net in or beside a rail (it would short to the In2 track)
+        self.rail_keep = {n: boxes([r for m, rs in rails.IN2_RAILS.items() if m != n for r in rs], inset=-0.4)
+                          for n in list(rails.IN2_RAILS) + [None]}
+        # a via of another net must not land in a rail either: it would only punch a hole, but keep them out
+        self.rail_any = any_rail
         self.base_own = [o.copy() for o in self.own]
         self.base_pad = self.padmask.copy()
         self.trk = [np.zeros((GH, GW), np.int32) for _ in range(2)]   # which unit drew each track / via cell
@@ -285,6 +314,10 @@ class Board:
         via_ok = (dists[0] >= need) & (dists[1] >= need) & (self.dist_out >= VIA_R + EDGE_CLR + 0.05)
         via_ok &= self.pad_dist >= VIA_R + 0.15
         via_ok &= ~blk[0] & ~blk[1]
+        via_ok &= ~self.rail_keep.get(net, self.rail_keep[None])
+        inner = getattr(self, "in2_used", None)        # inner-layer tracks (rails, jumpers): no foreign via through them
+        if inner is not None and inner.any():
+            via_ok &= ndimage.distance_transform_edt(~inner) * RES >= VIA_R + 0.30
         return blk, via_ok
 
     # -- A* over (layer, j, i) -----------------------------------------------------------------
@@ -450,7 +483,8 @@ class Board:
         if not self.replay:
             self.cur["items"].append(("t", layer, cells, w))
 
-    def stamp_via(self, nid, j, i):
+    def stamp_via(self, nid, j, i, halo=None):
+        VIA_HALO = globals()["VIA_HALO"] if halo is None else halo
         r = int(math.ceil((VIA_R + VIA_HALO) / RES)) + 1
         j0, j1, i0, i1 = max(0, j - r), min(GH - 1, j + r), max(0, i - r), min(GW - 1, i + r)
         jj, ii = np.mgrid[j0:j1 + 1, i0:i1 + 1]
@@ -476,9 +510,10 @@ class Board:
                 best[key] = dict(p, _a=area)
         return list(best.values())
 
-    def route(self, net, w=0.15, clr=0.14, layers="FB", via=2.5, margin=7.0, first=None, hug=None, gap=0.15, seed_idx=None):
+    def route(self, net, w=0.15, clr=0.14, layers="FB", via=2.5, margin=7.0, first=None, hug=None, gap=0.15, seed_idx=None,
+              pins=None):
         nid = self.net_id[net]
-        pins = self.pins_of(net)
+        pins = list(pins) if pins is not None else self.pins_of(net)
         fails: list[str] = []
         if len(pins) < 2:
             return fails
@@ -572,12 +607,46 @@ class Board:
                 tree[layer][j, i] = True
         return fails
 
+    def fan_stub(self, net, p, box, w=0.15, clr=0.115, reach=2.8, min_out=0.0):
+        """MCU fan-out: a short top-layer stub from pad P to the nearest free via site outside BOX (x0, y0, x1, y1,
+        the chip's pad ring), so the net reaches the bottom layer right beside the chip. Returns [] or a note."""
+        nid = self.net_id[net]
+        blk, via_ok = self.masks(net, w, clr)
+        i0, i1 = max(1, gi(p["x"] - reach)), min(GW - 2, gi(p["x"] + reach))
+        j0, j1 = max(1, gj(p["y"] - reach)), min(GH - 2, gj(p["y"] + reach))
+        win = np.zeros((GH, GW), bool)
+        win[j0:j1 + 1, i0:i1 + 1] = True
+        outside = ~((self.xs > box[0]) & (self.xs < box[2]) & (self.ys > box[1]) & (self.ys < box[3]))
+        if min_out:                                    # second row: at least min_out from the pad centre
+            outside &= np.maximum(np.abs(self.xs - p["x"]), np.abs(self.ys - p["y"])) >= min_out
+        tgt = [via_ok & outside & win, np.zeros((GH, GW), bool)]
+        if not tgt[0].any():
+            return [f"{net}: {p['ref']}.{p['num']} (no fan-out via site)"]
+        other = [blk[0], np.ones((GH, GW), bool)]
+        found = self.search(other, np.zeros((GH, GW), bool), [(0, gj(p["y"]), gi(p["x"]))], tgt, [0], 0, (i0, j0, i1, j1))
+        if not found:
+            return [f"{net}: {p['ref']}.{p['num']} (fan-out blocked)"]
+        poly = self.pull(blk[0], [(j, i) for _, j, i in found])
+        cells = self._cells(poly)
+        vj, vi = poly[-1]
+        self.stamp_track(nid, 0, cells, w)
+        self.stamp_via(nid, vj, vi)
+        pts: list = [(mx(i), my(j)) for j, i in poly]
+        pts[0] = (p["ref"], p["num"], p["k"])
+        if len(pts) == 1:
+            pts.append((mx(vi), my(vj)))
+        self.cur["paths"].append({"layer": "F", "w": w, "pts": pts, "vias": [(mx(vi), my(vj))]})
+        return []
+
     def plane_stub(self, net, p, w=0.20, clr=0.14, reach=3.0):
         """Short stub + via from one pad of a plane net to its plane. Returns [] or a failure note."""
         if p["f"] and p["b"]:
             return []                                 # through-hole pads reach the plane themselves
         nid = self.net_id[net]
         layer = 0 if p["f"] else 1
+        pj0, pj1, pi0, pi1 = gj(p["y0"]), gj(p["y1"]), gi(p["x0"]), gi(p["x1"])
+        if (self.centre[layer][pj0:pj1 + 1, pi0:pi1 + 1] == nid).any():
+            return []                                 # already tied in by copied / frozen copper
         blk, via_ok = self.masks(net, w, clr)
         tgt = [np.zeros((GH, GW), bool) for _ in range(2)]
         i0, i1 = max(1, gi(p["x"] - reach)), min(GW - 2, gi(p["x"] + reach))
@@ -663,6 +732,8 @@ class Board:
                 found = self.search(blk, via_ok, starts, tree, [0, 1], via, win)
                 if found:
                     break
+            if not found and net not in FAST_NETS and net not in ANALOG:
+                found = self.jumper(net, nid, starts, tree, blk, via_ok, w, via)
             if not found:
                 fails.append(f"{net}: island at ({mx(starts[0][2])}, {my(starts[0][1])})")
                 continue
@@ -676,6 +747,19 @@ class Board:
             runs.append(cur)
             for k, run in enumerate(runs):
                 layer = run[0][0]
+                if layer == 2:                          # inner-layer jumper: straightened against In2 obstacles
+                    nb = self.in2_block(nid, w)
+                    poly = self.pull(nb, [(j, i) for _, j, i in run])
+                    cells = self._cells(poly)
+                    js, is_ = zip(*cells)
+                    self.in2_used[np.array(js), np.array(is_)] = True
+                    rec = {"layer": "In2", "w": w, "pts": [(mx(i), my(j)) for j, i in poly], "vias": []}
+                    vj, vi = run[-1][1], run[-1][2]
+                    rec["vias"].append((mx(vi), my(vj)))
+                    self.stamp_via(nid, vj, vi)
+                    tree[0][vj, vi] = tree[1][vj, vi] = True
+                    self.cur["paths"].append(rec)
+                    continue
                 poly = self.pull(blk[layer], [(j, i) for _, j, i in run])
                 cells = self._cells(poly)
                 self.stamp_track(nid, layer, cells, w)
@@ -692,6 +776,81 @@ class Board:
             for layer in range(2):
                 tree[layer] |= (comp[layer] == root) & ((self.centre[layer] == nid) | self.base_pad)
         return fails
+
+    # -- short jumper through In2 ------------------------------------------------------------------
+    def in2_block(self, nid, w):
+        """Cells of In2.Cu a jumper track of this net may not use: other nets' vias and through holes, the
+        supply rails, earlier jumpers, the regulator cut-out and the board edge."""
+        if not hasattr(self, "in2_used"):
+            self.in2_used = np.zeros((GH, GW), bool)
+        thru = self.padmask & (self.own[0] == self.own[1]) & (self.own[0] != 0) & (self.own[0] != nid)
+        obst = ndimage.distance_transform_edt(~thru) * RES < 0.16 + w / 2 if thru.any() else thru.copy()
+        obst |= self.dist_out < 0.45 + w / 2
+        for rects in rails.IN2_RAILS.values():
+            for x0, y0, x1, y1 in rects:
+                k = 0.27 + w / 2
+                obst |= (self.xs > x0 - k) & (self.xs < x1 + k) & (self.ys > y0 - k) & (self.ys < y1 + k)
+        if self.in2_used.any():
+            obst |= ndimage.distance_transform_edt(~self.in2_used) * RES < w + 0.12
+        from hw import regulator_ck
+        ux, uy = DATUM["rp2354b_xy"]
+        xs = [ux + q[0] for q in regulator_ck.NO_INNER]
+        ys = [uy + q[1] for q in regulator_ck.NO_INNER]
+        obst |= (self.xs > min(xs) - 0.3) & (self.xs < max(xs) + 0.3) & (self.ys > min(ys) - 0.3) & (self.ys < max(ys) + 0.3)
+        obst |= self.xs < NOSE_X                       # nothing extra under the input section
+        return obst
+
+    def jumper(self, net, nid, starts, tree, blk, via_ok, w, via):
+        """A boxed-in island gets out through In2: outer-layer stub, via, at most MAX_JUMPER of In2 track, via,
+        then on to the net's main copper on the outer layers. Returns a cell path (In2 is layer 2) or None."""
+        nb = self.in2_block(nid, w)
+        sj, si = starts[0][1], starts[0][2]
+        r = int((MAX_JUMPER + 4.0) / RES)
+        j0, j1, i0, i1 = max(1, sj - r), min(GH - 2, sj + r), max(1, si - r), min(GW - 2, si + r)
+        win = np.zeros((GH, GW), bool)
+        win[j0:j1 + 1, i0:i1 + 1] = True
+        va = np.zeros((GH, GW), bool)                  # via sites the island reaches on its own layer(s)
+        for layer, j, i in starts:
+            lab, _n = ndimage.label((~blk[layer] | (self.own[layer] == nid)) & win)
+            if lab[j, i]:
+                va |= (lab == lab[j, i]) & via_ok
+        if not va.any():
+            return None
+        reach = ndimage.binary_dilation(va, structure=np.ones((3, 3)), iterations=int(MAX_JUMPER / RES), mask=~nb & win | va)
+        vb = reach & via_ok & ~va
+        js, is_ = np.nonzero(vb)
+        if not len(js):
+            return None
+        step = max(1, len(js) // 600)
+        seeds = [(layer, int(j), int(i)) for j, i in zip(js[::step], is_[::step]) for layer in (0, 1)]
+        tj, ti = np.nonzero(tree[0] | tree[1])
+        found2 = None
+        for mrg in (6.0, 15.0, 200.0):
+            w2 = (max(1, min(int(ti.min()), si) - int(mrg / RES)), max(1, min(int(tj.min()), sj) - int(mrg / RES)),
+                  min(GW - 2, max(int(ti.max()), si) + int(mrg / RES)), min(GH - 2, max(int(tj.max()), sj) + int(mrg / RES)))
+            found2 = self.search(blk, via_ok, seeds, tree, [0, 1], via, w2)
+            if found2:
+                break
+        if not found2:
+            return None
+        bj, bi = found2[0][1], found2[0][2]
+        none = np.zeros((GH, GW), bool)
+        inner = self.search([nb & ~va, nb], none, [(0, bj, bi)], [va, none], [0], 0, (i0, j0, i1, j1))
+        if not inner:
+            return None
+        poly = self.pull(nb, [(j, i) for _, j, i in inner])
+        length = sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(poly, poly[1:])) * RES
+        if length > MAX_JUMPER:
+            return None
+        aj, ai = inner[-1][1], inner[-1][2]
+        tgt = [none.copy(), none.copy()]
+        tgt[0][aj, ai] = tgt[1][aj, ai] = True
+        first = self.search(blk, via_ok, starts, tgt, [0, 1], via, (i0, j0, i1, j1))
+        if not first:
+            return None
+        print(f"  {net}: In2 jumper {length:.1f} mm from ({mx(ai)}, {my(aj)}) to ({mx(bi)}, {my(bj)})", flush=True)
+        # island -> via A (outer), via A -> via B on In2 (layer 2; its run ends at B's cell), via B -> tree (outer)
+        return first + [(2, j, i) for _, j, i in inner[::-1]] + found2
 
     # -- output ----------------------------------------------------------------------------------
     def write(self, dst: Path):
@@ -763,9 +922,10 @@ CRITICAL_NETS = (
     "CH1_TIP", "CH2_TIP", "CH1_HV_MID", "CH2_HV_MID", "CH1_VDIV", "CH2_VDIV",
     "CH1_INV", "CH2_INV", "CH1_SW_LO", "CH2_SW_LO", "CH1_OUT", "CH2_OUT",
     "ADCA_INP", "ADCB_INP", "ADC_VREF", "CH1_VBUF", "CH2_VBUF", "REF_T1", "REF_T2", "REF_MID",
-    "XIN", "XOUT_RAW", "XOUT_XTAL", "USB_DP", "USB_DM",
+    "XIN", "XOUT_RAW", "XOUT_XTAL", "USB_DM", "USB_DP",
     "USB_CONN_DP", "USB_CONN_DM", "ADC_AVDD",
     *_bus("ADCA_D"), *_bus("ADCB_D"), "ADC_ENCA", "ADC_ENCB", "ADC_CLK_MCU",
+    "LED1_A", "LED2_A",                        # nose: planned, so the autorouter has nothing to do there
 )
 
 
@@ -783,9 +943,19 @@ def preload_regulator(bd):
         bd.stamp_track(bd.net_id[net], "FB".index(layer), cells, w + 0.1)
         js, is_ = zip(*cells)
         bd.centre["FB".index(layer)][np.array(js), np.array(is_)] = bd.net_id[net]
-    for net, x, y in regulator_ck.VIAS:
-        bd.stamp_via(bd.net_id[net], gj(uy + y), gi(ux + x))
-        bd.centre[0][gj(uy + y), gi(ux + x)] = bd.centre[1][gj(uy + y), gi(ux + x)] = bd.net_id[net]
+    from hw import escapes
+    for net, layer, w, x1, y1, x2, y2 in escapes.TRACKS:           # fixed pad escapes (absolute coordinates)
+        n = max(1, int(math.hypot(x2 - x1, y2 - y1) / (RES / 2)))
+        cells = sorted({(gj(y1 + (y2 - y1) * k / n), gi(x1 + (x2 - x1) * k / n)) for k in range(n + 1)})
+        bd.stamp_track(bd.net_id[net], "FB".index(layer), cells, w + 0.1)
+        js, is_ = zip(*cells)
+        bd.centre["FB".index(layer)][np.array(js), np.array(is_)] = bd.net_id[net]
+    for net, x, y in list(escapes.VIAS):
+        bd.stamp_via(bd.net_id[net], gj(y), gi(x), halo=0.16)
+        bd.centre[0][gj(y), gi(x)] = bd.centre[1][gj(y), gi(x)] = bd.net_id[net]
+    for net, x, y in [(n, ux + x, uy + y) for n, x, y in regulator_ck.VIAS] + list(rails.TIE_VIAS):
+        bd.stamp_via(bd.net_id[net], gj(y), gi(x), halo=0.16)   # copied vias: tracks keep 0.25 from the hole
+        bd.centre[0][gj(y), gi(x)] = bd.centre[1][gj(y), gi(x)] = bd.net_id[net]
     # the +1V1 pour inside the pad ring and the small pours are copper too: keep other nets off them
     for net, _prio, pts in regulator_ck.ZONES_F:
         xs = [ux + p[0] for p in pts]
@@ -824,15 +994,52 @@ def solve(pads_json: str, max_rips: int = 2, critical_only: bool = False):
                 order.append(net)
     if critical_only:
         order.sort(key=CRITICAL_NETS.index)
-    else:
-        add_stubs(None, False)
+        # The nose has no pours: its AGND pads (the terminal's centre contacts, LED cathodes, tip capacitors) get
+        # one planned trace back to the AGND island, so the autorouter has nothing left to stitch there.
+        nose = [p for p in bd.pads if p["net"] == "AGND" and p["x"] < NOSE_AGND_X]
+        if len(nose) > 1:
+            jobs["AGND@nose"] = {"kind": "net", "net": "AGND", "crit": True,
+                                 "opt": dict(w=0.30, clr=0.20, layers="FB", via=6.0, margin=4.0, pins=nose)}
+            order.insert(order.index("CH1_INV") if "CH1_INV" in order else len(order), "AGND@nose")
+    if critical_only:
+        # fan-out: corner pins first on each side, so the vias stagger outward from the corners
+        ux, uy = DATUM["rp2354b_xy"]
+        box = (ux - 5.45, uy - 5.45, ux + 5.45, uy + 5.45)
+        fans = [p for p in bd.pads if p["ref"] == "U1" and p["net"] in FANOUT_NETS]
+        # two staggered rows: on each side, every other fanned pin (by position along the side) takes a via at
+        # least 1.6 mm out, and those far ones are placed first so the near row cannot wall them in
+        def side_pos(p):
+            dx, dy = p["x"] - ux, p["y"] - uy
+            return ("ns"[dy > 0], dx) if abs(dy) > 4.4 else ("ew"[dx > 0], dy)
+        rows = {}
+        for p in sorted(fans, key=side_pos):
+            rows.setdefault(side_pos(p)[0], []).append(p)
+        far, near = [], []
+        for side in rows.values():
+            for k, p in enumerate(side):
+                (far if k % 2 else near).append(p)
+        first = [p for p in near if p["net"] in FANOUT_FIRST]
+        near = [p for p in near if p["net"] not in FANOUT_FIRST]
+        for p, mo in [(p, 0.0) for p in first] + [(p, 1.6) for p in far] + [(p, 0.0) for p in near]:
+            key = f"fan@{p['net']}"
+            jobs[key] = {"kind": "fan", "net": p["net"], "pin": p, "crit": True, "box": box, "min_out": mo}
+            order.append(key)
+    add_stubs(None, False)                             # supply pads get their rail via before the autorouter runs
+    for net, ref in rails.EXTRA_STUBS:
+        for p in bd.pins_of(net):
+            if p["ref"] == ref:
+                key = f"{net}@{ref}.{p['num']}.{p['k']}"
+                jobs[key] = {"kind": "stub", "net": net, "pin": p, "crit": True}
+                order.insert(0, key)                   # first: each has just one or two via sites
 
     def run(key):
         j = jobs[key]
         bd.begin(key, j["net"], j["crit"])
         if j["kind"] == "net":
             return bd.route(j["net"], **j["opt"])
-        return bd.plane_stub(j["net"], j["pin"])
+        if j["kind"] == "fan":
+            return bd.fan_stub(j["net"], j["pin"], j["box"], min_out=j.get("min_out", 0.0))
+        return bd.plane_stub(j["net"], j["pin"], reach=4.5)
 
     def footprint(key):
         """Cells the unit would use if nothing movable were in its way, widened by its clearance."""
@@ -872,7 +1079,7 @@ def solve(pads_json: str, max_rips: int = 2, critical_only: bool = False):
                     ids |= set(np.unique(bd.trk[layer][near[layer]]).tolist())
                 for i in sorted(ids - {0}):
                     k2 = bd.keys[i]
-                    if k2 != key and k2 in bd.units and (jobs[key]["crit"] or not jobs[k2]["crit"]):
+                    if k2 != key and k2 in jobs and k2 in bd.units and (jobs[key]["crit"] or not jobs[k2]["crit"]):
                         victims.append(k2)
             if victims:
                 rips[key] = rips.get(key, 0) + 1
@@ -908,10 +1115,12 @@ def touch_up(pads_json: str, spec_json: str):
     def gone(net, *pts):
         return any(math.hypot(x - d[0], y - d[1]) <= d[2] and (len(d) < 4 or d[3] == net) for x, y in pts for d in drop)
 
-    segs = [t for t in frozen.SEGMENTS if not gone(t[0], (t[3], t[4]), (t[5], t[6]))]
+    segs = [t for t in frozen.SEGMENTS if t[1] not in ("F", "B") or not gone(t[0], (t[3], t[4]), (t[5], t[6]))]   # In2 rails stay
     arcs = [t for t in frozen.ARCS if not gone(t[0], (t[3], t[4]), (t[7], t[8]))
             and math.hypot(t[7] - t[3], t[8] - t[4]) >= 0.08]          # crumbs are dropped
-    vias = [t for t in frozen.VIAS if not gone(t[0], (t[1], t[2]))]
+    inner_ends = {(round(x, 2), round(y, 2)) for t in frozen.SEGMENTS if t[1] not in ("F", "B")
+                  for x, y in ((t[3], t[4]), (t[5], t[6]))}
+    vias = [t for t in frozen.VIAS if (round(t[1], 2), round(t[2], 2)) in inner_ends or not gone(t[0], (t[1], t[2]))]
     segs += [tuple(t) for t in spec.get("add_segs", [])]            # explicit (net, layer, w, x1, y1, x2, y2)
     vias += [(n, x, y, VIA[0], VIA[1]) for n, x, y in spec.get("add_vias", [])]
     bd = Board(pads_json)
@@ -920,6 +1129,13 @@ def touch_up(pads_json: str, spec_json: str):
     frozen_idx = bd.cur["idx"]
     bd.replay = True                                   # stamp without recording
     for net, layer, w, x1, y1, x2, y2 in segs + [(a[0], a[1], a[2], a[3], a[4], a[7], a[8]) for a in arcs]:
+        if layer not in lay:                           # In2: rails (also known from hw/rails.py) and jumpers
+            if not hasattr(bd, "in2_used"):
+                bd.in2_used = np.zeros((GH, GW), bool)
+            n = max(1, int(math.hypot(x2 - x1, y2 - y1) / (RES / 2)))
+            for k in range(n + 1):
+                bd.in2_used[gj(y1 + (y2 - y1) * k / n), gi(x1 + (x2 - x1) * k / n)] = True
+            continue
         n = max(1, int(math.hypot(x2 - x1, y2 - y1) / (RES / 2)))
         cells = sorted({(gj(y1 + (y2 - y1) * k / n), gi(x1 + (x2 - x1) * k / n)) for k in range(n + 1)})
         bd.stamp_track(bd.net_id[net], lay[layer], cells, w)

@@ -80,7 +80,7 @@ usb_cmd_t usb_parse_command(const char *line) {
     } else if (match_prefix_ci(line, "TRIG", &arg) && *arg != '\0') {
         cmd.kind = USB_CMD_TRIG;
         cmd.arg_i = (int32_t)strtol(arg, NULL, 10);
-        cmd.valid = (cmd.arg_i >= 0 && cmd.arg_i <= 1023);
+        cmd.valid = (cmd.arg_i >= 0 && cmd.arg_i <= 255);   /* AD9288 8-bit trigger code */
     } else if (match_prefix_ci(line, "CAPTURE", &arg)) {
         cmd.kind = USB_CMD_CAPTURE;
         cmd.arg_i = (*arg != '\0') ? (int32_t)strtol(arg, NULL, 10) : 256;

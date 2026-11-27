@@ -13,6 +13,8 @@ def _fp_file(fp: str):
     lib, name = fp.split(":")
     if lib == "ppa":
         return HW / "lib" / "ppa.pretty" / f"{name}.kicad_mod"
+    if lib == "rpi":                        # RP2350 footprints copied from the owner's CellKeeper board
+        return HW / "lib" / "rpi.pretty" / f"{name}.kicad_mod"
     return KICAD_SHARE / "footprints" / f"{lib}.pretty" / f"{name}.kicad_mod"
 
 

@@ -3,7 +3,7 @@
   (descr "Inductor with Polarity Marking 2016")
   (property "Sheetfile" "RP2350_60QFN_minimal.kicad_sch")
   (property "Sheetname" "")
-  (property "ki_description" "Inductor")
+  (property "ki_description" "")
   (property "ki_keywords" "inductor choke coil reactor magnetic")
   (attr smd)
   (fp_text reference "L1" (at 0.2 -1.8) (layer "F.SilkS")

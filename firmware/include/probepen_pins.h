@@ -10,13 +10,12 @@
 #define PIN_POD_CH1         1u
 #define PIN_POD_CH2         2u
 #define PIN_POD_CH3         3u
-#define PIN_BTN_DOWN_N      4u
-#define PIN_BTN_UP_N        5u
-#define PIN_BTN_MODE_N      6u
-#define PIN_BTN_ASK_AI_N    7u
-#define PIN_ADC_S1          12u
-#define PIN_ADC_S2          13u
-#define PIN_LCD_BLK_GATE_N  14u
+#define PIN_BTN_ASK_AI_N    5u
+#define PIN_LCD_BLK_GATE_N  9u
+#define PIN_CH1_GAIN_LO     10u
+#define PIN_CH2_GAIN_LO     13u
+#define PIN_ADC_S1          14u
+#define PIN_ADC_S2          15u
 #define PIN_ADCA_D7         16u
 #define PIN_ADCA_D6         17u
 #define PIN_ADCA_D5         18u
@@ -27,12 +26,10 @@
 #define PIN_ADCA_D0         23u
 #define PIN_ADC_CLK         24u
 #define PIN_LCD_CS_N        25u
-#define PIN_LCD_SCK         26u
-#define PIN_LCD_MOSI        27u
-#define PIN_LCD_DC          28u
-#define PIN_LCD_RST_N       29u
-#define PIN_CH1_GAIN_LO     30u
-#define PIN_CH2_GAIN_LO     31u
+#define PIN_LCD_RST_N       26u
+#define PIN_LCD_DC          27u
+#define PIN_LCD_SCK         30u
+#define PIN_LCD_MOSI        31u
 #define PIN_ADCB_D0         32u
 #define PIN_ADCB_D1         33u
 #define PIN_ADCB_D2         34u
@@ -41,8 +38,11 @@
 #define PIN_ADCB_D5         37u
 #define PIN_ADCB_D6         38u
 #define PIN_ADCB_D7         39u
-#define PIN_CH2_DC_SENSE    40u
-#define PIN_CH1_DC_SENSE    41u
-#define PIN_VBUS_SENSE      42u
+#define PIN_CH1_DC_SENSE    40u
+#define PIN_CH2_DC_SENSE    42u
+#define PIN_BTN_DOWN_N      43u
+#define PIN_BTN_UP_N        44u
+#define PIN_BTN_MODE_N      45u
+#define PIN_VBUS_SENSE      46u
 
 #endif /* PROBEPEN_PINS_H */

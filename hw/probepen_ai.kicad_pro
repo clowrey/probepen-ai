@@ -735,14 +735,6 @@
       },
       {
         "netclass": "LV",
-        "pattern": "/SWCLK"
-      },
-      {
-        "netclass": "LV",
-        "pattern": "/SWDIO"
-      },
-      {
-        "netclass": "LV",
         "pattern": "/USB_CC1"
       },
       {
