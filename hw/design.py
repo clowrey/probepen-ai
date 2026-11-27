@@ -62,12 +62,13 @@ GPIO = {
     "ADC_S1": 14,
     "ADC_S2": 15,
     **{f"ADCA_D{i}": 23 - i for i in range(8)},
-    "ADC_CLK": 24,
+    "ADC_CLK": 24,        # ENCA (and ENCB through ADC_CLKB when both channels sample together)
     # LCD: in the same top-to-bottom order as the LCD flex pads (CS, RST, DC above the crystal, SCK and MOSI
     # below the debug pins), so the bus reaches J4 without crossing itself
     "LCD_CS_N": 25,
     "LCD_RST_N": 26,
     "LCD_DC": 27,
+    "ADC_CLKB": 28,       # ENCB on its own pin: in phase for 2 x 75 MS/s, 180 deg apart for 150 MS/s interleaved
     "LCD_SCK": 30,        # SPI1 SCK
     "LCD_MOSI": 31,       # SPI1 TX
     **{f"ADCB_D{i}": 32 + i for i in range(8)},
@@ -95,7 +96,7 @@ RP2354B_GPIO_PIN: dict[str, int] = {
     "55": 44, "56": 45, "57": 46, "58": 47,
 }
 
-_GPIO_NET_NAME = {"ADC_CLK": "ADC_CLK_MCU"}
+_GPIO_NET_NAME = {"ADC_CLK": "ADC_CLK_MCU", "ADC_CLKB": "ADC_CLKB_MCU"}
 _GPIO_NET_BY_NUM = {num: _GPIO_NET_NAME.get(name, name) for name, num in GPIO.items()}
 
 
@@ -382,9 +383,10 @@ COMPONENTS: list[Comp] = [
         "48": "+3V3_ANA", # VD
     }, value="AD9288BSTZ-80 DNP", symbol="ppa:AD9288", footprint="Package_QFP:LQFP-48_7x7mm_P0.5mm",
       dnp=True, block="adc"),
-    # Direct 16-bit data bus to RP2354B over L2 GND plane; R36A/R36B damp the Y-split clock lines
+    # Direct 16-bit data bus to RP2354B over L2 GND plane; R36A/R36B damp the two encode clocks. ENCB has its
+    # own MCU pin (GPIO28), so the firmware can clock channel B in phase or 180 deg out of phase (interleaved)
     C("R36A", "r_33r_0402", {"1": "ADC_CLK_MCU", "2": "ADC_ENCA"}, block="adc"),
-    C("R36B", "r_33r_0402", {"1": "ADC_CLK_MCU", "2": "ADC_ENCB"}, block="adc"),
+    C("R36B", "r_33r_0402", {"1": "ADC_CLKB_MCU", "2": "ADC_ENCB"}, block="adc"),
     # AD9288 reference & consolidated supply decoupling (4-layer power/ground planes)
     C("C44", "c_1u_0402", {"1": "ADC_VREF", "2": "AGND"}, block="adc"),
     C("C46", "c_100n_0402", {"1": "+3V3_ANA", "2": "AGND"}, block="adc"),

@@ -519,6 +519,10 @@
       },
       {
         "netclass": "HIGHSPEED",
+        "pattern": "/ADC_CLKB_MCU"
+      },
+      {
+        "netclass": "HIGHSPEED",
         "pattern": "/ADC_CLK_MCU"
       },
       {

@@ -3,7 +3,8 @@
 ;   IN  = GPIO16..47 read as one 32-bit word per sample:
 ;         bits  0..7  = GPIO16..23 = ADCA_D7..D0 (bit-reversed: byte A = rbit8(word & 0xFF))
 ;         bits 16..23 = GPIO32..39 = ADCB_D0..D7
-;   Side-set = GPIO24 (ADC_CLK, the encode clock of both channels)
+;   Side-set = GPIO24 (ADC_CLK = ENCA). ENCB has its own pin, GPIO28 (ADC_CLKB), driven by ad9288_encb
+;   below in lockstep: in phase, both channels sample together; one cycle late, they interleave.
 ; Two PIO cycles per sample: the clock rises, then both buses are read while it is low. The AD9288 data
 ; outputs change a few ns after the rising edge, so they are settled by the falling edge.
 ; sysclk 150 MHz with clkdiv 1.875 -> 40 MSPS; clkdiv 1.0 -> 75 MSPS (AD9288-80 is rated to 80 MSPS).
@@ -16,10 +17,10 @@
     in pins, 32     side 0    ; ADC_CLK low: read both 8-bit buses (autopush every 32 bits = one sample)
 .wrap
 
-; Deep record: one byte per sample and channel. The leader drives ADC_CLK and reads one 8-bit bus (in base
-; GPIO16 = channel A, or GPIO32 = channel B alone); the follower runs the same two cycles without side-set and
-; reads channel B. Started together (pio_enable_sm_mask_in_sync) with the same divider they stay in lockstep.
-; Autopush every 32 bits, shifting right: 4 samples per word, the first in the low byte.
+; Deep record: one byte per sample and channel. Each bus gets its own state machine running this program,
+; side-setting its own channel's encode pin (GPIO24 for A, GPIO28 for B) and reading its own bus (in base
+; GPIO16 = A, GPIO32 = B). Started together (pio_enable_sm_mask_in_sync) with the same divider they stay
+; in lockstep. Autopush every 32 bits, shifting right: 4 samples per word, the first in the low byte.
 
 .program ad9288_byte_lead
 .side_set 1
@@ -29,11 +30,13 @@
     in pins, 8      side 0
 .wrap
 
-.program ad9288_byte_follow
+; ENCB alone, for the 32-bit capture and the stream (which read both buses on ENCA's timing).
+.program ad9288_encb
+.side_set 1
 
 .wrap_target
-    nop
-    in pins, 8
+    nop             side 1
+    nop             side 0
 .wrap
 
 % c-sdk {
@@ -66,6 +69,21 @@ static inline void ad9288_capture_program_init(PIO pio, uint sm, uint offset, fl
 }
 
 /* Deep record: a byte-wide reader (see the programs above); side_set selects the leader's ADC_CLK. */
+#define AD9288_CLKB_PIN  28u
+
+/* ENCB's own pin: output, fast edges, driven by side-set from whichever state machine clocks channel B */
+static inline void ad9288_encb_pin_init(PIO pio, uint sm) {
+    pio_gpio_init(pio, AD9288_CLKB_PIN);
+    pio_sm_set_consecutive_pindirs(pio, sm, AD9288_CLKB_PIN, 1, true);
+}
+
+static inline void ad9288_encb_init(PIO pio, uint sm, uint offset, uint32_t clkdiv) {
+    pio_sm_config c = ad9288_encb_program_get_default_config(offset);
+    sm_config_set_sideset_pins(&c, AD9288_CLKB_PIN);
+    sm_config_set_clkdiv_int_frac(&c, (uint16_t)clkdiv, 0u);
+    pio_sm_init(pio, sm, offset, &c);
+}
+
 static inline void ad9288_byte_init(PIO pio, uint sm, uint offset, pio_sm_config c, uint in_base, uint32_t clkdiv) {
     sm_config_set_in_pins(&c, in_base);
     sm_config_set_in_shift(&c, true, true, 32);

@@ -28,6 +28,7 @@
 #define PIN_LCD_CS_N        25u
 #define PIN_LCD_RST_N       26u
 #define PIN_LCD_DC          27u
+#define PIN_ADC_CLKB        28u
 #define PIN_LCD_SCK         30u
 #define PIN_LCD_MOSI        31u
 #define PIN_ADCB_D0         32u

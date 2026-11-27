@@ -47,7 +47,7 @@ firmware change but no hardware change.
 | **Input** | About 975 kΩ, DC coupled. The divider is compensated (1 pF over 22 pF plus an optional 2–10 pF trimmer, `CT1`/`CT2`) |
 | **Bandwidth** | Expected to be limited by the 31 MHz anti-alias filter (51 Ω × 100 pF) in front of the ADC. The 250 MHz RS8752 buffers are not the limit. Not yet measured |
 | **Maximum sample rate** | 75 MS/s on each channel at once (150 MHz system clock ÷ 2 PIO cycles per sample). The AD9288-80 is rated to 80 MS/s, so overclocking the MCU to 160 MHz would give 80 MS/s (*possible*) |
-| **One channel faster?** | No. Showing one channel (CH1 or CH2 mode) does not raise the rate, because both channels share one encode clock. Interleaving the two channels to 150 MS/s would need a second clock pin 180° out of phase and the same signal on both inputs: a board change |
+| **One channel faster?** | Not yet in firmware. Showing one channel does not raise the rate. The board gives channel B its own encode clock pin (GPIO28, `ADC_CLKB`), so a firmware mode can clock the two channels 180° apart and interleave them: **150 MS/s on one signal**, with both probe tips on the same point. Today the firmware clocks the two channels in phase. Interleaving doubles the sample density, not the bandwidth (the 31 MHz anti-alias filter stays), and needs the two channels' gain, offset and timing matched by calibration |
 | **Sample rate per timebase** | 100 ns/div to 1 µs/div: 75 MS/s. 2 µs: 25 MS/s. 5 µs: 10.7 MS/s. 10 µs: 5 MS/s. 20 µs: 2.4 MS/s. All rates are 75 MHz ÷ an integer, so there is no clock jitter from fractional dividers |
 | **Peak detect** | At 50 µs/div and slower, the ADC keeps running at 2.5 MS/s. Every 4 to 2048 samples are reduced to a minimum and a maximum, so pulses of 0.4 µs or longer still show at 50 ms/div |
 | **Record length (screen)** | 4096 samples per channel per capture (16 KB DMA buffer). Each capture holds about 4 screen widths, used for the trigger search: 512 samples (6.8 µs) at 100 ns/div, 3000 samples (40 µs) at 1 µs/div, about 2000 samples at slower timebases (0.8 ms at 20 µs/div, 0.4 s at 10 ms/div), and 4096 samples (1.7 s) at 50 ms/div |
@@ -120,7 +120,7 @@ sits at the tail.
   [`hardware/SCHEMATIC_WIRING_SPEC.md`](hardware/SCHEMATIC_WIRING_SPEC.md), generated from `hw/design.py`.
 - **ADC capture.** `ADCA_D7..D0` are on GPIO16..23 (bit-reversed, to keep the bus uncrossed) and
   `ADCB_D0..D7` on GPIO32..39, so with the PIO GPIO base at 16 a single `in pins, 32` reads both
-  channels. `ADC_CLK` (GPIO24) is driven by side-set.
+  channels. `ADC_CLK` (GPIO24, ENCA) is driven by side-set, and channel B's encode clock `ADC_CLKB` (GPIO28, ENCB) by a second state machine in lockstep: in phase today, 180° apart for a future interleaved 150 MS/s mode.
 - **DC sense.** Each channel's gain-stage output also feeds an RP2354B ADC input (GPIO40, GPIO42)
   through 10 kΩ and 10 nF, for a slow DC reading. `VBUS_SENSE` is on GPIO46.
 
@@ -272,11 +272,12 @@ To check on the first board:
 
 | GPIO | Signal | GPIO | Signal |
 |---|---|---|---|
-| 0..3 | POD_CH0..3 | 24 | ADC_CLK (side-set) |
+| 0..3 | POD_CH0..3 | 24 | ADC_CLK (ENCA, side-set) |
 | 5 | BTN_ASK_AI_N | 25, 26, 27 | LCD_CS_N, LCD_RST_N, LCD_DC |
 | 9 | LCD_BLK_GATE_N | 30, 31 | LCD_SCK, LCD_MOSI (SPI1) |
 | 10, 13 | CH1_GAIN_LO, CH2_GAIN_LO | 32..39 | ADCB_D0..D7 |
 | 14, 15 | ADC_S1, ADC_S2 | 40, 42 | CH1_DC_SENSE, CH2_DC_SENSE (ADC0, ADC2) |
+| 28 | ADC_CLKB (ENCB, side-set) | | |
 | 16..23 | ADCA_D7..D0 | 43, 44, 45 | BTN_DOWN_N, BTN_UP_N, BTN_MODE_N |
 | | | 46 | VBUS_SENSE (ADC6) |
 

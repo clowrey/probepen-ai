@@ -190,7 +190,16 @@ static int g_pod_offset = -1;
 static int g_cap_dma = -1;
 static int g_deep_dma_b = -1;
 static int g_lead_offset = -1;
-static int g_follow_offset = -1;
+static int g_encb_offset = -1;
+#define ENCB_SM 3u   /* PIO0 state machine that clocks channel B (GPIO28) next to the 32-bit capture */
+
+/* ENCB follows SM0's divider; started together with it, so both encode clocks rise on the same cycle */
+static void encb_prepare(uint32_t clkdiv) {
+    pio_sm_set_enabled(pio0, ENCB_SM, false);
+    pio_sm_set_clkdiv_int_frac(pio0, ENCB_SM, (uint16_t)clkdiv, 0u);
+    pio_sm_restart(pio0, ENCB_SM);
+    pio_sm_exec(pio0, ENCB_SM, pio_encode_jmp((uint)g_encb_offset));
+}
 static bool g_cap_logic;
 static size_t g_cap_words;
 
@@ -243,6 +252,7 @@ static void capture_start(void) {
         g_cap_words = (n + 7u) / 8u;
     } else if (g_peak_m) {
         pio_sm_set_clkdiv_int_frac(pio, sm, (uint16_t)APP_PEAK_CLKDIV, 0u);
+        encb_prepare(APP_PEAK_CLKDIV);
         g_peak_groups = n / 2u;
         g_peak_out = 0u;
         g_peak_done = 0u;
@@ -250,6 +260,7 @@ static void capture_start(void) {
         g_cap_words = g_peak_groups * g_peak_m;
     } else {
         pio_sm_set_clkdiv_int_frac(pio, sm, (uint16_t)k, 0u);   /* two PIO cycles per ADC sample */
+        encb_prepare(k);
         g_cap_words = n;
     }
     gpio_put(PIN_CH1_GAIN_LO, g_app.range[0] == AFE_RANGE_10X);
@@ -267,12 +278,17 @@ static void capture_start(void) {
     pio_sm_exec(pio, sm, pio_encode_jmp((uint)(g_cap_logic ? g_pod_offset : g_adc_offset)));
     pio->fdebug = 1u << (PIO_FDEBUG_RXSTALL_LSB + sm);   /* clear the stall flag (write 1) */
     dma_channel_configure((uint)g_cap_dma, &c, g_words, &pio->rxf[sm], g_cap_words, true);
-    pio_sm_set_enabled(pio, sm, true);
+    if (g_cap_logic) {
+        pio_sm_set_enabled(pio, sm, true);
+    } else {
+        pio_enable_sm_mask_in_sync(pio0, (1u << sm) | (1u << ENCB_SM));   /* ENCA and ENCB in phase */
+    }
 }
 
 static void capture_finish(void) {
     PIO pio = g_cap_logic ? pio1 : pio0;
     pio_sm_set_enabled(pio, 0u, false);
+    pio_sm_set_enabled(pio0, ENCB_SM, false);
     /* a full RX FIFO stalls `in` (and stretches ADC_CLK) without any other sign: report it */
     g_app.overrun = (pio->fdebug & (1u << PIO_FDEBUG_RXSTALL_LSB)) != 0u || (g_peak_m && g_peak_overrun);
     if (g_cap_logic) {
@@ -302,11 +318,15 @@ static void capture_init(void) {
     g_cap_dma = dma_claim_unused_channel(true);
     g_deep_dma_b = dma_claim_unused_channel(true);
     g_lead_offset = pio_add_program(pio0, &ad9288_byte_lead_program);
-    g_follow_offset = pio_add_program(pio0, &ad9288_byte_follow_program);
+    g_encb_offset = pio_add_program(pio0, &ad9288_encb_program);
+    ad9288_encb_pin_init(pio0, ENCB_SM);
+    ad9288_encb_init(pio0, ENCB_SM, (uint)g_encb_offset, 2u);
 
     /* ADC_CLK runs at up to 75 MHz: fast slew and more drive than the 4 mA default */
     gpio_set_slew_rate(PIN_ADC_CLK, GPIO_SLEW_RATE_FAST);
     gpio_set_drive_strength(PIN_ADC_CLK, GPIO_DRIVE_STRENGTH_8MA);
+    gpio_set_slew_rate(PIN_ADC_CLKB, GPIO_SLEW_RATE_FAST);
+    gpio_set_drive_strength(PIN_ADC_CLKB, GPIO_DRIVE_STRENGTH_8MA);
     /* RP2350 erratum E9 (A2 stepping): a pad with its pull-down on can latch high at about 2 V once
      * driven, so the pod inputs run without pulls */
     for (uint pin = PIN_POD_CH0; pin <= PIN_POD_CH3; ++pin) {
@@ -341,18 +361,19 @@ static void stream_dma_start(void) {
 static void stream_start(void) {
     /* stop whatever capture is in flight */
     dma_channel_abort((uint)g_cap_dma);
-    pio_sm_set_enabled(pio0, 0u, false);
+    pio_set_sm_mask_enabled(pio0, 1u | (1u << ENCB_SM), false);
     pio_sm_set_enabled(pio1, 0u, false);
     g_capturing = false;
     g_stream = g_app.stream_plan;      /* the plan app.c made when it accepted the command */
     gpio_put(PIN_CH1_GAIN_LO, g_app.range[0] == AFE_RANGE_10X);
     gpio_put(PIN_CH2_GAIN_LO, g_app.range[1] == AFE_RANGE_10X);
     pio_sm_set_clkdiv_int_frac(pio0, 0u, (uint16_t)g_stream.clkdiv, 0u);   /* two PIO cycles per sample */
+    encb_prepare(g_stream.clkdiv);
     pio_sm_clear_fifos(pio0, 0u);
     pio_sm_restart(pio0, 0u);
     pio_sm_exec(pio0, 0u, pio_encode_jmp((uint)g_adc_offset));
     stream_dma_start();
-    pio_sm_set_enabled(pio0, 0u, true);
+    pio_enable_sm_mask_in_sync(pio0, 1u | (1u << ENCB_SM));
     g_app.streaming = true;
     g_app.stream_lost = 0u;
     g_app.stream_bps = 0.0f;
@@ -361,7 +382,7 @@ static void stream_start(void) {
 }
 
 static void stream_stop(void) {
-    pio_sm_set_enabled(pio0, 0u, false);
+    pio_set_sm_mask_enabled(pio0, 1u | (1u << ENCB_SM), false);
     dma_channel_abort((uint)g_cap_dma);
     stream_flush(&g_stream, stream_emit, NULL);
     printf("STREAM END SAMPLES=%lu BLOCKS=%lu BYTES=%llu LOST=%lu LOSTSAMPLES=%lu\n",
@@ -429,7 +450,7 @@ static void deep_dma(uint ch, uint sm, uint8_t *dst, uint32_t words) {
 /* Takes the record planned by app.c: the leader reads CH1 (or CH2 alone), the follower CH2. */
 static void deep_start(void) {
     dma_channel_abort((uint)g_cap_dma);
-    pio_sm_set_enabled(pio0, 0u, false);
+    pio_set_sm_mask_enabled(pio0, 1u | (1u << ENCB_SM), false);
     pio_sm_set_enabled(pio1, 0u, false);
     g_capturing = false;
     g_app.deep_busy = true;
@@ -439,14 +460,15 @@ static void deep_start(void) {
     uint32_t words = g_app.deep_n / 4u;
     bool both = g_app.deep_mask == 3u;
     pio_sm_config lead = ad9288_byte_lead_program_get_default_config((uint)g_lead_offset);
-    sm_config_set_sideset_pins(&lead, AD9288_CLK_PIN);
+    sm_config_set_sideset_pins(&lead, g_app.deep_mask == 2u ? AD9288_CLKB_PIN : AD9288_CLK_PIN);   /* clock the channel it reads */
     ad9288_byte_init(pio0, DEEP_SM_LEAD, (uint)g_lead_offset, lead, g_app.deep_mask == 2u ? 32u : 16u, g_app.deep_clkdiv);
     pio_sm_clear_fifos(pio0, DEEP_SM_LEAD);
     deep_dma((uint)g_cap_dma, DEEP_SM_LEAD, buf, words);
     uint32_t mask = 1u << DEEP_SM_LEAD;
     if (both) {
-        pio_sm_config fol = ad9288_byte_follow_program_get_default_config((uint)g_follow_offset);
-        ad9288_byte_init(pio0, DEEP_SM_FOLLOW, (uint)g_follow_offset, fol, 32u, g_app.deep_clkdiv);
+        pio_sm_config fol = ad9288_byte_lead_program_get_default_config((uint)g_lead_offset);
+        sm_config_set_sideset_pins(&fol, AD9288_CLKB_PIN);   /* channel B's own encode clock, in phase */
+        ad9288_byte_init(pio0, DEEP_SM_FOLLOW, (uint)g_lead_offset, fol, 32u, g_app.deep_clkdiv);
         pio_sm_clear_fifos(pio0, DEEP_SM_FOLLOW);
         deep_dma((uint)g_deep_dma_b, DEEP_SM_FOLLOW, buf + g_app.deep_n, words);
         mask |= 1u << DEEP_SM_FOLLOW;

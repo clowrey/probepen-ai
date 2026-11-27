@@ -22,7 +22,7 @@ t0=$(date +%s)
 ( cd $KRT && KICAD_FINALIZE_RIP=0 .venv/bin/python py_router/route.py $W/in.kicad_pcb $W/out.kicad_pcb \
     --nets "${NETS[@]}" --layers $LAYERS --layer-costs $COSTS \
     --escalation off --no-fix-drc-settings --keep-input-copper --same-net-pad-clearance 0.1 \
-    --via-size 0.4 --via-drill 0.2 --grid-step 0.05 $KOX ${EXTRA:-} ) > $base_out.log 2>&1
+    --via-size 0.45 --via-drill 0.25 --grid-step 0.05 $KOX ${EXTRA:-} ) > $base_out.log 2>&1
 rc=$?
 t1=$(date +%s)
 [ -n "$KOX" ] && $KPY $D/ko.py $W/out.kicad_pcb $W/out.kicad_pcb clear 2>&1 | grep -v "Debug\|swig" | grep -i error
