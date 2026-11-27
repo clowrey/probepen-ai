@@ -132,7 +132,7 @@ The layout rules (inner layers, vias, widths, critical nets, the MCU fan-out) ar
 - **Stackup:** `F.Cu` parts and signals; `In1.Cu` ground (GND, with the AGND island under the front
   end); `In2.Cu` ground plus the supply rails as wide tracks (`hw/rails.py`); `B.Cu` signals, the LCD
   pads and a 3.3 V pour under the MCU.
-- **Vias:** 0.40 / 0.25 mm everywhere (JLC's standard via: 0.20 mm drills cost about $40 more per order), none in pads, 0.25 mm hole-to-copper (JLC lists 0.254 mm
+- **Vias:** 0.40 / 0.30 mm everywhere (JLC's standard via: any hole under 0.3 mm adds about $40 per order in via, Kelvin-test and Tg155 charges), none in pads, 0.25 mm hole-to-copper (JLC lists 0.254 mm
   via-to-track for multilayer boards).
 - **Nose:** no copper pours under the probe pads and dividers and no inner-layer copper there; one
   planned AGND trace ties the terminal, LEDs and tip capacitors back to the analog ground island.
@@ -290,7 +290,7 @@ uploaded and taken through to the cart, but not ordered.
 
 | | |
 |---|---|
-| PCB: 4 layers, 138 × 17.6 mm, JLC04161H-7628, 0.2 mm vias (the quoted design; now 0.25 mm, see below) | $73.53, of which the 0.2 mm via costs $18.35 plus a $17.51 four-wire Kelvin test and $3.67 for Tg155, all added automatically |
+| PCB: 4 layers, 138 × 17.6 mm, JLC04161H-7628, 0.2 mm vias (the quoted design; now 0.30 mm, see below) | $73.53, of which the 0.2 mm via costs $18.35 plus a $17.51 four-wire Kelvin test and $3.67 for Tg155, all added automatically |
 | Economic assembly, top side, 42 part types | $198.16: parts $130.82, Extended-part fees $37.08, SMT $19.15, setup and stencil $9.79, nitrogen reflow $1.32 |
 | Shipping (estimate) | $42.20 |
 | **Total** | **$307.89 after a $6 coupon, about $10.26 per board** |
@@ -313,9 +313,12 @@ uploaded and taken through to the cart, but not ordered.
   so JLC's engineers check it.
 - **JLC's matcher** leaves BOM lines with letter-suffixed designators (C32B, R25A, …) unticked
   ("there may be multiple types of parts"). They are the right parts: tick them.
-- **Vias changed to a 0.25 mm drill after this quote.** The 0.40 mm pads now meet JLC's standard
-  0.25 mm via option (pad at least drill + 0.10 mm, 0.15 mm preferred). That drops the via,
-  Kelvin-test and Tg155 charges. DRC is clean with a 0.075 mm annular-ring rule.
+- **Vias changed to a 0.30 mm drill after this quote,** including the RP2354B footprint's nine
+  thermal vias. JLC charges for any hole under 0.3 mm: its 0.25 mm option costs $73.63, about the same
+  as 0.20 mm. At 0.30 mm the board drops to about $35 for 30. The 0.40 mm pads keep the routing
+  unchanged and meet JLC's minimum for that drill (pad at least drill + 0.10 mm). JLC prefers
+  0.45 mm, but 0.45 mm pads would need re-routing (24 hole-clearance errors). DRC is clean with a
+  0.05 mm annular-ring rule.
 
 **AD9288 sources (2026-11-27).** It is in production at Analog Devices, which lists it as
 pin-compatible with the 10-bit AD9218.

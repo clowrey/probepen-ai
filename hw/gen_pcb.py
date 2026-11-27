@@ -405,9 +405,9 @@ def write_dru():
   (constraint clearance (min 0.092mm))
   (constraint track_width (min 0.092mm))
   (constraint via_diameter (min 0.40mm))
-  (constraint via_drill (min 0.25mm))
-  # JLC: via pad at least the drill + 0.10 mm (0.15 mm preferred): 0.40 mm on a 0.25 mm drill
-  (constraint annular_width (min 0.075mm))
+  (constraint via_drill (min 0.30mm))
+  # JLC: via pad at least the drill + 0.10 mm (0.15 mm preferred): 0.40 mm on a 0.30 mm drill
+  (constraint annular_width (min 0.05mm))
   (constraint hole_clearance (min 0.25mm))
   (constraint edge_clearance (min 0.30mm))
   (constraint silk_clearance (min 0.15mm))
@@ -628,8 +628,8 @@ def build() -> pcbnew.BOARD:
     ds.m_TrackMinWidth = MM(0.092)
     ds.m_MinClearance = MM(0.092)
     ds.m_ViasMinSize = MM(0.40)
-    ds.m_ViasMinDrill = MM(0.25)
-    ds.m_ViasMinAnnularWidth = MM(0.075)
+    ds.m_ViasMinDrill = MM(0.30)
+    ds.m_ViasMinAnnularWidth = MM(0.05)
     ds.m_CopperEdgeClearance = MM(0.30)
     ds.m_HoleClearance = MM(0.25)
     ds.m_HoleToHoleMin = MM(0.25)

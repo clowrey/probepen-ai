@@ -17,7 +17,7 @@ import sys
 import pcbnew
 
 NETS = ("/GND", "/AGND")
-VIA, DRILL = 0.40, 0.25
+VIA, DRILL = 0.40, 0.30
 EDGE_IN = 0.22
 CLEAR = 0.35
 MM, TO = pcbnew.FromMM, pcbnew.ToMM

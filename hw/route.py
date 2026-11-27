@@ -34,7 +34,7 @@ LAYERS = {
     "In4": pcbnew.In4_Cu,
 }
 
-DEFAULT_VIA = (0.40, 0.25)
+DEFAULT_VIA = (0.40, 0.30)
 CUT = 0.0  # extra length (mm) of a corner's 45-degree run beyond its planned arc's tangent
 
 
