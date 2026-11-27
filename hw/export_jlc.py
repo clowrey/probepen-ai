@@ -128,11 +128,13 @@ def accessories() -> None:
         w = csv.writer(f)
         w.writerow(["Item", "Spec", "Qty per board", "Notes"])
         w.writerow(["IPS Display", "0.96in/1.14in 13P solder-on IPS LCD", 1, "Solders flat onto B.Cu J4 landing pads"])
-        w.writerow(["Probe Terminal / Tip", "WAGO 2060-453 3P push-in or soldered dual-channel probes", 1, "Mounts on nose J5 pads"])
+        w.writerow(["Probe Leads", "18-24 AWG test leads into the WAGO 2060 nose terminal, or probes soldered to the J5 pads", 1,
+                    "The WAGO terminal itself is in the assembled BOM"])
         w.writerow(["Logic Pod Cable", "JST-SH 6P SHR-06V-S-B + micro-grabber harness", 1, "Plugs into J3 (HC-SH1.0-6PWT)"])
         w.writerow(["Dual 8-bit ADC", "AD9288BSTZ-80 / MXT2088 LQFP-48", 1, "DNP on F.Cu U2; hand-soldered by user"])
         w.writerow(["Front Worklight LEDs", "XINGLIGHT XL-3806UWC side-view white LED", 2, "DNP on B.Cu nose tip LED1/LED2; hand-soldered by user"])
-        w.writerow(["Case Fasteners", "M2 x 6 mm self-tapping pan head screw", 2, "Pass through PCB H1/H2 2.2 mm NPTH holes into 1.8 mm shell bosses"])
+        w.writerow(["Case Fasteners", "M2 x 8 mm self-tapping pan head screw", 2,
+                    "Through the top shell and the PCB H1/H2 2.2 mm holes, self-tapping into 1.7 mm pilots in the bottom bosses"])
 
 
 def joints() -> tuple[int, int]:
@@ -152,6 +154,9 @@ def joints() -> tuple[int, int]:
 
 def cost(groups: dict[str, list[str]], offline: bool = False) -> None:
     from hw.tools import jlc
+    if offline and (OUT / "cost.md").exists() and "(offline)" not in (OUT / "cost.md").read_text(encoding="utf8"):
+        print("offline: kept the cost.md with live prices")
+        return
     info = {}
     for key in groups:
         p = PARTS[key]

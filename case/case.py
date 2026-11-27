@@ -61,6 +61,9 @@ M2_PILOT_DIAM_MM = 1.70  # self-tapping M2 pilot directly in plastic (no inserts
 M2_CLEAR_DIAM_MM = 2.20
 M2_CBORE_DIAM_MM = 4.20
 M2_BOSS_DIAM_MM = 4.60
+M2_SCREW_LEN_MM = 8.0    # pan head, from the counterbore floor down into the bottom boss
+M2_CBORE_FLOOR_Z = 4.50  # screw head seat in the top boss (head ~1.6 mm, stays below the surface)
+M2_PILOT_BOTTOM_Z = -3.75
 
 # WAGO 2060-453 on the nose (footprint frame = CAD frame, origin at the J5 position)
 WAGO_POLE_Y = (-4.0, 0.0, 4.0)
@@ -188,10 +191,10 @@ def build_parts(feat: dict | None = None) -> dict[str, Part]:
     # M2 self-tapping bosses at H1 / H2 (no heat-set inserts): pilot in the bottom, clearance + counterbore on top
     for hx, hy, _ in feat["holes"]:
         bot_shell = bot_shell + _zcyl(hx, hy, z_bot_in - 0.1, 0.0, M2_BOSS_DIAM_MM)
-        bot_shell = bot_shell - _zcyl(hx, hy, -3.2, 0.1, M2_PILOT_DIAM_MM)
+        bot_shell = bot_shell - _zcyl(hx, hy, M2_PILOT_BOTTOM_Z, 0.1, M2_PILOT_DIAM_MM)
         top_shell = top_shell + _zcyl(hx, hy, thk, z_top_in + 0.1, M2_BOSS_DIAM_MM)
         top_shell = top_shell - _zcyl(hx, hy, Z_SPLIT - 1.0, z_top_out + 1.0, M2_CLEAR_DIAM_MM)
-        top_shell = top_shell - _zcyl(hx, hy, z_top_out - 2.0, z_top_out + 0.5, M2_CBORE_DIAM_MM)
+        top_shell = top_shell - _zcyl(hx, hy, M2_CBORE_FLOOR_Z, z_top_out + 0.5, M2_CBORE_DIAM_MM)
 
     cons = {c["ref"]: c for c in feat["connectors"]}
 

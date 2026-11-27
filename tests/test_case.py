@@ -128,3 +128,11 @@ def test_self_tapping_m2_pilot_holes_no_inserts(built_case):
         # Top clearance 2.2 mm
         top_pin = Location((hx, hy, 4.5)) * Cylinder(radius=1.05, height=6.0)
         assert (top & top_pin).volume < 1e-3, f"top M2 clearance hole blocked at {(hx, hy)}"
+
+    # The listed screw reaches 3+ mm into the pilot without poking through the floor
+    tip_z = case.M2_CBORE_FLOOR_Z - case.M2_SCREW_LEN_MM
+    assert tip_z <= -3.0, f"M2 x {case.M2_SCREW_LEN_MM} engages only {-tip_z:.1f} mm below the PCB"
+    assert case.M2_PILOT_BOTTOM_Z <= tip_z - 0.2, "pilot shorter than the screw"
+    floor = -(case.CAVITY_BOT + case.WALL_THICK)
+    assert case.M2_PILOT_BOTTOM_Z - floor >= 0.4, "pilot breaks through the bottom"
+    assert "M2 x %d mm" % case.M2_SCREW_LEN_MM in (ROOT / "hw" / "out" / "jlc" / "accessories.csv").read_text()
