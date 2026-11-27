@@ -15,6 +15,8 @@ static const uint32_t TIMEBASE_NS[] = {
     1000000u, 2000000u, 5000000u, 10000000u, 20000000u, 50000000u,
 };
 #define TB_COUNT (sizeof(TIMEBASE_NS) / sizeof(TIMEBASE_NS[0]))
+
+static bool scope_mode(app_mode_t m);
 #define TB_DEFAULT 6u            /* 10 us/div */
 #define SCREEN_DIVS 10u
 
@@ -36,7 +38,19 @@ uint32_t app_clkdiv(const app_t *app) {
     if (k > 65535.0) {
         k = 65535.0;
     }
-    return (uint32_t)k;
+    uint32_t ki = (uint32_t)k;
+    if (ki >= 2u * APP_PEAK_CLKDIV) {
+        ki = (ki / APP_PEAK_CLKDIV) * APP_PEAK_CLKDIV;   /* a whole number of peak-detect groups */
+    }
+    return ki;
+}
+
+uint32_t app_peak_factor(const app_t *app) {
+    uint32_t k = app_clkdiv(app);
+    if (!app || !scope_mode(app->mode) || k < 2u * APP_PEAK_CLKDIV) {
+        return 0u;
+    }
+    return 2u * k / APP_PEAK_CLKDIV;
 }
 
 float app_sample_rate_hz(const app_t *app) {

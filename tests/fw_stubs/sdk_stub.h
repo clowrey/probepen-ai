@@ -68,6 +68,9 @@ void channel_config_set_transfer_data_size(dma_channel_config *c, enum dma_chann
 void channel_config_set_read_increment(dma_channel_config *c, bool incr);
 void channel_config_set_write_increment(dma_channel_config *c, bool incr);
 void channel_config_set_dreq(dma_channel_config *c, uint dreq);
+void channel_config_set_ring(dma_channel_config *c, bool write, uint size_bits);
+typedef struct { io_rw_32 read_addr, write_addr, transfer_count, ctrl_trig; } dma_channel_hw_t;
+dma_channel_hw_t *dma_channel_hw_addr(uint channel);
 void dma_channel_configure(uint channel, const dma_channel_config *config, volatile void *write_addr,
                            const volatile void *read_addr, uint transfer_count, bool trigger);
 void dma_channel_wait_for_finish_blocking(uint channel);

@@ -92,6 +92,11 @@ uint32_t app_timebase_ns(const app_t *app);           /* time per division */
 uint32_t app_clkdiv(const app_t *app);                 /* integer PIO divider for the scope / pod clock */
 float app_sample_rate_hz(const app_t *app);           /* = APP_ADC_MAX_HZ / clkdiv */
 size_t app_screen_samples(const app_t *app);          /* samples across the 10 divisions */
+/* Peak detect at slow timebases: the ADC runs at APP_ADC_MAX_HZ / APP_PEAK_CLKDIV (2.5 MS/s) and every
+ * m = app_peak_factor() raw samples become two (min and max), which gives the timebase's sample rate.
+ * 0 = off (fast timebases and logic mode sample directly). */
+#define APP_PEAK_CLKDIV 30u
+uint32_t app_peak_factor(const app_t *app);
 size_t app_capture_samples(const app_t *app, size_t max_samples);
 
 void app_button_event(app_t *app, uint8_t button, btn_event_t ev);

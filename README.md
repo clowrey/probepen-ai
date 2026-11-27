@@ -125,7 +125,10 @@ over USB (hold MODE/BOOTSEL), and the pads had no room beside the crystal and th
   per word.
 - [`src/main.c`](firmware/src/main.c): one capture is always in flight (PIO + DMA); meanwhile the
   loop reads the buttons, the DC-sense ADC and the USB command line. Each finished capture is
-  measured, drawn, and sent to the LCD over SPI1 with 16-bit DMA.
+  measured, drawn, and sent to the LCD over SPI1 with 16-bit DMA. At 50 µs/div and slower the scope
+  runs in peak detect: the ADC keeps sampling at 2.5 MS/s into a DMA ring and the loop keeps the
+  minimum and maximum of each slot, so pulses and fast signals still show at slow timebases
+  instead of aliasing.
 - [`src/app.c`](firmware/src/app.c): the whole user interface, with no hardware calls, so it runs and
   is tested on the host. It holds the modes, timebases (integer PIO dividers, 100 ns to 50 ms/div),
   trigger, auto-ranging, button debounce and long-press, USB commands and screen drawing.

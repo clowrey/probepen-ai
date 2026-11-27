@@ -218,10 +218,12 @@ that folds back, and the two ranges show different rise times. Options, cheapest
 3. A second-order filter before the ADC (series L or a Sallen-Key stage) only pays off if the
    instrument is meant for spectral work; for an 8-bit pen scope option 1 is probably enough.
 
-Slow timebases are a separate matter: the firmware lowers the ADC clock itself (integer PIO divider),
-so at 1 ms/div the ADC samples at 48 kS/s behind a 20-45 MHz front end, and anything above 24 kHz
-aliases. No analog filter fixes that; the remedy is a peak-detect mode (sample at several MS/s and
-keep min/max per output sample on the second core). That is firmware work for after the first board.
+Slow timebases are a separate matter: with a plain slower ADC clock, 1 ms/div would sample at
+48 kS/s behind a 20-43 MHz front end, and anything above 24 kHz would alias. No analog filter fixes
+that, so the firmware now uses peak detect at 50 µs/div and slower: the ADC stays at 2.5 MS/s and
+each output sample pair is the min and max of its slot (`scope_peak_group`, `capture_poll` in
+`main.c`). Host-tested and type-checked; the main loop's throughput at 2.5 MS/s (about 15 cycles a
+word) still has to be confirmed on the first board, and `g_peak_overrun` says if it fell behind.
 
 Checked and fine: the tip / `HV_MID` section (planes removed, 0.40 mm clearance rule, 1.9 mm
 `HV_MID`), `ADCx_INP` (6.8 mm, F.Cu, over AGND), the AGND-GND bridge R16 at the ADC, and the

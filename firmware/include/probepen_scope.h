@@ -31,6 +31,10 @@ size_t scope_unpack_ad9288(const uint32_t *words, size_t n_words, uint16_t *out_
 /* code -> 255 - code. The front end's gain stage is inverting, so the main loop flips each capture once
  * after unpacking; everything after that sees codes that rise with the tip voltage. */
 void scope_invert_codes(uint16_t *codes, size_t n);
+/* Peak detect: reduces m raw PIO words (ring[start..start+m), wrapping at ring_len) to two samples per
+ * channel, the minimum and the maximum in the order they occurred, already bit-reversed and inverted. */
+void scope_peak_group(const uint32_t *ring, size_t ring_len, size_t start, size_t m, uint16_t out_a[2],
+                      uint16_t out_b[2]);
 size_t scope_find_trigger(
     const uint16_t *samples,
     size_t count,

@@ -25,6 +25,35 @@ size_t scope_unpack_ad9288(const uint32_t *words, size_t n_words, uint16_t *out_
     return n;
 }
 
+void scope_peak_group(const uint32_t *ring, size_t ring_len, size_t start, size_t m, uint16_t out_a[2],
+                      uint16_t out_b[2]) {
+    /* channel A: bit-reverse then invert; channel B: invert (both rise with the tip voltage afterwards) */
+    static uint8_t lut_a[256];
+    static bool lut_ready = false;
+    if (!lut_ready) {
+        for (unsigned i = 0u; i < 256u; ++i) {
+            lut_a[i] = (uint8_t)(SCOPE_CODE_MAX - rbit8((uint8_t)i));
+        }
+        lut_ready = true;
+    }
+    uint8_t a_min = 255u, a_max = 0u, b_min = 255u, b_max = 0u;
+    size_t a_imin = 0u, a_imax = 0u, b_imin = 0u, b_imax = 0u;
+    for (size_t k = 0u; k < m; ++k) {
+        uint32_t w = ring[(start + k) % ring_len];
+        uint8_t a = lut_a[w & 0xFFu];
+        uint8_t b = (uint8_t)(SCOPE_CODE_MAX - ((w >> 16u) & 0xFFu));
+        if (a < a_min) { a_min = a; a_imin = k; }
+        if (a > a_max) { a_max = a; a_imax = k; }
+        if (b < b_min) { b_min = b; b_imin = k; }
+        if (b > b_max) { b_max = b; b_imax = k; }
+    }
+    /* keep time order: the extreme that came first is output first */
+    out_a[0] = a_imin <= a_imax ? a_min : a_max;
+    out_a[1] = a_imin <= a_imax ? a_max : a_min;
+    out_b[0] = b_imin <= b_imax ? b_min : b_max;
+    out_b[1] = b_imin <= b_imax ? b_max : b_min;
+}
+
 void scope_invert_codes(uint16_t *codes, size_t n) {
     for (size_t i = 0u; codes && i < n; ++i) {
         codes[i] = (uint16_t)(SCOPE_CODE_MAX - (codes[i] & SCOPE_CODE_MAX));

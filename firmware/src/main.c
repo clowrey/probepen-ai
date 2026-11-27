@@ -35,7 +35,7 @@
 
 #define CAPTURE_MAX 4096u
 
-static uint32_t g_words[CAPTURE_MAX];
+static uint32_t g_words[CAPTURE_MAX] __attribute__((aligned(4u * CAPTURE_MAX)));   /* DMA ring in peak detect */
 static uint16_t g_ch_a[CAPTURE_MAX];
 static uint16_t g_ch_b[CAPTURE_MAX];
 static uint8_t g_nib[CAPTURE_MAX];
@@ -181,16 +181,55 @@ static int g_cap_dma = -1;
 static bool g_cap_logic;
 static size_t g_cap_words;
 
+/* Peak detect: DMA writes raw words round a 4096-word ring (g_words, 16 KB aligned) while the main loop
+ * folds every g_peak_m words into a min/max pair. */
+#define RING_BITS 14u   /* 16 KB = CAPTURE_MAX words */
+static uint32_t g_peak_m;        /* 0 = direct capture */
+static size_t g_peak_groups;     /* min/max pairs to produce */
+static size_t g_peak_out;        /* pairs produced so far */
+static size_t g_peak_done;       /* raw words consumed so far */
+static bool g_peak_overrun;
+
+static void capture_poll(void) {
+    if (!g_peak_m) {
+        return;
+    }
+    size_t remaining = dma_channel_hw_addr((uint)g_cap_dma)->transfer_count & 0x0FFFFFFFu;
+    size_t written = g_cap_words - remaining;
+    while (written - g_peak_done >= g_peak_m && g_peak_out < g_peak_groups) {
+        if (written - g_peak_done > CAPTURE_MAX) {   /* fell a whole ring behind: skip to the newest data */
+            g_peak_overrun = true;
+            g_peak_done = written - g_peak_m;
+        }
+        uint16_t a[2], b[2];
+        scope_peak_group(g_words, CAPTURE_MAX, g_peak_done % CAPTURE_MAX, g_peak_m, a, b);
+        g_ch_a[2u * g_peak_out] = a[0];
+        g_ch_a[2u * g_peak_out + 1u] = a[1];
+        g_ch_b[2u * g_peak_out] = b[0];
+        g_ch_b[2u * g_peak_out + 1u] = b[1];
+        g_peak_done += g_peak_m;
+        ++g_peak_out;
+    }
+}
+
 static void capture_start(void) {
     g_cap_logic = (g_app.mode == APP_MODE_LOGIC);
     size_t n = app_capture_samples(&g_app, CAPTURE_MAX);
     uint32_t k = app_clkdiv(&g_app);
     PIO pio = g_cap_logic ? pio1 : pio0;
     uint sm = 0u;
+    g_peak_m = g_cap_logic ? 0u : app_peak_factor(&g_app);
     if (g_cap_logic) {
         uint32_t kp = 2u * k > 65535u ? 65535u : 2u * k;   /* one PIO cycle per pod sample */
         pio_sm_set_clkdiv_int_frac(pio, sm, (uint16_t)kp, 0u);
         g_cap_words = (n + 7u) / 8u;
+    } else if (g_peak_m) {
+        pio_sm_set_clkdiv_int_frac(pio, sm, (uint16_t)APP_PEAK_CLKDIV, 0u);
+        g_peak_groups = n / 2u;
+        g_peak_out = 0u;
+        g_peak_done = 0u;
+        g_peak_overrun = false;
+        g_cap_words = g_peak_groups * g_peak_m;
     } else {
         pio_sm_set_clkdiv_int_frac(pio, sm, (uint16_t)k, 0u);   /* two PIO cycles per ADC sample */
         g_cap_words = n;
@@ -202,6 +241,7 @@ static void capture_start(void) {
     channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
     channel_config_set_read_increment(&c, false);
     channel_config_set_write_increment(&c, true);
+    channel_config_set_ring(&c, true, g_peak_m ? RING_BITS : 0u);
     channel_config_set_dreq(&c, pio_get_dreq(pio, sm, false));
     pio_sm_set_enabled(pio, sm, false);
     pio_sm_clear_fifos(pio, sm);
@@ -217,6 +257,10 @@ static void capture_finish(void) {
     if (g_cap_logic) {
         g_n_nib = logic_unpack_pod_nibbles(g_words, g_cap_words, g_nib, CAPTURE_MAX);
         app_process_logic(&g_app, g_nib, g_n_nib);
+    } else if (g_peak_m) {
+        capture_poll();                    /* fold the last words */
+        g_n = 2u * g_peak_out;             /* already bit-reversed and inverted */
+        app_process_scope(&g_app, g_ch_a, g_ch_b, g_n);
     } else {
         g_n = scope_unpack_ad9288(g_words, g_cap_words, g_ch_a, g_ch_b, CAPTURE_MAX);
         scope_invert_codes(g_ch_a, g_n);   /* inverting gain stage */
@@ -306,6 +350,7 @@ int main(void) {
             last_dc = now;
         }
         if (dma_channel_is_busy((uint)g_cap_dma)) {
+            capture_poll();
             continue;
         }
         if (capturing) {

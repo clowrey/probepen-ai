@@ -387,6 +387,46 @@ def test_host_client_reads_firmware_frames(core_lib):
     assert set(m["CH1"]) >= {"VPP", "VMIN", "VMAX", "F", "RANGE"} and m["TRIG"] == "NO"
 
 
+def test_peak_detect(core_lib):
+    def rbit8(v):
+        return int(f"{v:08b}"[::-1], 2)
+
+    # raw PIO words for codes (as the ADC outputs them, before inversion); a 1-sample spike in the middle
+    raw_a = [100] * 10 + [250] + [100] * 9
+    raw_b = [30] * 5 + [200] * 15
+    ring = (ctypes.c_uint32 * 8)()
+    words = [rbit8(a) | (b << 16) for a, b in zip(raw_a, raw_b)]
+    big = (ctypes.c_uint32 * 20)(*words)
+    out_a = (ctypes.c_uint16 * 2)()
+    out_b = (ctypes.c_uint16 * 2)()
+    core_lib.scope_peak_group(big, 20, 0, 20, out_a, out_b)
+    # inverted: 255-100=155 first, then the spike 255-250=5 (min after max in time)
+    assert list(out_a) == [155, 5] and list(out_b) == [225, 55]
+    for i, w in enumerate(words[:8]):        # wrap-around read from a short ring
+        ring[(i + 5) % 8] = w
+    core_lib.scope_peak_group(ring, 8, 5, 8, out_a, out_b)
+    assert sorted(out_a) == [155, 155] and sorted(out_b) == [55, 225]
+
+    app = _app(core_lib)
+    core_lib.app_peak_factor.restype = ctypes.c_uint32
+    core_lib.app_clkdiv.restype = ctypes.c_uint32
+    core_lib.app_sample_rate_hz.restype = ctypes.c_float
+    core_lib.app_timebase_count.restype = ctypes.c_size_t
+    seen = 0
+    for tb in range(core_lib.app_timebase_count()):
+        _cmd(core_lib, app, f"TB {tb}")
+        m = core_lib.app_peak_factor(app)
+        if m:
+            seen += 1
+            k = core_lib.app_clkdiv(app)
+            assert k % 30 == 0 and m == 2 * k // 30 and m >= 4
+            # two outputs per group of m raw samples at 75 MHz / 30 gives the timebase's sample rate
+            assert abs(2 * (75e6 / 30) / m - core_lib.app_sample_rate_hz(app)) < 1e-3 * core_lib.app_sample_rate_hz(app)
+    assert seen >= 6
+    _cmd(core_lib, app, "MODE 3")
+    assert core_lib.app_peak_factor(app) == 0    # logic mode samples directly
+
+
 def test_calibration_record_round_trip(core_lib):
     cal = (ctypes.c_float * 7)()
     core_lib.afe_cal_init_default(cal)
