@@ -183,7 +183,7 @@ void app_button_event(app_t *app, uint8_t button, btn_event_t ev) {
 static void range_scale(const app_t *app, afe_range_t r, float *code_scale, float *zero_code) {
     float gain = (r == AFE_RANGE_10X) ? app->cal.gain_10x : app->cal.gain_1x;
     float offs = (r == AFE_RANGE_10X) ? app->cal.offset_10x_v : app->cal.offset_1x_v;
-    *code_scale = gain / 256.0f;                 /* 1.0 V ADC span over 256 codes */
+    *code_scale = gain * 1.024f / 256.0f;        /* 1.024 V ADC span over 256 codes */
     *zero_code = 128.0f - offs / *code_scale;
 }
 
@@ -478,7 +478,7 @@ static void fmt_timebase(uint32_t ns, char *out, size_t len) {
 
 static float volts_per_div(const app_t *app, int ch) {
     float gain = (app->range[ch] == AFE_RANGE_10X) ? app->cal.gain_10x : app->cal.gain_1x;
-    return gain * 1.0f / 10.0f;   /* 1.0 V ADC span over 10 divisions */
+    return gain * 1.024f / 10.0f;   /* 1.024 V ADC span over 10 divisions: 1.0 V/div or 5.5 V/div */
 }
 
 static void draw_header(const app_t *app, uint16_t *fb, const palette_t *p) {

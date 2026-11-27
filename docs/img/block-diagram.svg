@@ -5,92 +5,93 @@
 <text x="14" y="22" font-weight="700" fill="#a3261b">ANALOG FRONT END (AGND island + AFE keepout)</text>
 <text x="946" y="22" text-anchor="end" font-weight="700" fill="#1f4e99">DIGITAL CORE (GND plane)</text>
 <line x1="390" y1="30" x2="390" y2="508" stroke="#a3261b" stroke-width="2" stroke-dasharray="7 5"/>
-<text x="382" y="504" text-anchor="end" font-size="11.5" fill="#a3261b">R16 0 Ω Star GND</text>
+<text x="382" y="504" text-anchor="end" font-size="11.5" fill="#a3261b">R16 0 Ω AGND–GND bridge at the ADC</text>
 <rect x="16" y="48" width="108" height="66" rx="7" fill="#f6c9c4" stroke="#1d2330" stroke-width="1.3"/>
-<text x="70.0" y="69.0" text-anchor="middle" font-weight="600" font-size="12.5">J2 M3 Nose</text>
-<text x="70.0" y="85.0" text-anchor="middle" font-weight="400" font-size="11.5">Stainless probe</text>
-<text x="70.0" y="101.0" text-anchor="middle" font-weight="400" font-size="11.5">±25 V max input</text>
+<text x="70.0" y="69.0" text-anchor="middle" font-weight="600" font-size="12.5">J5 WAGO 2060</text>
+<text x="70.0" y="85.0" text-anchor="middle" font-weight="400" font-size="11.5">CH1 · AGND · CH2</text>
+<text x="70.0" y="101.0" text-anchor="middle" font-weight="400" font-size="11.5">push-in nose</text>
 <rect x="144" y="48" width="114" height="66" rx="7" fill="#f6c9c4" stroke="#1d2330" stroke-width="1.3"/>
-<text x="201.0" y="69.0" text-anchor="middle" font-weight="600" font-size="12.5">1 MΩ Divider</text>
-<text x="201.0" y="85.0" text-anchor="middle" font-weight="400" font-size="11.5">R1-R3 + BAV199</text>
-<text x="201.0" y="101.0" text-anchor="middle" font-weight="400" font-size="11.5">1pF C0G comp.</text>
+<text x="201.0" y="69.0" text-anchor="middle" font-weight="600" font-size="12.5">940k / 1M divider</text>
+<text x="201.0" y="85.0" text-anchor="middle" font-weight="400" font-size="11.5">BAV199 clamp</text>
+<text x="201.0" y="101.0" text-anchor="middle" font-weight="400" font-size="11.5">CT1/CT2 comp.</text>
 <rect x="276" y="48" width="106" height="66" rx="7" fill="#f6c9c4" stroke="#1d2330" stroke-width="1.3"/>
-<text x="329.0" y="69.0" text-anchor="middle" font-weight="600" font-size="12.5">U4 + U6 AFE</text>
-<text x="329.0" y="85.0" text-anchor="middle" font-weight="400" font-size="11.5">OPA356 buffer</text>
-<text x="329.0" y="101.0" text-anchor="middle" font-weight="400" font-size="11.5">RS2227 1×/10×</text>
+<text x="329.0" y="69.0" text-anchor="middle" font-weight="600" font-size="12.5">U3 RS8752</text>
+<text x="329.0" y="85.0" text-anchor="middle" font-weight="400" font-size="11.5">follower ×2</text>
+<text x="329.0" y="101.0" text-anchor="middle" font-weight="400" font-size="11.5">rest = REF_MID</text>
 <polyline points="124,81 144,81" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
 <polyline points="258,81 276,81" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
-<rect x="336" y="152" width="134" height="72" rx="7" fill="#e9e1f7" stroke="#1d2330" stroke-width="1.3"/>
-<text x="403.0" y="176.0" text-anchor="middle" font-weight="600" font-size="12.5">U2 MS9280</text>
-<text x="403.0" y="192.0" text-anchor="middle" font-weight="400" font-size="11.5">10-bit 35 MSPS</text>
-<text x="403.0" y="208.0" text-anchor="middle" font-weight="400" font-size="11.5">1.0..2.0 V ADC</text>
-<rect x="156" y="158" width="128" height="64" rx="7" fill="#f6c9c4" stroke="#1d2330" stroke-width="1.3"/>
-<text x="220.0" y="178.0" text-anchor="middle" font-weight="600" font-size="12.5">U7 TLV3501</text>
-<text x="220.0" y="194.0" text-anchor="middle" font-weight="400" font-size="11.5">4.5 ns comparator</text>
-<text x="220.0" y="210.0" text-anchor="middle" font-weight="400" font-size="11.5">0..3 V DAC thr</text>
-<polyline points="329,114 329,134 403,134 403,152" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
-<text x="365" y="130" text-anchor="middle" font-size="11" fill="#3e4656">V_ADC</text>
-<polyline points="220,114 220,158" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
-<text x="244" y="140" text-anchor="middle" font-size="11" fill="#3e4656">V_BUF</text>
+<rect x="276" y="152" width="106" height="72" rx="7" fill="#f6c9c4" stroke="#1d2330" stroke-width="1.3"/>
+<text x="329.0" y="168.0" text-anchor="middle" font-weight="600" font-size="12.5">U4 RS8752</text>
+<text x="329.0" y="184.0" text-anchor="middle" font-weight="400" font-size="11.5">gain stage ×2</text>
+<text x="329.0" y="200.0" text-anchor="middle" font-weight="400" font-size="11.5">U6 74LVC2G66</text>
+<text x="329.0" y="216.0" text-anchor="middle" font-weight="400" font-size="11.5">range switch</text>
+<polyline points="329,114 329,152" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
 <rect x="16" y="268" width="122" height="68" rx="7" fill="#d8eed8" stroke="#1d2330" stroke-width="1.3"/>
-<text x="77.0" y="290.0" text-anchor="middle" font-weight="600" font-size="12.5">Analog Power</text>
-<text x="77.0" y="306.0" text-anchor="middle" font-weight="400" font-size="11.5">U10 RT9013 +3V3</text>
-<text x="77.0" y="322.0" text-anchor="middle" font-weight="400" font-size="11.5">U11/U12 -1V8</text>
+<text x="77.0" y="290.0" text-anchor="middle" font-weight="600" font-size="12.5">U10 RT9013</text>
+<text x="77.0" y="306.0" text-anchor="middle" font-weight="400" font-size="11.5">+3V3_ANA</text>
+<text x="77.0" y="322.0" text-anchor="middle" font-weight="400" font-size="11.5">FB1 from +5 V</text>
 <rect x="156" y="268" width="128" height="68" rx="7" fill="#d8eed8" stroke="#1d2330" stroke-width="1.3"/>
 <text x="220.0" y="290.0" text-anchor="middle" font-weight="600" font-size="12.5">U5 REF3030</text>
 <text x="220.0" y="306.0" text-anchor="middle" font-weight="400" font-size="11.5">+3.000 V ref</text>
-<text x="220.0" y="322.0" text-anchor="middle" font-weight="400" font-size="11.5">1.00 / 0.25 V</text>
-<polyline points="284,302 316,302 316,114" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
-<text x="299" y="250" text-anchor="middle" font-size="11" fill="#3e4656">bias</text>
-<rect x="520" y="130" width="224" height="130" rx="7" fill="#c9dcf5" stroke="#1d2330" stroke-width="1.3"/>
-<text x="632.0" y="167.0" text-anchor="middle" font-weight="600" font-size="12.5">U1 RP2354B (QFN-80)</text>
-<text x="632.0" y="183.0" text-anchor="middle" font-weight="400" font-size="11.5">Dual Cortex-M33 @ 150 MHz</text>
-<text x="632.0" y="199.0" text-anchor="middle" font-weight="400" font-size="11.5">PIO0: 10-bit scope capture</text>
-<text x="632.0" y="215.0" text-anchor="middle" font-weight="400" font-size="11.5">PIO1: 4-ch pod + trig</text>
-<text x="632.0" y="231.0" text-anchor="middle" font-weight="400" font-size="11.5">1.1 V buck, 12 MHz XTAL</text>
-<polyline points="470,188 520,188" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
-<text x="495.0" y="182.0" text-anchor="middle" font-size="11" fill="#3e4656">D0..9 + CLK (GPIO0..12)</text>
-<polyline points="284,190 312,190 312,242 520,242" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
-<text x="430" y="236" text-anchor="middle" font-size="11" fill="#3e4656">COMP_OUT (GPIO16)</text>
-<polyline points="520,256 220,256 220,222" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
-<text x="305" y="251" text-anchor="middle" font-size="11" fill="#3e4656">THR_PWM (GPIO32)</text>
-<rect x="792" y="48" width="148" height="68" rx="7" fill="#d8eed8" stroke="#1d2330" stroke-width="1.3"/>
-<text x="866.0" y="70.0" text-anchor="middle" font-weight="600" font-size="12.5">J1 USB-C + D1 ESD</text>
-<text x="866.0" y="86.0" text-anchor="middle" font-weight="400" font-size="11.5">F1 500 mA PTC</text>
-<text x="866.0" y="102.0" text-anchor="middle" font-weight="400" font-size="11.5">CC1/CC2 5.1 kΩ</text>
-<rect x="610" y="48" width="148" height="68" rx="7" fill="#d8eed8" stroke="#1d2330" stroke-width="1.3"/>
-<text x="684.0" y="70.0" text-anchor="middle" font-weight="600" font-size="12.5">U9 RT9013-3.3</text>
-<text x="684.0" y="86.0" text-anchor="middle" font-weight="400" font-size="11.5">+3V3_DIG rail</text>
-<text x="684.0" y="102.0" text-anchor="middle" font-weight="400" font-size="11.5">SWD / RUN / BOOT</text>
-<polyline points="792,82 758,82" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
-<text x="775.0" y="76.0" text-anchor="middle" font-size="11" fill="#3e4656">VBUS</text>
-<polyline points="866,116 866,152 744,152" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
-<text x="812" y="146" text-anchor="middle" font-size="11" fill="#3e4656">USB D+/D-</text>
-<polyline points="684,116 684,130" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
-<text x="684.0" y="117.0" text-anchor="middle" font-size="11" fill="#3e4656">3.3 V</text>
-<rect x="436" y="326" width="158" height="66" rx="7" fill="#c9dcf5" stroke="#1d2330" stroke-width="1.3"/>
-<text x="515.0" y="347.0" text-anchor="middle" font-weight="600" font-size="12.5">J4 Molex 8P FPC</text>
-<text x="515.0" y="363.0" text-anchor="middle" font-weight="400" font-size="11.5">0.96" IPS 80x160</text>
-<text x="515.0" y="379.0" text-anchor="middle" font-weight="400" font-size="11.5">SPI0 + AO3401A BL</text>
-<rect x="614" y="326" width="152" height="66" rx="7" fill="#c9dcf5" stroke="#1d2330" stroke-width="1.3"/>
-<text x="690.0" y="347.0" text-anchor="middle" font-weight="600" font-size="12.5">SW1 / SW2 + LEDs</text>
-<text x="690.0" y="363.0" text-anchor="middle" font-weight="400" font-size="11.5">Ask-AI, Mode/BOOT</text>
-<text x="690.0" y="379.0" text-anchor="middle" font-weight="400" font-size="11.5">2x WS2812B-2020</text>
-<rect x="786" y="326" width="154" height="66" rx="7" fill="#c9dcf5" stroke="#1d2330" stroke-width="1.3"/>
-<text x="863.0" y="347.0" text-anchor="middle" font-weight="600" font-size="12.5">J3 JST-SH 6P Pod</text>
-<text x="863.0" y="363.0" text-anchor="middle" font-weight="400" font-size="11.5">U8 SN74LV4T125</text>
-<text x="863.0" y="379.0" text-anchor="middle" font-weight="400" font-size="11.5">D2 SRV05-4 + PTC</text>
-<polyline points="560,260 560,296 515,296 515,326" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
-<text x="515" y="290" text-anchor="middle" font-size="11" fill="#3e4656">GPIO21..26</text>
-<polyline points="662,260 662,326" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
-<text x="704" y="298" text-anchor="middle" font-size="11" fill="#3e4656">GPIO28..30</text>
-<polyline points="720,260 720,296 863,296 863,326" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
-<text x="818" y="290" text-anchor="middle" font-size="11" fill="#3e4656">GPIO17..20 (PIO1)</text>
+<text x="220.0" y="322.0" text-anchor="middle" font-weight="400" font-size="11.5">REF_MID, ADC_AVDD</text>
+<polyline points="284,302 316,302 316,224" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
+<text x="345" y="262" text-anchor="middle" font-size="11" fill="#3e4656">REF_MID</text>
+<rect x="420" y="152" width="134" height="72" rx="7" fill="#e9e1f7" stroke="#1d2330" stroke-width="1.3"/>
+<text x="487.0" y="176.0" text-anchor="middle" font-weight="600" font-size="12.5">U2 AD9288</text>
+<text x="487.0" y="192.0" text-anchor="middle" font-weight="400" font-size="11.5">2 × 8-bit 80 MSPS</text>
+<text x="487.0" y="208.0" text-anchor="middle" font-weight="400" font-size="11.5">1.024 Vp-p single-ended</text>
+<polyline points="382,188 420,188" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
+<text x="401" y="182" text-anchor="middle" font-size="11" fill="#3e4656">CHx</text>
+<rect x="610" y="130" width="200" height="130" rx="7" fill="#c9dcf5" stroke="#1d2330" stroke-width="1.3"/>
+<text x="710.0" y="167.0" text-anchor="middle" font-weight="600" font-size="12.5">U1 RP2354B (QFN-80)</text>
+<text x="710.0" y="183.0" text-anchor="middle" font-weight="400" font-size="11.5">2 × Cortex-M33, 150 MHz</text>
+<text x="710.0" y="199.0" text-anchor="middle" font-weight="400" font-size="11.5">PIO0: both ADC buses</text>
+<text x="710.0" y="215.0" text-anchor="middle" font-weight="400" font-size="11.5">PIO1: 4-ch pod</text>
+<text x="710.0" y="231.0" text-anchor="middle" font-weight="400" font-size="11.5">1.1 V buck, 12 MHz XTAL</text>
+<polyline points="554,176 610,176" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
+<text x="582" y="170" text-anchor="middle" font-size="11" fill="#3e4656">A: GPIO16-23</text>
+<polyline points="554,200 610,200" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
+<text x="582" y="214" text-anchor="middle" font-size="11" fill="#3e4656">B: GPIO32-39</text>
+<polyline points="610,244 487,244 487,224" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
+<text x="548" y="258" text-anchor="middle" font-size="11" fill="#3e4656">ADC_CLK GPIO24</text>
+<polyline points="382,214 400,214 400,290 700,290 700,260" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)" marker-start="url(#a0)"/>
+<text x="560" y="284" text-anchor="middle" font-size="11" fill="#3e4656">DC sense (ADC0/2) · range (GPIO10/13)</text>
+<rect x="820" y="48" width="128" height="68" rx="7" fill="#d8eed8" stroke="#1d2330" stroke-width="1.3"/>
+<text x="884.0" y="70.0" text-anchor="middle" font-weight="600" font-size="12.5">J1 USB-C</text>
+<text x="884.0" y="86.0" text-anchor="middle" font-weight="400" font-size="11.5">F1 PTC, D1 ESD</text>
+<text x="884.0" y="102.0" text-anchor="middle" font-weight="400" font-size="11.5">CC 5.1 kΩ</text>
+<rect x="640" y="48" width="140" height="68" rx="7" fill="#d8eed8" stroke="#1d2330" stroke-width="1.3"/>
+<text x="710.0" y="70.0" text-anchor="middle" font-weight="600" font-size="12.5">U9 RT9013</text>
+<text x="710.0" y="86.0" text-anchor="middle" font-weight="400" font-size="11.5">+3V3_DIG</text>
+<text x="710.0" y="102.0" text-anchor="middle" font-weight="400" font-size="11.5">VBUS sense (ADC6)</text>
+<polyline points="820,82 780,82" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
+<text x="800.0" y="76.0" text-anchor="middle" font-size="11" fill="#3e4656">VBUS</text>
+<polyline points="884,116 884,160 810,160" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
+<text x="850" y="154" text-anchor="middle" font-size="11" fill="#3e4656">USB FS</text>
+<polyline points="710,116 710,130" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
+<text x="710.0" y="117.0" text-anchor="middle" font-size="11" fill="#3e4656">3.3 V</text>
+<rect x="436" y="340" width="158" height="66" rx="7" fill="#c9dcf5" stroke="#1d2330" stroke-width="1.3"/>
+<text x="515.0" y="361.0" text-anchor="middle" font-weight="600" font-size="12.5">J4 LCD pads (bottom)</text>
+<text x="515.0" y="377.0" text-anchor="middle" font-weight="400" font-size="11.5">1.14" IPS 240×135</text>
+<text x="515.0" y="393.0" text-anchor="middle" font-weight="400" font-size="11.5">SPI1 + AO3401A BL</text>
+<rect x="614" y="340" width="152" height="66" rx="7" fill="#c9dcf5" stroke="#1d2330" stroke-width="1.3"/>
+<text x="690.0" y="361.0" text-anchor="middle" font-weight="600" font-size="12.5">SW1-SW4 side buttons</text>
+<text x="690.0" y="377.0" text-anchor="middle" font-weight="400" font-size="11.5">ASK · MODE/BOOT</text>
+<text x="690.0" y="393.0" text-anchor="middle" font-weight="400" font-size="11.5">UP · DOWN</text>
+<rect x="786" y="340" width="162" height="66" rx="7" fill="#c9dcf5" stroke="#1d2330" stroke-width="1.3"/>
+<text x="867.0" y="361.0" text-anchor="middle" font-weight="600" font-size="12.5">J3 JST-SH 6P pod</text>
+<text x="867.0" y="377.0" text-anchor="middle" font-weight="400" font-size="11.5">220R + SRV05-4</text>
+<text x="867.0" y="393.0" text-anchor="middle" font-weight="400" font-size="11.5">PTC on the 3V3 pin</text>
+<polyline points="640,260 640,316 515,316 515,340" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
+<text x="560" y="310" text-anchor="middle" font-size="11" fill="#3e4656">GPIO25-31</text>
+<polyline points="690,260 690,340" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
+<text x="738" y="330" text-anchor="middle" font-size="11" fill="#3e4656">GPIO5, 43-45</text>
+<polyline points="780,260 780,316 867,316 867,340" fill="none" stroke="#1d2330" stroke-width="1.5" marker-end="url(#a1)"/>
+<text x="840" y="310" text-anchor="middle" font-size="11" fill="#3e4656">GPIO0-3</text>
 <rect x="16" y="424" width="356" height="56" rx="7" fill="#f6c9c4" stroke="#1d2330" stroke-width="1.3"/>
-<text x="194.0" y="440.0" text-anchor="middle" font-weight="600" font-size="12.5">Calibration & Safety</text>
-<text x="194.0" y="456.0" text-anchor="middle" font-weight="400" font-size="11.5">2-pt cal compensates 100 ppm Basic R</text>
-<text x="194.0" y="472.0" text-anchor="middle" font-weight="400" font-size="11.5">USB-GND referenced (max ±25 V peak)</text>
-<rect x="436" y="424" width="504" height="56" rx="7" fill="#c9dcf5" stroke="#1d2330" stroke-width="1.3"/>
-<text x="688.0" y="448.0" text-anchor="middle" font-weight="600" font-size="12.5">C11 Firmware + USB CDC + build123d Pen Shell</text>
-<text x="688.0" y="464.0" text-anchor="middle" font-weight="400" font-size="11.5">Zero-CPU PIO DMA, trigger/FFT metrics, 1.7 mm M2 self-tapping case</text>
+<text x="194.0" y="448.0" text-anchor="middle" font-weight="600" font-size="12.5">Ranges ±26 V and ±5 V, USB-ground referenced</text>
+<text x="194.0" y="464.0" text-anchor="middle" font-weight="400" font-size="11.5">LED1/LED2 front work-lights on the nose</text>
+<rect x="436" y="424" width="512" height="56" rx="7" fill="#c9dcf5" stroke="#1d2330" stroke-width="1.3"/>
+<text x="692.0" y="448.0" text-anchor="middle" font-weight="600" font-size="12.5">C11 firmware: PIO + DMA capture, trigger, auto-range, LCD UI, USB CDC</text>
+<text x="692.0" y="464.0" text-anchor="middle" font-weight="400" font-size="11.5">build123d two-piece pen case, M2 screws self-tap into the plastic</text>
 </svg>

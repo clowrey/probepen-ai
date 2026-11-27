@@ -25,6 +25,12 @@ size_t scope_unpack_ad9288(const uint32_t *words, size_t n_words, uint16_t *out_
     return n;
 }
 
+void scope_invert_codes(uint16_t *codes, size_t n) {
+    for (size_t i = 0u; codes && i < n; ++i) {
+        codes[i] = (uint16_t)(SCOPE_CODE_MAX - (codes[i] & SCOPE_CODE_MAX));
+    }
+}
+
 size_t scope_find_trigger(
     const uint16_t *samples,
     size_t count,

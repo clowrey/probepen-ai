@@ -19,9 +19,15 @@ Handled since these notes were written:
   resistors at the source (the MCU side has no room), and there are no SWD/RUN test pads (programming
   is over USB).
 
-Still open: the TLV3501 logic probe was dropped from `design.py` (owner to confirm), docs images
-other than the board composite, `hardware/SCHEMATIC_WIRING_SPEC.md`, the JLC export and cost table,
-and the anti-alias filter question in section 4 item 9.
+- Section 2, later the same night: the case follows the tapered board (WAGO nose windows, LCD window
+  in the bottom shell, flexure side buttons, M2 x 8 self-tapping screws); the firmware has a real
+  main loop and a host-tested UI, and its scaling now matches the front end (inverting gain stage,
+  1.024 V span: +-5.0 V and about +-26 V); `hardware/SCHEMATIC_WIRING_SPEC.md` is generated from
+  `design.py` (`hw/tools/gen_wiring_md.py`, checked by a test); block diagram, schematic, layer and
+  render images regenerated; JLC export refreshed with live prices (every part in stock).
+
+Still open: the TLV3501 logic probe was dropped from `design.py` (owner to confirm), and the
+anti-alias filter question in section 4 item 9.
 
 ## 1. Front-end range on negative inputs (single-supply AFE)
 

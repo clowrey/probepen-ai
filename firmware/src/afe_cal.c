@@ -1,12 +1,20 @@
 #include "probepen_afe.h"
 #include <math.h>
 
-/* AD9288 8-bit: 1.0 Vp-p input span centred on the front end's mid-scale bias (REF_MID, 0.978 V),
- * codes 0..255 with mid-scale at 128. */
+/* AD9288 8-bit: 1.024 Vp-p single-ended span around REF_MID (0.978 V), codes 0..255, mid-scale 128.
+ * Codes here are already flipped back (scope_invert_codes): the gain stage is inverting.
+ *
+ * Tip volts per ADC volt, from hw/design.py: divider 940k into 100k (to +3V0_REF) || 51k (to AGND),
+ * ratio 0.03468; gain stage Rf / Rg = 1.5k / 510R = 2.941 (high gain, GAIN_LO low), or
+ * (1.5k || (330R + 6R switch)) / 510R = 0.538 (low gain, GAIN_LO high).
+ *   1X  (high gain): 1 / (2.941 * 0.03468) =  9.80 -> +-5.0 V full scale
+ *   10X (low gain):  1 / (0.538 * 0.03468) = 53.56 -> +-27.4 V at the ADC (the input buffer limits it to about +-26 V) */
 #define ADC_COUNTS   256.0f
 #define ADC_MID_CODE 128.0f
 #define ADC_MAX_CODE 255u
-#define ADC_SPAN_V   1.000f
+#define ADC_SPAN_V   1.024f
+
+#define FS_1X_V      (9.803f * 0.512f)
 
 void afe_cal_init_default(afe_cal_t *cal) {
     if (!cal) {
@@ -15,9 +23,9 @@ void afe_cal_init_default(afe_cal_t *cal) {
     cal->vref_v = 3.000f;
     cal->mid_bias_1x_v = 0.978f;
     cal->mid_bias_10x_v = 0.978f;
-    cal->gain_1x = 5.000f;    /* 1x divider: +-2.5 V input -> +-0.5 V at ADC */
+    cal->gain_1x = 9.803f;
     cal->offset_1x_v = 0.0f;
-    cal->gain_10x = 50.000f;  /* 10x attenuator: +-25 V input -> +-0.5 V at ADC */
+    cal->gain_10x = 53.56f;
     cal->offset_10x_v = 0.0f;
 }
 
@@ -87,17 +95,19 @@ float afe_dc_sense_to_volts(const afe_cal_t *cal, afe_range_t range, uint16_t rp
     }
     uint16_t clamped = (rp_adc12 > 4095u) ? 4095u : rp_adc12;
     float v_pin = ((float)clamped / 4096.0f) * cal->vref_v;
+    /* CHx_DC_SENSE is the gain stage's output (through 10k): it falls as the tip voltage rises */
     if (range == AFE_RANGE_10X) {
-        return (v_pin - cal->mid_bias_10x_v) * cal->gain_10x + cal->offset_10x_v;
+        return (cal->mid_bias_10x_v - v_pin) * cal->gain_10x + cal->offset_10x_v;
     }
-    return (v_pin - cal->mid_bias_1x_v) * cal->gain_1x + cal->offset_1x_v;
+    return (cal->mid_bias_1x_v - v_pin) * cal->gain_1x + cal->offset_1x_v;
 }
 
 afe_range_t afe_autorange_select(afe_range_t current, float abs_volts, bool otr_flag) {
-    if (otr_flag || abs_volts > 2.25f) {
+    /* up at 90 % of the +-5 V range, back down below 70 % so it does not toggle */
+    if (otr_flag || abs_volts > 0.9f * FS_1X_V) {
         return AFE_RANGE_10X;
     }
-    if (current == AFE_RANGE_10X && abs_volts < 1.80f) {
+    if (current == AFE_RANGE_10X && abs_volts < 0.7f * FS_1X_V) {
         return AFE_RANGE_1X;
     }
     return current;

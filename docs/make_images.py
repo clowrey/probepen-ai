@@ -29,15 +29,15 @@ def kcli(*args) -> None:
     subprocess.run([str(KCLI), *map(str, args)], check=True, capture_output=True)
 
 
-SECTIONS = {
+SECTIONS = {   # the block titles hw/gen_sch.py writes on the schematic
     "USB-C, 500 mA PTC, CC pulldowns, SRV05-4 ESD": "sch_usb",
-    "Power Tree: +3V3_DIG, +3V3_ANA, +3V0_REF, -3V3_RAW, -1V8_ANA, Star GND, Test Pads": "sch_power",
+    "Power Tree: +3V3_DIG, +3V3_ANA, +3V0_REF, Star GND, Test Pads": "sch_power",
     "RP2354B QFN-80, 1.1 V Buck, 12 MHz XTAL, BOOTSEL, RUN, SWD": "sch_mcu",
-    "Analog Front End: 1M Probe Divider, BAV199 Clamp, OPA356x2, RS2227XN Gain/Bias": "sch_afe",
-    "High-Speed ADC: MS9280 SSOP-28 (35 MSPS, 1.0..2.0 V Mid-Voltage Range)": "sch_adc",
-    "TLV3501 Logic Probe Comparator & 4-Ch Side Pod (JST-SH, SRV05-4, SN74LV4T125)": "sch_logic",
-    "0.96in IPS LCD (Molex 503480-0800 8P FPC + AO3401A Backlight PWM)": "sch_lcd",
-    "User Interface: ASK_AI & MODE/BOOTSEL Tactile Buttons + 2x WS2812B-2020-V6": "sch_ui",
+    "Dual-Channel 2-Gain Single-Supply AFE: 1M Dividers, BAV199, Dual RS8752XM, 74LVC2G66DP": "sch_afe",
+    "Dual High-Speed ADC: AD9288BSTZ-80 LQFP-48 (2x 8-bit 80 MSPS, Single-Ended 1.024 Vpp)": "sch_adc",
+    "6-Pin Bidirectional GPIO Expansion Header (JST-SH, 500 mA PTC, 220R, SRV05-4 ESD)": "sch_logic",
+    "1.14in/0.96in IPS LCD (13P 0.7mm Solder FPC + AO3401A Backlight PWM)": "sch_lcd",
+    "User Interface: 4x Side Buttons (AI, MODE/BOOTSEL, UP, DOWN) + 2x XL-3806UWC Front Worklight LEDs": "sch_ui",
 }
 
 
@@ -123,8 +123,8 @@ def layers(width: int = 1800) -> None:
             print(name, framed.size)
 
 
-def detail(width: int = 4800, box: tuple[float, float, float, float] = (0.56, 0.0, 0.90, 1.0)) -> None:
-    """Close-up of the MS9280 -> damping resistors -> RP2354B QFN-80 fan-out."""
+def detail(width: int = 4800, box: tuple[float, float, float, float] = (0.44, 0.0, 0.78, 1.0)) -> None:
+    """Close-up of the AD9288 -> RP2354B QFN-80 data buses (x about 61..108 mm)."""
     from PIL import Image
     global LAYERS
     saved, LAYERS = LAYERS, {"layer_detail": "B.Cu,In2.Cu,F.Cu,F.Silkscreen,Edge.Cuts"}

@@ -10,6 +10,14 @@ def test_every_net_has_two_nodes():
         assert len(nodes) >= 2, f"Floating 1-pin net: {net} -> {nodes}"
 
 
+def test_wiring_list_is_current():
+    from pathlib import Path
+
+    from hw.tools import gen_wiring_md
+    doc = Path(gen_wiring_md.DST).read_text(encoding="utf8")
+    assert doc == gen_wiring_md.render(), "run: python -m hw.tools.gen_wiring_md"
+
+
 def test_no_pin_twice():
     seen = Counter((r, p) for nodes in design.NETS.values() for r, p in nodes)
     for r, p in design.NC_PINS:

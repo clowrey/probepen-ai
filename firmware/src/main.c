@@ -215,6 +215,8 @@ static void capture_finish(void) {
         app_process_logic(&g_app, g_nib, g_n_nib);
     } else {
         g_n = scope_unpack_ad9288(g_words, g_cap_words, g_ch_a, g_ch_b, CAPTURE_MAX);
+        scope_invert_codes(g_ch_a, g_n);   /* inverting gain stage */
+        scope_invert_codes(g_ch_b, g_n);
         app_process_scope(&g_app, g_ch_a, g_ch_b, g_n);
     }
 }

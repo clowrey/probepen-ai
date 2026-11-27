@@ -54,14 +54,15 @@ def screens(lcd096: bool = False) -> list[Image.Image]:
         lib.app_capture_samples.restype = ctypes.c_size_t
         n = lib.app_capture_samples(app, ctypes.c_size_t(4096))
         fs = 5e6
-        a = [int(128 + 51.2 * 1.0 * math.sin(2 * math.pi * 50e3 * i / fs) + 2 * math.sin(i * 1.7)) for i in range(n)]
-        b = [int(128 + (60 if (i * 25e3 / fs) % 1.0 < 0.5 else -60)) for i in range(n)]
+        per_v = 256 / (9.803 * 1.024)              # codes per tip volt on the +-5 V range
+        a = [int(128 + per_v * 1.5 * math.sin(2 * math.pi * 50e3 * i / fs) + 1.5 * math.sin(i * 1.7)) for i in range(n)]
+        b = [int(128 + per_v * (3.3 if (i * 25e3 / fs) % 1.0 < 0.5 else 0.0)) for i in range(n)]
         ca = (ctypes.c_uint16 * n)(*a)
         cb = (ctypes.c_uint16 * n)(*b)
         nib = (ctypes.c_uint8 * n)(*[
             ((i // 25) % 2) | (((i // 50) % 2) << 1) | (((i * 7 // 90) % 3 == 0) << 2) | (1 << 3) for i in range(n)
         ])
-        lib.app_set_dc(app, 1672, 434, 3427)
+        lib.app_set_dc(app, 1163, 1795, 3427)      # +1.234 V, -3.30 V, VBUS 5.02 V
         fb = (ctypes.c_uint16 * (w * h))()
         imgs = []
         for mode in (0, 1, 3, 4):

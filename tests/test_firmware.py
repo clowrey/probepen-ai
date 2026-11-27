@@ -151,9 +151,37 @@ def test_afe_calibration_and_autorange(core_lib):
     code_rt = core_lib.afe_volts_to_code(cal_buf, 0, 1.25)
     assert abs(core_lib.afe_code_to_volts(cal_buf, 0, code_rt) - 1.25) < 0.01
 
-    assert core_lib.afe_autorange_select(0, 2.4, False) == 1
+    assert core_lib.afe_autorange_select(0, 4.8, False) == 1
+    assert core_lib.afe_autorange_select(0, 4.0, False) == 0
     assert core_lib.afe_autorange_select(0, 0.5, True) == 1
-    assert core_lib.afe_autorange_select(1, 1.5, False) == 0
+    assert core_lib.afe_autorange_select(1, 4.0, False) == 1      # hysteresis
+    assert core_lib.afe_autorange_select(1, 3.0, False) == 0
+
+
+def test_afe_scale_matches_front_end_resistors(core_lib):
+    """Full scale from the divider and gain-stage resistor values in hw/design.py (as in test_design)."""
+    r_th = 100.0 * 51.0 / 151.0
+    div = r_th / (940.0 + r_th)
+    g_hi = 1500.0 / 510.0
+    g_lo = (1500.0 * 336.0 / 1836.0) / 510.0
+    cal = (ctypes.c_float * 7)()
+    core_lib.afe_cal_init_default(cal)
+    fs_hi = core_lib.afe_code_to_volts(cal, 0, 255) - core_lib.afe_code_to_volts(cal, 0, 128)
+    fs_lo = core_lib.afe_code_to_volts(cal, 1, 255) - core_lib.afe_code_to_volts(cal, 1, 128)
+    assert abs(fs_hi - 127 / 256 * 1.024 / (g_hi * div)) < 0.01
+    assert abs(fs_lo - 127 / 256 * 1.024 / (g_lo * div)) < 0.05
+    assert 4.9 < 0.512 / (g_hi * div) < 5.1
+
+    # DC sense reads the inverting gain stage's output: below REF_MID means a positive tip
+    core_lib.afe_dc_sense_to_volts.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_uint16]
+    core_lib.afe_dc_sense_to_volts.restype = ctypes.c_float
+    v_pin = 0.978 - 1.0 * g_hi * div
+    raw = round(v_pin / 3.0 * 4096)
+    assert abs(core_lib.afe_dc_sense_to_volts(cal, 0, raw) - 1.0) < 0.01
+
+    codes = (ctypes.c_uint16 * 3)(0, 128, 255)
+    core_lib.scope_invert_codes(codes, 3)
+    assert list(codes) == [255, 127, 0]
 
 
 def test_scope_capture_unpack_measure_and_decimate(core_lib):
@@ -324,6 +352,39 @@ def test_app_scope_logic_render(core_lib):
     assert eng.value == b"12.3mV"
     core_lib.app_format_eng(ctypes.c_float(1.5e-6), b"s", eng, 32)
     assert eng.value == b"1.50\x7fs"
+
+
+def test_host_client_reads_firmware_frames(core_lib):
+    sys.path.insert(0, str(ROOT / "host"))
+    import probepen
+
+    def frame(seq, samples):
+        s = (ctypes.c_uint16 * len(samples))(*samples)
+        buf = (ctypes.c_uint8 * (7 + 2 * len(samples)))()
+        n = core_lib.usb_encode_wave_frame(seq, s, len(samples), buf, len(buf))
+        return bytes(buf[:n])
+
+    assert probepen.decode_frame(frame(1, [0, 128, 255])) == (1, [0, 128, 255])
+
+    class FakePort:
+        def __init__(self, data):
+            self.data, self.sent = data, b""
+
+        def write(self, b):
+            self.sent += b
+
+        def read(self, n):
+            out, self.data = self.data[:n], self.data[n:]
+            return out
+
+    port = FakePort(b"OK 3\n" + frame(0, [10, 20, 30]) + frame(1, [40, 50, 60]))
+    pen = probepen.ProbePen(port)
+    assert pen.capture(3) == ([10, 20, 30], [40, 50, 60])
+    assert port.sent == b"CAPTURE 3\n"
+
+    app = _app(core_lib)
+    m = probepen.parse_meas(_cmd(core_lib, app, "MEAS?"))
+    assert set(m["CH1"]) >= {"VPP", "VMIN", "VMAX", "F", "RANGE"} and m["TRIG"] == "NO"
 
 
 def test_lcd_panel_bytes(core_lib):

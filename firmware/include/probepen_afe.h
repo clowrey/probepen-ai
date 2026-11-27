@@ -9,18 +9,18 @@ extern "C" {
 #endif
 
 typedef enum {
-    AFE_RANGE_1X  = 0,
-    AFE_RANGE_10X = 1
+    AFE_RANGE_1X  = 0,   /* high gain (CHx_GAIN_LO low): +-5 V */
+    AFE_RANGE_10X = 1    /* low gain (CHx_GAIN_LO high): about +-26 V */
 } afe_range_t;
 
 typedef struct {
-    float vref_v;          /* REF3030 nominal reference (3.000 V) */
-    float mid_bias_1x_v;   /* AFE mid-scale bias in 1x mode (REF_MID, 0.978 V) */
-    float mid_bias_10x_v;  /* AFE mid-scale bias in 10x mode (REF_MID, 0.978 V) */
-    float gain_1x;         /* Calibrated 1x V/V factor (nominal 5.000 / 2.000 scale) */
-    float offset_1x_v;     /* Calibrated 1x zero offset (V) */
-    float gain_10x;        /* Calibrated 10x V/V factor (compensates 100 ppm divider) */
-    float offset_10x_v;    /* Calibrated 10x zero offset (V) */
+    float vref_v;          /* REF3030 reference, also the MCU ADC reference (3.000 V) */
+    float mid_bias_1x_v;   /* REF_MID, the gain stage's pivot and the ADC's mid-scale (0.978 V) */
+    float mid_bias_10x_v;  /* same node on the low-gain range */
+    float gain_1x;         /* tip volts per ADC volt on the high-gain range (nominal 9.80) */
+    float offset_1x_v;     /* zero offset (V) */
+    float gain_10x;        /* tip volts per ADC volt on the low-gain range (nominal 53.6) */
+    float offset_10x_v;    /* zero offset (V) */
 } afe_cal_t;
 
 void afe_cal_init_default(afe_cal_t *cal);

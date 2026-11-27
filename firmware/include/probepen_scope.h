@@ -28,6 +28,9 @@ typedef struct {
 
 /* One PIO word per sample: channel A in bits 0..7 (bit-reversed), channel B in bits 16..23. */
 size_t scope_unpack_ad9288(const uint32_t *words, size_t n_words, uint16_t *out_a, uint16_t *out_b, size_t max_samples);
+/* code -> 255 - code. The front end's gain stage is inverting, so the main loop flips each capture once
+ * after unpacking; everything after that sees codes that rise with the tip voltage. */
+void scope_invert_codes(uint16_t *codes, size_t n);
 size_t scope_find_trigger(
     const uint16_t *samples,
     size_t count,
