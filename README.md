@@ -119,12 +119,36 @@ over USB (hold MODE/BOOTSEL), and the pads had no room beside the crystal and th
   in one word, moved to RAM by DMA; `scope_unpack_ad9288()` splits them and bit-reverses channel A.
 - [`pod_capture.pio`](firmware/pod_capture.pio): the four pod inputs on GPIO0..3, eight 4-bit samples
   per word.
-- Host-testable modules: front-end calibration (8-bit codes, mid-scale 128), trigger and
-  measurement, LCD, logic helpers and a framed USB protocol.
+- [`src/main.c`](firmware/src/main.c): one capture is always in flight (PIO + DMA); meanwhile the
+  loop reads the buttons, the DC-sense ADC and the USB command line. Each finished capture is
+  measured, drawn, and sent to the LCD over SPI1 with 16-bit DMA.
+- [`src/app.c`](firmware/src/app.c): the whole user interface, with no hardware calls, so it runs and
+  is tested on the host. It holds the modes, timebases (integer PIO dividers, 100 ns to 50 ms/div),
+  trigger, auto-ranging, button debounce and long-press, USB commands and screen drawing.
+- Other host-testable modules: front-end calibration (8-bit codes, mid-scale 128), trigger and
+  measurement, LCD (5×7 font; 1.14" ST7789 by default, `-DPROBEPEN_LCD_096` for the 0.96" ST7735),
+  logic helpers and a framed USB protocol.
+
+![Firmware screens](docs/img/ui_screens.png)
+
+The screens above are the firmware's own drawing code fed synthetic captures
+(`.venv/bin/python docs/fw_ui_preview.py`): both channels, one channel, logic pod and DC meter.
+
+| Button | Short press | Held |
+|---|---|---|
+| ASK | run / hold | send the measurements and the screen's samples to the host (`ASK …` line + frames) |
+| MODE | next mode: CH1+2, CH1, CH2, LOGIC, METER | trigger source and slope |
+| UP / DOWN | slower / faster timebase | trigger level up / down (repeats) |
+
+USB (CDC serial, one command per line): `*IDN?`, `MODE n` (0..4), `TB n`, `GAIN 0|1|10` (0 = auto
+range), `TRIG code`, `RUN 0|1`, `CAL` (zero offsets with the inputs shorted), `MEAS?`, `CAPTURE n`
+(replies `OK n`, then one binary frame per channel: `AA 55 seq count16 samples16… crc16`).
 
 `firmware/include/probepen_pins.h` is generated from the GPIO map in `hw/design.py`
 (`python -m hw.tools.gen_pins_h`), and the tests check it against that map. A full Pico SDK build has
-not been run yet; the tests compile every source natively and for Cortex-M33.
+not been run yet; the tests compile every source natively and for Cortex-M33. To check on the first
+board: the LCD window offsets and orientation (`LCD_X_OFFSET`, `LCD_Y_OFFSET`, `MADCTL`), and the
+DC-sense scaling.
 
 | GPIO | Signal | GPIO | Signal |
 |---|---|---|---|

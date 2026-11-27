@@ -1,142 +1,338 @@
-#include "probepen_pins.h"
-#include "probepen_afe.h"
-#include "probepen_scope.h"
-#include "probepen_logic.h"
+/* ProbePen-AI main loop.
+ *
+ * One capture is always in flight: PIO0 clocks the AD9288 and DMA collects one 32-bit word per sample
+ * (scope modes), or PIO1 samples the logic pod and DMA collects 8 samples per word (logic mode). While the
+ * DMA runs, the loop reads the buttons and the USB command line. When it finishes, the app measures,
+ * draws the screen and the next capture starts. The LCD frame goes out over SPI1 with 16-bit DMA.
+ *
+ * Without PICO_RP2350 (host or plain cross-compile) the file builds a one-shot demo on a synthetic signal.
+ */
+#include <stdio.h>
+#include <string.h>
+
+#include "probepen_app.h"
 #include "probepen_lcd.h"
+#include "probepen_logic.h"
+#include "probepen_pins.h"
+#include "probepen_scope.h"
 #include "probepen_usb.h"
 
 #ifdef PICO_RP2350
-#include "pico/stdlib.h"
 #include "hardware/adc.h"
 #include "hardware/dma.h"
+#include "hardware/gpio.h"
 #include "hardware/pio.h"
-#include "hardware/pwm.h"
 #include "hardware/spi.h"
+#include "pico/stdlib.h"
+#include "pico/stdio_usb.h"
 #include "ad9288_capture.pio.h"
 #include "pod_capture.pio.h"
 #endif
 
-#define SCOPE_SAMPS   4096u          /* one 32-bit PIO word per sample (both channels) */
-#define SCOPE_RATE_HZ 40000000.0f    /* 150 MHz / (2 cycles x 1.875) */
-#define SCOPE_CLKDIV  1.875f
+#define CAPTURE_MAX 4096u
 
-static uint32_t g_pio_words[SCOPE_SAMPS];
-static uint16_t g_ch_a[SCOPE_SAMPS];
-static uint16_t g_ch_b[SCOPE_SAMPS];
-static uint16_t g_lcd_fb[LCD_PIXELS];
-static afe_cal_t g_cal;
+static uint32_t g_words[CAPTURE_MAX];
+static uint16_t g_ch_a[CAPTURE_MAX];
+static uint16_t g_ch_b[CAPTURE_MAX];
+static uint8_t g_nib[CAPTURE_MAX];
+static uint16_t g_fb[LCD_PIXELS];
+static uint8_t g_frame[7u + 2u * CAPTURE_MAX];
+static app_t g_app;
+static size_t g_n;       /* scope samples in g_ch_a / g_ch_b */
+static size_t g_n_nib;   /* pod samples in g_nib */
 
-static void hal_init_peripherals(void) {
+/* Sends both channels of the last capture as framed binary (see usb_encode_wave_frame), seq 0 = CH1. */
+static void send_frames(size_t start, size_t count) {
+    if (start >= g_n) {
+        return;
+    }
+    if (start + count > g_n) {
+        count = g_n - start;
+    }
+    for (uint8_t ch = 0u; ch < 2u; ++ch) {
+        size_t len = usb_encode_wave_frame(ch, (ch ? g_ch_b : g_ch_a) + start, count, g_frame, sizeof g_frame);
+        fwrite(g_frame, 1u, len, stdout);
+    }
+    fflush(stdout);
+}
+
 #ifdef PICO_RP2350
+
+/* ---- LCD on SPI1 ----------------------------------------------------------------------------- */
+
+static void lcd_write_cmd(void *ctx, uint8_t cmd) {
+    (void)ctx;
+    gpio_put(PIN_LCD_DC, 0);
+    gpio_put(PIN_LCD_CS_N, 0);
+    spi_write_blocking(spi1, &cmd, 1u);
+    gpio_put(PIN_LCD_CS_N, 1);
+}
+
+static void lcd_write_data(void *ctx, const uint8_t *data, size_t len) {
+    (void)ctx;
+    gpio_put(PIN_LCD_DC, 1);
+    gpio_put(PIN_LCD_CS_N, 0);
+    spi_write_blocking(spi1, data, len);
+    gpio_put(PIN_LCD_CS_N, 1);
+}
+
+static void lcd_delay(void *ctx, uint32_t ms) {
+    (void)ctx;
+    sleep_ms(ms);
+}
+
+static const lcd_bus_t LCD_BUS = {lcd_write_cmd, lcd_write_data, lcd_delay, NULL};
+static int g_lcd_dma = -1;
+
+static void lcd_flush(void) {
+    lcd_panel_set_window(&LCD_BUS, 0u, 0u, (uint16_t)(LCD_WIDTH - 1u), (uint16_t)(LCD_HEIGHT - 1u));
+    /* 16-bit frames send each RGB565 pixel MSB first, as the panel wants */
+    spi_set_format(spi1, 16u, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
+    gpio_put(PIN_LCD_DC, 1);
+    gpio_put(PIN_LCD_CS_N, 0);
+    dma_channel_config c = dma_channel_get_default_config((uint)g_lcd_dma);
+    channel_config_set_transfer_data_size(&c, DMA_SIZE_16);
+    channel_config_set_dreq(&c, spi_get_dreq(spi1, true));
+    dma_channel_configure((uint)g_lcd_dma, &c, &spi_get_hw(spi1)->dr, g_fb, LCD_PIXELS, true);
+    dma_channel_wait_for_finish_blocking((uint)g_lcd_dma);
+    while (spi_is_busy(spi1)) {
+        tight_loop_contents();
+    }
+    gpio_put(PIN_LCD_CS_N, 1);
+    spi_set_format(spi1, 8u, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
+}
+
+static void lcd_init_hw(void) {
+    spi_init(spi1, 40000000u);
+    gpio_set_function(PIN_LCD_SCK, GPIO_FUNC_SPI);
+    gpio_set_function(PIN_LCD_MOSI, GPIO_FUNC_SPI);
+    const uint8_t outs[] = {PIN_LCD_CS_N, PIN_LCD_DC, PIN_LCD_RST_N};
+    for (unsigned i = 0u; i < sizeof outs; ++i) {
+        gpio_init(outs[i]);
+        gpio_set_dir(outs[i], GPIO_OUT);
+        gpio_put(outs[i], 1);
+    }
+    gpio_put(PIN_LCD_RST_N, 0);
+    sleep_ms(10);
+    gpio_put(PIN_LCD_RST_N, 1);
+    sleep_ms(120);
+    g_lcd_dma = dma_claim_unused_channel(true);
+    lcd_panel_init(&LCD_BUS);
+    gpio_put(PIN_LCD_BLK_GATE_N, 0);   /* P-FET high-side switch: low = backlight on */
+}
+
+/* ---- inputs ---------------------------------------------------------------------------------- */
+
+static void gpio_out(uint pin, bool level) {
+    gpio_init(pin);
+    gpio_set_dir(pin, GPIO_OUT);
+    gpio_put(pin, level);
+}
+
+static void hal_init(void) {
     stdio_init_all();
-    /* AD9288 S1/S2 = 1/1: both channels running, outputs aligned */
-    gpio_init(PIN_ADC_S1);
-    gpio_set_dir(PIN_ADC_S1, GPIO_OUT);
-    gpio_put(PIN_ADC_S1, 1);
-    gpio_init(PIN_ADC_S2);
-    gpio_set_dir(PIN_ADC_S2, GPIO_OUT);
-    gpio_put(PIN_ADC_S2, 1);
-
-    /* Gain switches: high = low-gain (+/-26 V) range, the safe default */
-    gpio_init(PIN_CH1_GAIN_LO);
-    gpio_set_dir(PIN_CH1_GAIN_LO, GPIO_OUT);
-    gpio_put(PIN_CH1_GAIN_LO, 1);
-    gpio_init(PIN_CH2_GAIN_LO);
-    gpio_set_dir(PIN_CH2_GAIN_LO, GPIO_OUT);
-    gpio_put(PIN_CH2_GAIN_LO, 1);
-
-    static const uint8_t buttons[] = {PIN_BTN_ASK_AI_N, PIN_BTN_MODE_N, PIN_BTN_UP_N, PIN_BTN_DOWN_N};
-    for (unsigned i = 0; i < sizeof buttons; ++i) {
+    stdio_set_translate_crlf(&stdio_usb, false);   /* binary wave frames go out on the same port */
+    gpio_out(PIN_ADC_S1, 1);           /* AD9288 S1/S2 = 1/1: both channels running, outputs aligned */
+    gpio_out(PIN_ADC_S2, 1);
+    gpio_out(PIN_CH1_GAIN_LO, 1);      /* high = +-25 V range, the safe default */
+    gpio_out(PIN_CH2_GAIN_LO, 1);
+    gpio_out(PIN_LCD_BLK_GATE_N, 1);   /* backlight off until the panel is initialised */
+    const uint8_t buttons[BTN_COUNT] = {PIN_BTN_ASK_AI_N, PIN_BTN_MODE_N, PIN_BTN_UP_N, PIN_BTN_DOWN_N};
+    for (unsigned i = 0u; i < BTN_COUNT; ++i) {
         gpio_init(buttons[i]);
         gpio_set_dir(buttons[i], GPIO_IN);
         gpio_pull_up(buttons[i]);
     }
-
-    gpio_init(PIN_LCD_BLK_GATE_N);
-    gpio_set_dir(PIN_LCD_BLK_GATE_N, GPIO_OUT);
-    gpio_put(PIN_LCD_BLK_GATE_N, 0);
-
     adc_init();
     adc_gpio_init(PIN_CH1_DC_SENSE);
     adc_gpio_init(PIN_CH2_DC_SENSE);
     adc_gpio_init(PIN_VBUS_SENSE);
-
-    spi_init(spi1, 24000000u);
-    gpio_set_function(PIN_LCD_SCK, GPIO_FUNC_SPI);
-    gpio_set_function(PIN_LCD_MOSI, GPIO_FUNC_SPI);
-#else
-    (void)PIN_LCD_SCK;
-    (void)PIN_LCD_MOSI;
-    (void)PIN_ADC_CLK;
-    (void)PIN_ADC_S1;
-    (void)PIN_ADC_S2;
-    (void)PIN_POD_CH0;
-    (void)PIN_LCD_CS_N;
-    (void)PIN_LCD_DC;
-    (void)PIN_LCD_RST_N;
-    (void)PIN_LCD_BLK_GATE_N;
-    (void)PIN_BTN_ASK_AI_N;
-    (void)PIN_BTN_MODE_N;
-    (void)PIN_CH1_GAIN_LO;
-    (void)PIN_CH2_GAIN_LO;
-    (void)PIN_CH1_DC_SENSE;
-    (void)PIN_CH2_DC_SENSE;
-    (void)PIN_VBUS_SENSE;
-#endif
 }
 
-#ifdef PICO_RP2350
-/* One block capture: PIO0 clocks the AD9288 and pushes one word per sample, DMA moves SCOPE_SAMPS words. */
-static void scope_capture_block(void) {
-    PIO pio = pio0;
-    uint sm = 0;
-    static int offset = -1;
-    if (offset < 0) {
-        offset = pio_add_program(pio, &ad9288_capture_program);
-        ad9288_capture_program_init(pio, sm, (uint)offset, SCOPE_CLKDIV);
+static uint8_t read_buttons(void) {
+    const uint8_t pins[BTN_COUNT] = {PIN_BTN_ASK_AI_N, PIN_BTN_MODE_N, PIN_BTN_UP_N, PIN_BTN_DOWN_N};
+    uint8_t mask = 0u;
+    for (unsigned i = 0u; i < BTN_COUNT; ++i) {
+        if (!gpio_get(pins[i])) {
+            mask = (uint8_t)(mask | (1u << i));
+        }
     }
-    int ch = dma_claim_unused_channel(true);
-    dma_channel_config c = dma_channel_get_default_config((uint)ch);
+    return mask;
+}
+
+static uint16_t adc_read_pin(uint pin) {
+    adc_select_input(pin - 40u);   /* RP2354B: ADC0..7 = GPIO40..47 */
+    uint32_t sum = 0u;
+    for (int i = 0; i < 16; ++i) {
+        sum += adc_read();
+    }
+    return (uint16_t)(sum / 16u);
+}
+
+/* ---- captures -------------------------------------------------------------------------------- */
+
+static int g_adc_offset = -1;
+static int g_pod_offset = -1;
+static int g_cap_dma = -1;
+static bool g_cap_logic;
+static size_t g_cap_words;
+
+static void capture_start(void) {
+    g_cap_logic = (g_app.mode == APP_MODE_LOGIC);
+    size_t n = app_capture_samples(&g_app, CAPTURE_MAX);
+    uint32_t k = app_clkdiv(&g_app);
+    PIO pio = g_cap_logic ? pio1 : pio0;
+    uint sm = 0u;
+    if (g_cap_logic) {
+        uint32_t kp = 2u * k > 65535u ? 65535u : 2u * k;   /* one PIO cycle per pod sample */
+        pio_sm_set_clkdiv_int_frac(pio, sm, (uint16_t)kp, 0u);
+        g_cap_words = (n + 7u) / 8u;
+    } else {
+        pio_sm_set_clkdiv_int_frac(pio, sm, (uint16_t)k, 0u);   /* two PIO cycles per ADC sample */
+        g_cap_words = n;
+    }
+    gpio_put(PIN_CH1_GAIN_LO, g_app.range[0] == AFE_RANGE_10X);
+    gpio_put(PIN_CH2_GAIN_LO, g_app.range[1] == AFE_RANGE_10X);
+
+    dma_channel_config c = dma_channel_get_default_config((uint)g_cap_dma);
     channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
     channel_config_set_read_increment(&c, false);
     channel_config_set_write_increment(&c, true);
     channel_config_set_dreq(&c, pio_get_dreq(pio, sm, false));
+    pio_sm_set_enabled(pio, sm, false);
     pio_sm_clear_fifos(pio, sm);
     pio_sm_restart(pio, sm);
-    dma_channel_configure((uint)ch, &c, g_pio_words, &pio->rxf[sm], SCOPE_SAMPS, true);
+    pio_sm_exec(pio, sm, pio_encode_jmp((uint)(g_cap_logic ? g_pod_offset : g_adc_offset)));
+    dma_channel_configure((uint)g_cap_dma, &c, g_words, &pio->rxf[sm], g_cap_words, true);
     pio_sm_set_enabled(pio, sm, true);
-    dma_channel_wait_for_finish_blocking((uint)ch);
-    pio_sm_set_enabled(pio, sm, false);
-    dma_channel_unclaim((uint)ch);
 }
-#endif
+
+static void capture_finish(void) {
+    PIO pio = g_cap_logic ? pio1 : pio0;
+    pio_sm_set_enabled(pio, 0u, false);
+    if (g_cap_logic) {
+        g_n_nib = logic_unpack_pod_nibbles(g_words, g_cap_words, g_nib, CAPTURE_MAX);
+        app_process_logic(&g_app, g_nib, g_n_nib);
+    } else {
+        g_n = scope_unpack_ad9288(g_words, g_cap_words, g_ch_a, g_ch_b, CAPTURE_MAX);
+        app_process_scope(&g_app, g_ch_a, g_ch_b, g_n);
+    }
+}
+
+static void capture_init(void) {
+    g_adc_offset = pio_add_program(pio0, &ad9288_capture_program);
+    ad9288_capture_program_init(pio0, 0u, (uint)g_adc_offset, 2.0f);
+    g_pod_offset = pio_add_program(pio1, &pod_capture_program);
+    pod_capture_program_init(pio1, 0u, (uint)g_pod_offset, 2.0f);
+    g_cap_dma = dma_claim_unused_channel(true);
+}
+
+/* ---- USB command line ------------------------------------------------------------------------ */
+
+static void usb_poll(void) {
+    static char line[64];
+    static size_t len;
+    char reply[320];
+    for (int guard = 0; guard < 64; ++guard) {
+        int c = getchar_timeout_us(0);
+        if (c == PICO_ERROR_TIMEOUT) {
+            return;
+        }
+        if (c == '\r' || c == '\n') {
+            if (len > 0u) {
+                line[len] = '\0';
+                app_usb_command(&g_app, line, reply, sizeof reply);
+                printf("%s\n", reply);
+                fflush(stdout);
+                len = 0u;
+            }
+        } else if (len + 1u < sizeof line) {
+            line[len++] = (char)c;
+        }
+    }
+}
 
 int main(void) {
-    hal_init_peripherals();
-    afe_cal_init_default(&g_cal);
-    lcd_fb_clear(g_lcd_fb, lcd_rgb565(12u, 16u, 24u));
-    lcd_fb_draw_text(g_lcd_fb, 4, 4, "AD9288", lcd_rgb565(0u, 255u, 140u), lcd_rgb565(12u, 16u, 24u));
+    hal_init();
+    app_init(&g_app);
+    buttons_t btn;
+    buttons_init(&btn);
+    lcd_init_hw();
+    capture_init();
+    capture_start();
+    bool capturing = true;
+    bool fresh = false;                /* a capture finished since the last draw */
+    uint32_t last_draw = 0u;
 
-    afe_range_t range = AFE_RANGE_1X;
-    scope_meas_t meas;
-    uint8_t ymin[LCD_WIDTH];
-    uint8_t ymax[LCD_WIDTH];
-
-#ifdef PICO_RP2350
-    scope_capture_block();
-#endif
-    size_t n_samp = scope_unpack_ad9288(g_pio_words, SCOPE_SAMPS, g_ch_a, g_ch_b, SCOPE_SAMPS);
-    scope_measure_buffer(g_ch_a, n_samp, SCOPE_RATE_HZ, 1.0f / 256.0f, 128.0f, TRIG_RISING, &meas);
-    scope_decimate_min_max(g_ch_a, n_samp, ymin, ymax, LCD_WIDTH, 60u);
-    range = afe_autorange_select(range, meas.vmax, false);
-    (void)range;
-    (void)logic_family_default_mv(LOGIC_FAMILY_TTL);
-    (void)usb_parse_command("*IDN?");
-
-#ifdef PICO_RP2350
+    uint32_t last_dc = 0u;
     for (;;) {
-        tight_loop_contents();
+        uint32_t now = to_ms_since_boot(get_absolute_time());
+        uint8_t ev[BTN_COUNT];
+        size_t nev = buttons_update(&btn, read_buttons(), now, ev, BTN_COUNT);
+        for (size_t i = 0u; i < nev; ++i) {
+            app_button_event(&g_app, (uint8_t)(ev[i] >> 4), (btn_event_t)(ev[i] & 0x0Fu));
+        }
+        usb_poll();
+        if (now - last_dc >= 100u) {
+            app_set_dc(&g_app, adc_read_pin(PIN_CH1_DC_SENSE), adc_read_pin(PIN_CH2_DC_SENSE),
+                       adc_read_pin(PIN_VBUS_SENSE));
+            last_dc = now;
+        }
+        if (dma_channel_is_busy((uint)g_cap_dma)) {
+            continue;
+        }
+        if (capturing) {
+            capture_finish();
+            capturing = false;
+            fresh = true;
+        }
+        if (g_app.ask_pending) {
+            char meas[320];
+            app_format_meas(&g_app, meas, sizeof meas);
+            printf("ASK %s\n", meas);
+            send_frames(g_app.win_start, g_app.win_len);
+            g_app.ask_pending = false;
+        }
+        if (g_app.capture_req) {
+            send_frames(g_app.win_start, g_app.capture_req);
+            g_app.capture_req = 0u;
+        }
+        if (fresh || now - last_draw >= 50u) {   /* in HOLD, redraw at 20 Hz so button changes show */
+            app_render(&g_app, g_fb, g_ch_a, g_ch_b, g_n, g_nib, g_n_nib);
+            lcd_flush();
+            last_draw = now;
+            fresh = false;
+        }
+        if (g_app.run || g_app.cal_pending) {
+            capture_start();
+            capturing = true;
+        }
     }
-#endif
+}
+
+#else  /* host / plain cross-compile: one frame on a synthetic signal */
+
+int main(void) {
+    app_init(&g_app);
+    g_n = app_capture_samples(&g_app, CAPTURE_MAX);
+    for (size_t i = 0u; i < g_n; ++i) {
+        uint32_t phase = (uint32_t)(i % 64u);
+        uint8_t a = (uint8_t)(phase < 32u ? 64u + 4u * phase : 64u + 4u * (63u - phase));
+        uint8_t b = (uint8_t)(phase < 32u ? 200u : 60u);
+        uint8_t ra = 0u;
+        for (int k = 0; k < 8; ++k) {
+            ra = (uint8_t)(ra | (((a >> k) & 1u) << (7 - k)));
+        }
+        g_words[i] = (uint32_t)ra | ((uint32_t)b << 16);
+    }
+    g_n = scope_unpack_ad9288(g_words, g_n, g_ch_a, g_ch_b, CAPTURE_MAX);
+    app_process_scope(&g_app, g_ch_a, g_ch_b, g_n);
+    app_render(&g_app, g_fb, g_ch_a, g_ch_b, g_n, g_nib, g_n_nib);
+    char meas[320];
+    app_format_meas(&g_app, meas, sizeof meas);
+    printf("%s\n", meas);
+    (void)send_frames;
     return 0;
 }
+
+#endif

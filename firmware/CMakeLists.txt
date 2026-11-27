@@ -16,7 +16,8 @@ add_library(probepen_core STATIC
     src/afe_cal.c
     src/scope_capture.c
     src/logic_probe.c
-    src/lcd_st7735.c
+    src/lcd.c
+    src/app.c
     src/usb_proto.c
 )
 target_include_directories(probepen_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

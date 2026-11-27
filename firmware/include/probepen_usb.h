@@ -18,7 +18,9 @@ typedef enum {
     USB_CMD_CAL     = 5,
     USB_CMD_MEAS    = 6,
     USB_CMD_TRIG    = 7,
-    USB_CMD_CAPTURE = 8
+    USB_CMD_CAPTURE = 8,
+    USB_CMD_TB      = 9,    /* TB n: timebase index */
+    USB_CMD_RUN     = 10    /* RUN 0|1: hold / run */
 } usb_cmd_kind_t;
 
 typedef struct {

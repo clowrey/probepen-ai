@@ -207,7 +207,7 @@ def test_logic_probe_and_lcd_and_usb(core_lib):
     assert core_lib.lcd_st7735_init_seq(ctypes.byref(seq_len)) is not None
     assert seq_len.value >= 6
 
-    fb = (ctypes.c_uint16 * (160 * 80))()
+    fb = (ctypes.c_uint16 * (240 * 135))()
     core_lib.lcd_fb_clear(fb, 0x0000)
     core_lib.lcd_fb_draw_text(fb, 2, 2, b"10V", 0xFFFF, 0x0000)
     assert any(px == 0xFFFF for px in fb)
@@ -227,6 +227,126 @@ def test_logic_probe_and_lcd_and_usb(core_lib):
     assert seq.value == 7 and cnt.value == 4 and list(out_s)[:4] == [12, 345, 678, 1020]
     frame[7] ^= 0xFF  # Corrupt payload -> CRC failure
     assert not core_lib.usb_decode_wave_frame(frame, flen, ctypes.byref(seq), out_s, 8, ctypes.byref(cnt))
+
+
+LCD_W, LCD_H = 240, 135   # default panel: 1.14" ST7789
+
+
+def _app(core_lib):
+    app = ctypes.create_string_buffer(4096)
+    core_lib.app_init(app)
+    return app
+
+
+def _cmd(core_lib, app, line: str) -> str:
+    reply = ctypes.create_string_buffer(512)
+    core_lib.app_usb_command(app, line.encode(), reply, 512)
+    return reply.value.decode()
+
+
+def test_buttons_debounce_short_long_repeat(core_lib):
+    b = ctypes.create_string_buffer(256)
+    core_lib.buttons_init(b)
+    ev = (ctypes.c_uint8 * 4)()
+
+    def step(mask, t):
+        n = core_lib.buttons_update(b, mask, t, ev, 4)
+        return list(ev)[:n]
+
+    assert step(0b0001, 0) == [] and step(0b0001, 25) == []        # ASK pressed, debounced
+    assert step(0b0000, 100) == [] and step(0b0000, 125) == [0x01]  # released: SHORT on button 0
+    assert step(0b0100, 200) == [] and step(0b0000, 210) == [] and step(0b0000, 260) == []  # 10 ms bounce
+    step(0b0010, 300)
+    step(0b0010, 325)
+    assert step(0b0010, 925) == [0x12]                             # MODE held 600 ms: LONG
+    assert step(0b0010, 1075) == [0x13]                            # then REPEAT every 150 ms
+    step(0b0000, 1100)
+    assert step(0b0000, 1130) == []                                # no SHORT after a long press
+
+
+def test_app_usb_commands_and_timebases(core_lib):
+    app = _app(core_lib)
+    assert _cmd(core_lib, app, "*IDN?").startswith("ProbePen-AI,RP2354B+AD9288,")
+    assert _cmd(core_lib, app, "MODE 9") == "ERR"
+    assert _cmd(core_lib, app, "MODE 3") == "OK"
+    assert _cmd(core_lib, app, "TB 99") == "ERR"
+    assert _cmd(core_lib, app, "TB 3") == "OK 1000"
+    assert _cmd(core_lib, app, "GAIN 5") == "ERR"
+    assert _cmd(core_lib, app, "GAIN 0") == "OK"
+    assert _cmd(core_lib, app, "RUN 0") == "OK"
+    assert _cmd(core_lib, app, "CAPTURE 300") == "OK 300"
+    assert _cmd(core_lib, app, "bogus") == "ERR"
+
+    core_lib.app_timebase_count.restype = ctypes.c_size_t
+    core_lib.app_timebase_ns.restype = ctypes.c_uint32
+    core_lib.app_clkdiv.restype = ctypes.c_uint32
+    core_lib.app_sample_rate_hz.restype = ctypes.c_float
+    core_lib.app_screen_samples.restype = ctypes.c_size_t
+    for tb in range(core_lib.app_timebase_count()):
+        assert _cmd(core_lib, app, f"TB {tb}").startswith("OK")
+        k = core_lib.app_clkdiv(app)
+        fs = core_lib.app_sample_rate_hz(app)
+        assert 1 <= k <= 65535 and fs <= 75e6 + 1
+        span = core_lib.app_screen_samples(app)
+        tdiv = core_lib.app_timebase_ns(app) * 1e-9
+        assert abs(span - fs * 10 * tdiv) <= 1.0, (tb, span, fs, tdiv)
+        assert span <= 4 * LCD_W
+
+
+def test_app_scope_logic_render(core_lib):
+    app = _app(core_lib)
+    _cmd(core_lib, app, "GAIN 1")
+    _cmd(core_lib, app, "TB 6")                      # 10 us/div -> 5 MS/s
+    n, fs = 2000, 5e6
+    a = (ctypes.c_uint16 * n)(*(int(128 + 50 * math.sin(2 * math.pi * 50e3 * i / fs)) for i in range(n)))
+    b = (ctypes.c_uint16 * n)(*(128 + (60 if (i // 100) % 2 else -60) for i in range(n)))
+    core_lib.app_process_scope(app, a, b, ctypes.c_size_t(n))
+    meas = _cmd(core_lib, app, "MEAS?")
+    f1 = float(meas.split("CH1 ")[1].split("F=")[1].split()[0])
+    assert 49e3 < f1 < 51e3, meas
+    assert "TRIG=YES" in meas
+
+    fb = (ctypes.c_uint16 * (LCD_W * LCD_H))()
+    for mode in range(5):
+        _cmd(core_lib, app, f"MODE {mode}")
+        core_lib.app_render(app, fb, a, b, ctypes.c_size_t(n), None, ctypes.c_size_t(0))
+        assert len(set(fb)) > 3, f"mode {mode} drew nothing"
+    _cmd(core_lib, app, "MODE 0")
+    core_lib.app_render(app, fb, a, b, ctypes.c_size_t(n), None, ctypes.c_size_t(0))
+    yellow = core_lib.lcd_rgb565(255, 214, 0)
+    assert sum(px == yellow for px in fb) > LCD_W, "CH1 trace missing"
+
+    nib = (ctypes.c_uint8 * n)(*(((i // 25) % 2) for i in range(n)))   # P0: 100 kHz at 5 MS/s
+    core_lib.app_process_logic(app, nib, ctypes.c_size_t(n))
+    eng = ctypes.create_string_buffer(32)
+    core_lib.app_format_eng.argtypes = [ctypes.c_float, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_size_t]
+    core_lib.app_format_eng(ctypes.c_float(0.0123), b"V", eng, 32)
+    assert eng.value == b"12.3mV"
+    core_lib.app_format_eng(ctypes.c_float(1.5e-6), b"s", eng, 32)
+    assert eng.value == b"1.50\x7fs"
+
+
+def test_lcd_panel_bytes(core_lib):
+    log = []
+    CMD = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_uint8)
+    DATA = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t)
+    DLY = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_uint32)
+
+    class Bus(ctypes.Structure):
+        _fields_ = [("write_cmd", CMD), ("write_data", DATA), ("delay_ms", DLY), ("ctx", ctypes.c_void_p)]
+
+    cb_cmd = CMD(lambda ctx, c: log.append(("C", c)))
+    cb_data = DATA(lambda ctx, d, n: log.append(("D", bytes(d[:n]))))
+    cb_dly = DLY(lambda ctx, ms: None)
+    bus = Bus(cb_cmd, cb_data, cb_dly, None)
+    core_lib.lcd_panel_init(ctypes.byref(bus))
+    cmds = [v for k, v in log if k == "C"]
+    assert cmds[0] == 0x01 and 0x11 in cmds and cmds[-1] == 0x29 and 0x3A in cmds
+    log.clear()
+    core_lib.lcd_panel_set_window(ctypes.byref(bus), 0, 0, LCD_W - 1, LCD_H - 1)
+    be = lambda a, b: a.to_bytes(2, "big") + b.to_bytes(2, "big")  # noqa: E731
+    assert log == [("C", 0x2A), ("D", be(40, 40 + LCD_W - 1)),
+                   ("C", 0x2B), ("D", be(53, 53 + LCD_H - 1)), ("C", 0x2C)]
 
 
 def test_arm_cortex_m33_cross_compile_all_sources(tmp_path):

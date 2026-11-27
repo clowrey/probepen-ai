@@ -65,7 +65,7 @@ usb_cmd_t usb_parse_command(const char *line) {
     } else if (match_prefix_ci(line, "GAIN", &arg) && *arg != '\0') {
         cmd.kind = USB_CMD_GAIN;
         cmd.arg_i = (int32_t)strtol(arg, NULL, 10);
-        cmd.valid = (cmd.arg_i == 1 || cmd.arg_i == 10);
+        cmd.valid = (cmd.arg_i == 0 || cmd.arg_i == 1 || cmd.arg_i == 10);   /* 0 = auto range */
     } else if (match_prefix_ci(line, "THR", &arg) && *arg != '\0') {
         cmd.kind = USB_CMD_THR;
         cmd.arg_f = strtof(arg, NULL);
@@ -85,6 +85,14 @@ usb_cmd_t usb_parse_command(const char *line) {
         cmd.kind = USB_CMD_CAPTURE;
         cmd.arg_i = (*arg != '\0') ? (int32_t)strtol(arg, NULL, 10) : 256;
         cmd.valid = (cmd.arg_i > 0 && cmd.arg_i <= 4096);
+    } else if (match_prefix_ci(line, "TB", &arg) && *arg != '\0') {
+        cmd.kind = USB_CMD_TB;
+        cmd.arg_i = (int32_t)strtol(arg, NULL, 10);
+        cmd.valid = (cmd.arg_i >= 0);
+    } else if (match_prefix_ci(line, "RUN", &arg) && *arg != '\0') {
+        cmd.kind = USB_CMD_RUN;
+        cmd.arg_i = (int32_t)strtol(arg, NULL, 10);
+        cmd.valid = (cmd.arg_i == 0 || cmd.arg_i == 1);
     }
     return cmd;
 }
