@@ -98,4 +98,6 @@ if __name__ == "__main__":
     img = sheet(screens(small))
     path = OUT.with_name("ui_screens_096.png") if small else OUT
     img.save(path, optimize=True)
+    if not small:   # one native-resolution screen, used as the LCD texture in docs/case_views.py
+        screens(small)[0].save(OUT.with_name("ui_screen.png"))
     print(path, img.size)

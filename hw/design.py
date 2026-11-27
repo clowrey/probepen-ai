@@ -327,10 +327,10 @@ COMPONENTS: list[Comp] = [
     }, block="afe"),
 
     # ---- Dual High-Speed ADC: AD9288BSTZ-80 / MXT2088 LQFP-48 DNP (user hand-solder) (adc) -
-    C("R25A", "r_33r_0402", {"1": "CH1_OUT", "2": "ADCA_INP"}, block="adc"),
-    C("C42", "c_180p_0402", {"1": "ADCA_INP", "2": "AGND"}, block="adc"),  # 33R x 180pF = 27 MHz anti-alias pole, both ranges
-    C("R25B", "r_33r_0402", {"1": "CH2_OUT", "2": "ADCB_INP"}, block="adc"),
-    C("C42B", "c_180p_0402", {"1": "ADCB_INP", "2": "AGND"}, block="adc"),
+    C("R25A", "r_51r_0402", {"1": "CH1_OUT", "2": "ADCA_INP"}, block="adc"),
+    C("C42", "c_100p_0402", {"1": "ADCA_INP", "2": "AGND"}, block="adc"),  # R25A 51R x 100pF = 31 MHz anti-alias pole, both ranges
+    C("R25B", "r_51r_0402", {"1": "CH2_OUT", "2": "ADCB_INP"}, block="adc"),
+    C("C42B", "c_100p_0402", {"1": "ADCB_INP", "2": "AGND"}, block="adc"),
     C("U2", None, {
         "1": "AGND",      # GND (analog side)
         "2": "ADCA_INP",  # AINA

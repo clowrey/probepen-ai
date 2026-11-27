@@ -85,6 +85,7 @@ def schematic() -> None:
 
 LAYERS = {
     "layer_top": "B.Cu,In2.Cu,F.Cu,F.Silkscreen,Edge.Cuts",
+    "layer_all": "B.Cu,In2.Cu,In1.Cu,F.Cu,Edge.Cuts",
     "layer_f_cu": "F.Cu,Edge.Cuts",
     "layer_in1_cu": "In1.Cu,Edge.Cuts",
     "layer_in2_cu": "In2.Cu,Edge.Cuts",
@@ -154,8 +155,9 @@ def render(w: int = 2800, h: int = 1100) -> None:
     from PIL import Image
     for name, args in RENDERS.items():
         path = IMG / f"{name}.png"
+        # the copy with DNP flags cleared (docs/render_board.py), so hand-fitted parts show
         kcli("pcb", "render", "--quality", "high", "--background", "transparent",
-             "-w", w, "-h", h, *args, "-o", path, PCB)
+             "-w", w, "-h", h, *args, "-o", path, PCB.with_name(".render.kicad_pcb"))
         im = Image.open(path).convert("RGBA")
         a = im.getchannel("A").point(lambda v: 0 if v < 180 else min(255, (v - 180) * 4))
         im.putalpha(a)

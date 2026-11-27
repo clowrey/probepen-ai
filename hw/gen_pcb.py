@@ -668,10 +668,13 @@ def build() -> pcbnew.BOARD:
             fp.SetLocalZoneConnection(pcbnew.ZONE_CONNECTION_FULL)
         if c.ref in ("LED1", "LED2"):                 # hand-soldered: thermal relief to any pour
             fp.SetLocalZoneConnection(pcbnew.ZONE_CONNECTION_THERMAL)
-        if c.ref in LOCAL_MODELS:                     # parts KiCad's library has no 3D model for
+        # 3D models: vendor STEPs for U1/L1/J1, build123d models (hw/gen_3d.py) for everything else
+        gen_model = HERE / "lib" / "ppa.3dshapes" / "gen" / f"{c.footprint.split(':', 1)[-1]}.step"
+        if c.ref in LOCAL_MODELS or gen_model.is_file():
             fp.Models().clear()
             m3d = pcbnew.FP_3DMODEL()
-            m3d.m_Filename = "${KIPRJMOD}/lib/ppa.3dshapes/" + LOCAL_MODELS[c.ref]
+            m3d.m_Filename = "${KIPRJMOD}/lib/ppa.3dshapes/" + (
+                LOCAL_MODELS[c.ref] if c.ref in LOCAL_MODELS else "gen/" + gen_model.name)
             fp.Models().push_back(m3d)
         if c.ref == "J1":
             for it in list(fp.GraphicalItems()):
