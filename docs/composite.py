@@ -56,9 +56,11 @@ def main() -> None:
     for cap, im, mirrored in (("Board, top (3D)", top, False), ("Board, bottom (3D): LCD, trimmers, work-lights", bot, True)):
         w = round((BOARD_L + USB_OVERHANG) * ppm)
         im = im.resize((w, round(im.height * w / im.width)), Image.LANCZOS)
-        # the bottom view is seen from below, so the nose is on the right
-        x = x_nose - round(USB_OVERHANG * ppm) if mirrored else x_nose
-        panels.append((cap, im, x))
+        if mirrored:
+            # kicad-cli shows the underside with the nose on the right; turning it 180 degrees (the board
+            # flipped over about its long axis) keeps the nose on the left like every other panel
+            im = im.rotate(180)
+        panels.append((cap, im, x_nose))
     case = Image.open(IMG / "case_top_down.png").convert("RGBA")
     w = round((CASE_X1 - CASE_X0) * ppm)
     case = case.resize((w, round(case.height * w / case.width)), Image.LANCZOS)
