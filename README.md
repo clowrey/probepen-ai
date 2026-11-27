@@ -97,6 +97,10 @@ Screws self-tap into pilot holes in the plastic; there are no heat-set inserts.
 - The 12.2 × 21.5 mm cross-section is set by the WAGO terminal (4.5 mm tall) on top and the LCD glass
   below.
 
+Printing: `case/out/top_shell.stl` and `bottom_shell.stl`, each with its flat outer face on the bed
+(the top shell upside down), no supports. Walls are 1.6 mm (four 0.4 mm perimeters). Two M2 × 8 mm
+pan-head self-tapping screws hold it together through the board's mounting holes.
+
 ## Input limits and safety
 
 The instrument is referenced to USB ground; it is not isolated. Keep both probe inputs within about

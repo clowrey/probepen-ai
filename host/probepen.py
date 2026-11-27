@@ -3,7 +3,7 @@
     python host/probepen.py PORT idn
     python host/probepen.py PORT meas
     python host/probepen.py PORT capture [N]      # prints CH1 and CH2 sample codes as CSV
-    python host/probepen.py PORT ask              # waits for ASK button presses, prints each snapshot
+    python host/probepen.py PORT ask [DIR]        # waits for ASK button presses; saves each snapshot as JSON in DIR
     python host/probepen.py PORT send "TB 5"      # any command line
 
 PORT is e.g. /dev/ttyACM0 or COM7. Uses pyserial when it is installed; on Linux it also works without it.
@@ -153,6 +153,33 @@ class ProbePen:
                 yield meas, frames[0], frames[1]
 
 
+def snapshot(meas: dict, ch1: list[int], ch2: list[int]) -> dict:
+    """A self-describing snapshot: measurements plus the screen's samples as codes and as volts."""
+    fs = float(meas.get("FS", 0) or 0)
+    out = {"measurements": meas, "sample_rate_hz": fs, "timebase_ns_per_div": meas.get("TB"), "channels": {}}
+    for name, codes in (("CH1", ch1), ("CH2", ch2)):
+        m = meas.get(name, {})
+        # volts per code from the measured extremes (the device reports both in volts and the codes span them)
+        lo, hi = (min(codes), max(codes)) if codes else (0, 0)
+        vmin, vmax = m.get("VMIN", 0.0), m.get("VMAX", 0.0)
+        scale = (vmax - vmin) / (hi - lo) if hi > lo else 0.0
+        out["channels"][name] = {
+            "range": m.get("RANGE"),
+            "codes": codes,
+            "volts": [round(vmin + (c - lo) * scale, 4) for c in codes] if scale else None,
+        }
+    return out
+
+
+def save_snapshot(out_dir: str, meas: dict, ch1: list[int], ch2: list[int]) -> str:
+    import json
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, time.strftime("ask-%Y%m%d-%H%M%S.json"))
+    with open(path, "w", encoding="utf8") as f:
+        json.dump(snapshot(meas, ch1, ch2), f, indent=1)
+    return path
+
+
 def main(argv: list[str]) -> None:
     if len(argv) < 3:
         raise SystemExit(__doc__)
@@ -168,8 +195,11 @@ def main(argv: list[str]) -> None:
         for x, y in zip(a, b):
             print(f"{x},{y}")
     elif cmd == "ask":
+        out_dir = argv[3] if len(argv) > 3 else None
         for meas, a, b in pen.wait_ask():
             print(meas, f"{len(a)} samples per channel")
+            if out_dir:
+                print("saved", save_snapshot(out_dir, meas, a, b))
     elif cmd == "send":
         print(pen.command(" ".join(argv[3:])))
     else:
