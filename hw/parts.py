@@ -16,7 +16,7 @@ class Part:
     symbol: str          # KiCad 10 standard library name, or "ppa:<Name>" for one we generate in Stage 2
     footprint: str       # KiCad 10 standard footprint, or "ppa:<Name>"
     value: str
-    rotation: int = 0    # JLC CPL rotation offset vs KiCad
+    rotation: int = 0    # JLC CPL rotation offset vs KiCad (checked in JLC's placement viewer, 2026-11-27)
     tht: bool = False
     per_board: int = 1
     mpn: str = ""
@@ -44,7 +44,7 @@ _LIST = [
     Part(
         "rs8752", "C255421", "ppa:RS8752",
         "Package_SO:MSOP-8_3x3mm_P0.65mm",
-        "RS8752XM", mpn="RS8752XM", basic=False, per_board=2, rotation=90,
+        "RS8752XM", mpn="RS8752XM", basic=False, per_board=2, rotation=270,
         extra={
             "datasheet": "https://www.lcsc.com/datasheet/lcsc_datasheet_2304140030_Jiangsu-RUNIC-Tech-RS8752XM_C255421.pdf",
             "notes": "Runic RS8752XM dual 250 MHz 1 pA CMOS RR-out op-amp, unity-gain stable, Vcm=-0.2..V+-1.1 V, MSOP-8",
@@ -53,7 +53,7 @@ _LIST = [
     Part(
         "ref3030", "C38423", "Reference_Voltage:REF3030",
         "Package_TO_SOT_SMD:SOT-23",
-        "REF3030AIDBZR", mpn="REF3030AIDBZR", basic=False, per_board=1,
+        "REF3030AIDBZR", mpn="REF3030AIDBZR", basic=False, per_board=1, rotation=180,
         extra={
             "datasheet": "https://www.lcsc.com/datasheet/lcsc_datasheet_2410010301_Texas-Instruments-REF3030AIDBZR_C38423.pdf",
             "notes": "TI REF3030 (SBVS032), 3.000 V +/-0.2%, 25 mA max, 50 uA Iq, 1 mV dropout unloaded",
@@ -62,7 +62,7 @@ _LIST = [
     Part(
         "lvc2g66", "C282354", "ppa:74LVC2G66",
         "Package_SO:TSSOP-8_3x3mm_P0.65mm",
-        "74LVC2G66DP", mpn="74LVC2G66DP,125", basic=False, per_board=1, rotation=90,
+        "74LVC2G66DP", mpn="74LVC2G66DP,125", basic=False, per_board=1, rotation=180,
         extra={
             "datasheet": "https://www.lcsc.com/datasheet/lcsc_datasheet_2407241028_Nexperia-74LVC2G66DP-125_C282354.pdf",
             "notes": "Nexperia 74LVC2G66DP dual independent 440 MHz 6 ohm SPST analog switch, TSSOP-8 (SOT505-2); 1E=pin7, 2E=pin3",
@@ -71,7 +71,7 @@ _LIST = [
     Part(
         "rt9013", "C47773", "ppa:RT9013-33GB",
         "Package_TO_SOT_SMD:SOT-23-5",
-        "RT9013-33GB", mpn="RT9013-33GB", basic=False, per_board=2,
+        "RT9013-33GB", mpn="RT9013-33GB", basic=False, per_board=2, rotation=270,
         extra={
             "datasheet": "https://www.lcsc.com/datasheet/lcsc_datasheet_1809081207_Richtek-Tech-RT9013-33GB_C47773.pdf",
             "notes": "Richtek RT9013 (DS9013-10), 500 mA 3.3 V LDO, 30 uVrms noise, 250 mV typ dropout @ 500 mA",
@@ -80,7 +80,7 @@ _LIST = [
     Part(
         "srv05_4", "C7420376", "Power_Protection:SRV05-4",
         "Package_TO_SOT_SMD:SOT-23-6",
-        "SRV05-4", mpn="SRV05-4", basic=False, per_board=2,
+        "SRV05-4", mpn="SRV05-4", basic=False, per_board=2, rotation=270,
         extra={
             "preferred": True,
             "datasheet": "https://wmsc.lcsc.com/wmsc/upload/file/pdf/v2/lcsc/2407101112_hongjiacheng-SRV05-4_C7420376.pdf",
@@ -91,7 +91,7 @@ _LIST = [
     Part(
         "bav199", "C40919", "ppa:BAV199",
         "Package_TO_SOT_SMD:SOT-23",
-        "BAV199", mpn="BAV199,215", basic=False, per_board=2,
+        "BAV199", mpn="BAV199,215", basic=False, per_board=2, rotation=180,
         extra={
             "datasheet": "https://www.lcsc.com/datasheet/lcsc_datasheet_2302141530_Nexperia-BAV199-215_C40919.pdf",
             "notes": "Nexperia BAV199 (2020-09-01), 3 pA typ leakage dual series diode: 1=A1, 2=K2, 3=K1_A2",
@@ -106,7 +106,7 @@ _LIST = [
     Part(
         "ao3401a", "C15127", "Transistor_FET:AO3401A",
         "Package_TO_SOT_SMD:SOT-23",
-        "AO3401A", mpn="AO3401A", basic=True, per_board=1,
+        "AO3401A", mpn="AO3401A", basic=True, per_board=1, rotation=180,
         extra={"notes": "30 V 4 A P-MOSFET, 85 mOhm @ Vgs=-2.5 V, LCD backlight PWM switch"},
     ),
     # --- Magnetics, Crystal, Connectors, Switches, Mechanical, Protection ---------------------

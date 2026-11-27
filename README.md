@@ -283,10 +283,54 @@ To check on the first board:
 ## Ordering
 
 `hw/export_jlc.py` writes the Gerbers, BOM and placement file for JLCPCB assembly to
-[`hw/out/jlc/`](hw/out/jlc/), and [`cost.md`](hw/out/jlc/cost.md) with live JLC prices and stock:
-about $9.80 per board for 30 assembled boards (2026-11-27), every part in stock. The AD9288, the LCD
-and the button caps are not in that figure: the AD9288 and the LCD are hand-soldered
-(`accessories.csv`).
+[`hw/out/jlc/`](hw/out/jlc/), and [`cost.md`](hw/out/jlc/cost.md) with live JLC prices and stock.
+
+**Checked on JLCPCB's own order page (2026-11-27), for 30 boards.** The Gerbers, BOM and CPL were
+uploaded and taken through to the cart, but not ordered.
+
+| | |
+|---|---|
+| PCB: 4 layers, 138 × 17.6 mm, JLC04161H-7628, 0.2 mm vias | $73.53, of which the 0.2 mm via costs $18.35 plus a $17.51 four-wire Kelvin test and $3.67 for Tg155, all added automatically |
+| Economic assembly, top side, 42 part types | $198.16: parts $130.82, Extended-part fees $37.08, SMT $19.15, setup and stencil $9.79, nitrogen reflow $1.32 |
+| Shipping (estimate) | $42.20 |
+| **Total** | **$307.89 after a $6 coupon, about $10.26 per board** |
+
+- **Not in the assembled price:** the AD9288 and the LCD (hand-soldered; see below for where to buy
+  the AD9288), and the WAGO 2060 terminal. JLC places the WAGO only with Standard assembly, which costs
+  $25 more per side and adds 5 mm edge rails. It is a large-pad SMD part that is easy to hand-solder;
+  LCSC C2765056 costs about $0.43.
+- **Part orientation was checked in JLC's placement viewer.** Pin 1 of each part was compared with
+  the footprint's pad 1 and silkscreen marker. Five package types were wrong in the first placement
+  file and are corrected in `hw/parts.py` (`rotation`):
+  - SOT-23 (BAV199, REF3030, AO3401A): 180°
+  - SOT-23-5 (RT9013): 270°
+  - SOT-23-6 (SRV05-4): 270°
+  - MSOP-8 (RS8752): 270°
+  - TSSOP-8 (74LVC2G66): 180°
+
+  The RP2354B, crystal, SOD-323 Schottky, USB-C and side switches were already right. JLC has no 3D
+  model for the logic pod's JST connector (J3). Choose "Confirm Parts Placement: Yes" when ordering,
+  so JLC's engineers check it.
+- **JLC's matcher** leaves BOM lines with letter-suffixed designators (C32B, R25A, …) unticked
+  ("there may be multiple types of parts"). They are the right parts: tick them.
+- **Could cost less:** at a 0.25 mm drill the 0.40 mm via pads would meet JLC's standard 0.25 mm via
+  option. That avoids the via, Kelvin-test and Tg155 charges, about $40 per order.
+
+**AD9288 sources (2026-11-27).** It is in production at Analog Devices, which lists it as
+pin-compatible with the 10-bit AD9218.
+
+| Source | Part | Price | Stock |
+|---|---|---|---|
+| LCSC C514284 | AD9288BSTZ-80 | $10.62 for 1, $9.10 from 10, $8.21 from 30 | 249 |
+| LCSC C31151 | AD9288BSTZ-100 | $12.81 | 20 |
+| JLC library | AD9288BSTZ-80 | $10.53, so JLC can place it | |
+| Digi-Key | AD9288BSTZ-80 | about $24 each at 10 | 36 |
+| Mouser | AD9288BSTZ-80 | about $20 each at 10 | 2 |
+
+AliExpress listings at $1–4 are well under ADI's own price and are likely remarked or pulled parts.
+No Chinese pin-compatible equivalent turned up; the -40 grade is too slow for 75 MS/s. The cheapest
+reliable route is to let JLC place C514284: drop the DNP on U2 and add it to the BOM, for about
+$10.53 a board plus one Extended-part fee.
 
 ## Building it from source
 

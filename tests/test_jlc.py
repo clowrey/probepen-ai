@@ -74,3 +74,12 @@ def test_board_step_and_cost_sheet(exported_jlc):
         assert re.search(rf"^\|\s*{q}\s*\|", text, re.M), q
     acc = _rows("accessories.csv")
     assert len(acc) >= 3
+
+
+def test_jlc_rotation_offsets_checked_in_the_viewer():
+    """Offsets confirmed in JLC's placement viewer on 2026-11-27 (pin-1 dot on the footprint's pad 1)."""
+    from hw.parts import PARTS
+    want = {"rs8752": 270, "lvc2g66": 180, "ref3030": 180, "rt9013": 270, "srv05_4": 270, "bav199": 180,
+            "ao3401a": 180, "rp2354b": 0, "xtal_12m": 0, "1n5819ws": 0}
+    got = {k: PARTS[k].rotation for k in want if k in PARTS}
+    assert got == {k: v for k, v in want.items() if k in PARTS}
