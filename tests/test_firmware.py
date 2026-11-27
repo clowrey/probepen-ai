@@ -423,6 +423,19 @@ def test_peak_detect(core_lib):
             # two outputs per group of m raw samples at 75 MHz / 30 gives the timebase's sample rate
             assert abs(2 * (75e6 / 30) / m - core_lib.app_sample_rate_hz(app)) < 1e-3 * core_lib.app_sample_rate_hz(app)
     assert seen >= 6
+
+    # a signal much faster than a slot: every pair spans the swing, so no frequency is claimed
+    _cmd(core_lib, app, "GAIN 1")
+    _cmd(core_lib, app, "TB 12")                 # 1 ms/div: peak detect
+    assert core_lib.app_peak_factor(app) > 0
+    n = 1000
+    env = (ctypes.c_uint16 * n)(*([60, 200] * (n // 2)))
+    core_lib.app_process_scope(app, env, env, ctypes.c_size_t(n))
+    meas = _cmd(core_lib, app, "MEAS?")
+    assert "F=0.0" in meas.split(";")[0], meas
+    slow = (ctypes.c_uint16 * n)(*(60 if (i // 100) % 2 else 200 for i in range(n)))
+    core_lib.app_process_scope(app, slow, slow, ctypes.c_size_t(n))
+    assert "F=0.0 " not in _cmd(core_lib, app, "MEAS?").split(";")[0]
     _cmd(core_lib, app, "MODE 3")
     assert core_lib.app_peak_factor(app) == 0    # logic mode samples directly
 

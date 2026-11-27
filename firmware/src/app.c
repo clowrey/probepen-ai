@@ -235,6 +235,30 @@ void app_process_scope(app_t *app, const uint16_t *ch_a, const uint16_t *ch_b, s
             scope_measure_buffer(ch[c], n, app->sample_rate_hz, scale, zero, app->trig_slope, &app->meas[c]);
         }
     }
+    if (app_peak_factor(app) > 0u) {
+        /* Peak detect: when most min/max pairs span the full swing, the signal is faster than a slot and
+         * the zero crossings of the envelope say nothing about its frequency. */
+        for (int c = 0; c < 2; ++c) {
+            if (!ch[c] || n < 4u) {
+                continue;
+            }
+            uint16_t lo = SCOPE_CODE_MAX, hi = 0u;
+            for (size_t i = 0u; i < n; ++i) {
+                lo = ch[c][i] < lo ? ch[c][i] : lo;
+                hi = ch[c][i] > hi ? ch[c][i] : hi;
+            }
+            size_t full = 0u;
+            for (size_t i = 0u; i + 1u < n; i += 2u) {
+                int d = (int)ch[c][i + 1u] - (int)ch[c][i];
+                if ((d < 0 ? -d : d) * 2 > (int)(hi - lo)) {
+                    ++full;
+                }
+            }
+            if (full * 4u > n / 2u) {
+                app->meas[c].freq_hz = 0.0f;
+            }
+        }
+    }
     if (app->auto_range) {
         for (int c = 0; c < 2; ++c) {
             bool otr = false;
