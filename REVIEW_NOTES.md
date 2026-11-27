@@ -197,6 +197,32 @@ Measured from `hw/probepen_ai.kicad_pcb` geometry. x is mm from the nose edge. F
    low-gain range, and the only filter before the ADC is 33R / 22 pF (about 220 MHz). Add a
    proper anti-alias corner below Nyquist that is the same on both ranges.
 
+### Item 9 worked through (2026-11-27, no board change made)
+
+Poles in the signal path today (values from `hw/design.py`):
+
+| Range | Feedback pole (Rf ‖ C40x 4.7 pF) | Output RC (R25x 33R, C42x 100 pF) | Op-amp closed loop (noise gain) | Net -3 dB |
+|---|---|---|---|---|
+| ±5 V (high gain, Rf 1.5k) | 22.6 MHz | 48 MHz | 3.9 | about 20 MHz |
+| ±26 V (low gain, Rf 274R) | 123 MHz | 48 MHz | 1.5 | about 43 MHz |
+
+Nyquist is 37.5 MHz at the top sample rate (75 MSPS), so the low range passes 37.5-43 MHz content
+that folds back, and the two ranges show different rise times. Options, cheapest first:
+
+1. Make the output RC the dominant pole on both ranges: C42/C42B 100 pF → 180 pF (0402 C0G, same
+   footprint, so no placement change): 26.8 MHz. Combined with the feedback pole the high range
+   drops to about 17 MHz, the low range to about 25 MHz.
+2. Equalise the ranges as well: add about 22 pF across each 330R gain-switch resistor (R6A/R6B) so
+   the feedback time constant stays about 7 ns when the switch closes. Needs two 0402 sites next to
+   R6x, so it is a placement and routing change.
+3. A second-order filter before the ADC (series L or a Sallen-Key stage) only pays off if the
+   instrument is meant for spectral work; for an 8-bit pen scope option 1 is probably enough.
+
+Slow timebases are a separate matter: the firmware lowers the ADC clock itself (integer PIO divider),
+so at 1 ms/div the ADC samples at 48 kS/s behind a 20-45 MHz front end, and anything above 24 kHz
+aliases. No analog filter fixes that; the remedy is a peak-detect mode (sample at several MS/s and
+keep min/max per output sample on the second core). That is firmware work for after the first board.
+
 Checked and fine: the tip / `HV_MID` section (planes removed, 0.40 mm clearance rule, 1.9 mm
 `HV_MID`), `ADCx_INP` (6.8 mm, F.Cu, over AGND), the AGND-GND bridge R16 at the ADC, and the
 LED feeds under the tip (DC only).
