@@ -329,6 +329,27 @@ def fp_lcd_fpc_13p():
         s.SetEnd(_v(-3.05, sy))
         s.SetWidth(MM(0.10))
         fp.Add(s)
+    # Placement guide on silk (lands on B.SilkS): 1.14" glass outline (kept 0.35 mm inside the board edge),
+    # FPC tail up to the pads, corner marks of the visible area, ticks where the 0.96" glass ends
+    _rect(fp, pcbnew.F_SilkS, -46.00, -8.45, -15.40, 8.45, 0.15)
+    for sy in (-6.20, 6.20):
+        _line(fp, pcbnew.F_SilkS, -15.40, sy, -2.10, sy, 0.15)
+    ax0, ax1, ay = -44.60, -19.69, 7.43
+    for cx, dx in ((ax0, 1.5), (ax1, -1.5)):
+        for cy, dy in ((-ay, 1.5), (ay, -1.5)):
+            _line(fp, pcbnew.F_SilkS, cx, cy, cx + dx, cy, 0.12)
+            _line(fp, pcbnew.F_SilkS, cx, cy, cx, cy + dy, 0.12)
+    for sy in (-1, 1):
+        _line(fp, pcbnew.F_SilkS, -43.15, sy * 6.75, -43.15, sy * 5.55, 0.12)
+    for txt, x, y, size in (("LCD 1.14in glass, display out", -31.0, 0.0, 0.8),
+                            ("0.96in", -40.0, 6.05, 0.8)):
+        t = pcbnew.PCB_TEXT(fp)
+        t.SetText(txt)
+        t.SetLayer(pcbnew.F_SilkS)
+        t.SetPosition(_v(x, y))
+        t.SetTextSize(pcbnew.VECTOR2I(MM(size), MM(size)))
+        t.SetTextThickness(MM(size * 0.15))
+        fp.Add(t)
     # Minimal SilkS pin-1 dot clear of pads & adjacent copper
     s = pcbnew.PCB_SHAPE(fp, pcbnew.SHAPE_T_CIRCLE)
     s.SetLayer(pcbnew.F_SilkS)

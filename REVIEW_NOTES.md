@@ -26,8 +26,10 @@ Handled since these notes were written:
   `design.py` (`hw/tools/gen_wiring_md.py`, checked by a test); block diagram, schematic, layer and
   render images regenerated; JLC export refreshed with live prices (every part in stock).
 
-Still open: the TLV3501 logic probe was dropped from `design.py` (owner to confirm), and the
-anti-alias filter question in section 4 item 9.
+- Owner decisions, 2026-11-27: the TLV3501 logic probe was removed on purpose; anti-aliasing takes
+  option 1 below (C42/C42B now 180 pF C0G, LCSC C78636, same footprint and routing).
+
+Nothing in these notes is open any more except bench testing.
 
 ## 1. Front-end range on negative inputs (single-supply AFE)
 
@@ -209,7 +211,7 @@ Poles in the signal path today (values from `hw/design.py`):
 Nyquist is 37.5 MHz at the top sample rate (75 MSPS), so the low range passes 37.5-43 MHz content
 that folds back, and the two ranges show different rise times. Options, cheapest first:
 
-1. Make the output RC the dominant pole on both ranges: C42/C42B 100 pF → 180 pF (0402 C0G, same
+1. **Done.** Make the output RC the dominant pole on both ranges: C42/C42B 100 pF → 180 pF (0402 C0G, same
    footprint, so no placement change): 26.8 MHz. Combined with the feedback pole the high range
    drops to about 17 MHz, the low range to about 25 MHz.
 2. Equalise the ranges as well: add about 22 pF across each 330R gain-switch resistor (R6A/R6B) so

@@ -588,7 +588,8 @@ def silkscreen(board: pcbnew.BOARD):
 
     # Back side labels strictly outside LCD glass (x=32..63) & FPC (63..78.85)
     title = text(board, "ProbePen-AI v1.0", 90.0, -0.5, 1.05, layer=B, bold=True)
-    fit_text(board, title, [(x, y, 0, 1.05) for y in (-0.5, 0.5, -1.6) for x in (90.0, 92.5, 25.0)], "title")
+    fit_text(board, title, [(x, y, 0, s) for s in (1.05, 0.9) for y in (-0.5, 0.5, -1.6, 1.6, -6.5, 6.5)
+                            for x in (90.0, 92.5, 96.0, 100.0, 104.0, 108.0, 25.0)], "title")
     pod = text(board, "IO0-3 3V3 GND", 119.5, -2.0, 0.8, layer=B, bold=True)
     fit_text(board, pod, [(119.5 + dx, y, 0, 0.8) for y in (-2.0, -1.0, -6.8) for dx in (0, -2.0, 2.0)], "POD")
     lcd_hint = text(board, "1.14/0.96 13P LCD", 89.5, 2.2, 0.8, layer=B, bold=True)

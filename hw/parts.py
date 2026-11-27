@@ -195,7 +195,7 @@ _LIST = [
          extra={"preferred": True}),
     Part("c_22p_0402", "C1555", "Device:C", _C0402, "22pF C0G", per_board=2, mpn="0402CG220J500NT", basic=True),
     Part("c_15p_0402", "C1548", "Device:C", _C0402, "15pF C0G", per_board=2, mpn="0402CG150J500NT", basic=True),
-    Part("c_100p_0402", "C1546", "Device:C", _C0402, "100pF C0G", per_board=2, mpn="0402CG101J500NT", basic=True),
+    Part("c_180p_0402", "C78636", "Device:C", _C0402, "180pF C0G", per_board=2, mpn="0402CG181J500NT", basic=False),
     Part("c_10n_0402", "C15195", "Device:C", _C0402, "10nF", per_board=2, mpn="CL05B103KB5NNNC", basic=True),
     Part("c_100n_0402", "C1525", "Device:C", _C0402, "100nF", per_board=20, mpn="CL05B104KO5NNNC", basic=True),
     Part("c_1u_0402", "C52923", "Device:C", _C0402, "1uF", per_board=5, mpn="CL05A105KA5NQNC", basic=True),
