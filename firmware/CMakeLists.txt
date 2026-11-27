@@ -6,8 +6,15 @@ if(NOT PICO_BOARD)
     set(PICO_BOARD probepen_ai CACHE STRING "Board header in firmware/boards")
 endif()
 
-if(DEFINED ENV{PICO_SDK_PATH})
-    include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+# The SDK from -DPICO_SDK_PATH=... or the PICO_SDK_PATH environment variable; without it only the
+# host-testable library builds.
+if(NOT PICO_SDK_PATH AND DEFINED ENV{PICO_SDK_PATH})
+    set(PICO_SDK_PATH $ENV{PICO_SDK_PATH})
+endif()
+if(PICO_SDK_PATH)
+    include(${PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+else()
+    message(STATUS "PICO_SDK_PATH not set: building the host library only, no probepen_fw")
 endif()
 
 project(probepen_ai C CXX ASM)

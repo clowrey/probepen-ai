@@ -161,9 +161,22 @@ assistant to look at.
 
 `firmware/include/probepen_pins.h` is generated from the GPIO map in `hw/design.py`
 (`python -m hw.tools.gen_pins_h`), and the tests check it against that map. A full Pico SDK build has
-not been run yet; the tests compile every source natively and for Cortex-M33, and type-check the hardware code path against the SDK 2.x signatures (`tests/fw_stubs`). To check on the first
-board: the LCD window offsets and orientation (`LCD_X_OFFSET`, `LCD_Y_OFFSET`, `MADCTL`), and the
-DC-sense scaling.
+not been run yet; the tests compile every source natively and for Cortex-M33, and type-check the
+hardware code path against the SDK 2.x signatures (`tests/fw_stubs`).
+
+To check on the first board:
+
+- The LCD window offsets and orientation (`LCD_X_OFFSET`, `LCD_Y_OFFSET`, `MADCTL`).
+- The DC-sense scaling against a meter.
+- ADC capture at 75 MS/s (`TB 0`) with a known ramp. The PIO reads the bus through the input
+  synchronisers about two system clocks late, so look for bit errors. If there are any, try input
+  sync bypass on GPIO16-23 and 32-39 or a slower top rate.
+- `OVR` on the screen (or `OVR=YES` in `MEAS?`): the capture lost samples, either a stalled PIO FIFO
+  or peak detect falling behind its DMA ring.
+- The RP2354 stepping. On A2 parts, erratum E9 can latch a pad with its pull-down on, so the firmware
+  turns the pod inputs' pulls off; floating pod inputs then read noise.
+- That a UF2 drag-and-drop leaves the stored calibration alone. It sits one sector below the top of
+  flash, away from picotool's 0x10FFFF00 block.
 
 | GPIO | Signal | GPIO | Signal |
 |---|---|---|---|

@@ -39,6 +39,12 @@ void gpio_set_dir(uint gpio, bool out);
 void gpio_put(uint gpio, bool value);
 bool gpio_get(uint gpio);
 void gpio_pull_up(uint gpio);
+void gpio_disable_pulls(uint gpio);
+enum gpio_slew_rate { GPIO_SLEW_RATE_SLOW = 0, GPIO_SLEW_RATE_FAST = 1 };
+enum gpio_drive_strength { GPIO_DRIVE_STRENGTH_2MA = 0, GPIO_DRIVE_STRENGTH_4MA = 1, GPIO_DRIVE_STRENGTH_8MA = 2,
+                           GPIO_DRIVE_STRENGTH_12MA = 3 };
+void gpio_set_slew_rate(uint gpio, enum gpio_slew_rate slew);
+void gpio_set_drive_strength(uint gpio, enum gpio_drive_strength drive);
 
 /* hardware/adc */
 void adc_init(void);
@@ -82,6 +88,7 @@ void dma_channel_unclaim(uint channel);
 /* hardware/pio */
 typedef struct { io_rw_32 ctrl, fstat, fdebug, flevel; io_wo_32 txf[4]; io_ro_32 rxf[4]; } pio_hw_t;
 typedef pio_hw_t *PIO;
+#define PIO_FDEBUG_RXSTALL_LSB 0u
 extern pio_hw_t *const pio0_hw_ptr;
 extern pio_hw_t *const pio1_hw_ptr;
 #define pio0 pio0_hw_ptr

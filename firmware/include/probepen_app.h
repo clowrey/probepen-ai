@@ -72,6 +72,7 @@ typedef struct {
     size_t win_start;           /* first sample shown */
     size_t win_len;             /* samples across the screen */
     float sample_rate_hz;
+    bool overrun;               /* the capture lost samples (DMA ring overrun or a stalled PIO FIFO) */
     float dc_v[2];
     float vbus_v;
     uint32_t pod_edges[4];
@@ -96,6 +97,7 @@ size_t app_screen_samples(const app_t *app);          /* samples across the 10 d
  * m = app_peak_factor() raw samples become two (min and max), which gives the timebase's sample rate.
  * 0 = off (fast timebases and logic mode sample directly). */
 #define APP_PEAK_CLKDIV 30u
+#define APP_CLKDIV_MAX  (APP_PEAK_CLKDIV * 1024u)   /* m <= 2048 words, pod divider 2k <= 61440 */
 uint32_t app_peak_factor(const app_t *app);
 size_t app_capture_samples(const app_t *app, size_t max_samples);
 

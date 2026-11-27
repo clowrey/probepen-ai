@@ -307,7 +307,12 @@ def test_app_usb_commands_and_timebases(core_lib):
     assert _cmd(core_lib, app, "GAIN 5") == "ERR"
     assert _cmd(core_lib, app, "GAIN 0") == "OK"
     assert _cmd(core_lib, app, "RUN 0") == "OK"
+    assert _cmd(core_lib, app, "CAPTURE 300") == "ERR"     # logic mode: no scope samples to send
+    assert _cmd(core_lib, app, "CAL") == "ERR"
+    assert _cmd(core_lib, app, "MODE 0") == "OK"
     assert _cmd(core_lib, app, "CAPTURE 300") == "OK 300"
+    assert _cmd(core_lib, app, "CAL") == "OK"
+    assert "OVR=NO" in _cmd(core_lib, app, "MEAS?")
     assert _cmd(core_lib, app, "bogus") == "ERR"
 
     core_lib.app_timebase_count.restype = ctypes.c_size_t
@@ -319,11 +324,11 @@ def test_app_usb_commands_and_timebases(core_lib):
         assert _cmd(core_lib, app, f"TB {tb}").startswith("OK")
         k = core_lib.app_clkdiv(app)
         fs = core_lib.app_sample_rate_hz(app)
-        assert 1 <= k <= 65535 and fs <= 75e6 + 1
+        assert 1 <= k <= 30 * 1024 and fs <= 75e6 + 1      # 2k (pod divider) fits 16 bits
         span = core_lib.app_screen_samples(app)
         tdiv = core_lib.app_timebase_ns(app) * 1e-9
         assert abs(span - fs * 10 * tdiv) <= 1.0, (tb, span, fs, tdiv)
-        assert span <= 4 * LCD_W
+        assert span <= 6 * LCD_W and span <= 4096
 
 
 def test_app_scope_logic_render(core_lib):
@@ -425,6 +430,7 @@ def test_peak_detect(core_lib):
             seen += 1
             k = core_lib.app_clkdiv(app)
             assert k % 30 == 0 and m == 2 * k // 30 and m >= 4
+            assert m <= 4096 // 2, f"peak group of {m} words does not fit half the DMA ring"
             # two outputs per group of m raw samples at 75 MHz / 30 gives the timebase's sample rate
             assert abs(2 * (75e6 / 30) / m - core_lib.app_sample_rate_hz(app)) < 1e-3 * core_lib.app_sample_rate_hz(app)
     assert seen >= 6

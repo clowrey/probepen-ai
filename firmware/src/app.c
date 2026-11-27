@@ -35,8 +35,10 @@ uint32_t app_clkdiv(const app_t *app) {
     if (k < 1.0) {
         k = 1.0;
     }
-    if (k > 65535.0) {
-        k = 65535.0;
+    /* slowest rate: a peak-detect group (2k/30 words) must fit in half the 4096-word DMA ring, and the
+     * pod's 2k divider must stay within the PIO's 16-bit integer divider */
+    if (k > (double)APP_CLKDIV_MAX) {
+        k = (double)APP_CLKDIV_MAX;
     }
     uint32_t ki = (uint32_t)k;
     if (ki >= 2u * APP_PEAK_CLKDIV) {
@@ -183,7 +185,7 @@ void app_button_event(app_t *app, uint8_t button, btn_event_t ev) {
     case BTN_ASK:
         if (ev == BTN_EV_SHORT) {
             app->run = !app->run;
-        } else if (ev == BTN_EV_LONG) {
+        } else if (ev == BTN_EV_LONG && scope_mode(app->mode)) {   /* the snapshot carries scope samples */
             app->ask_pending = true;
         }
         break;
@@ -371,8 +373,9 @@ size_t app_format_meas(const app_t *app, char *out, size_t max_len) {
         len += (size_t)w;
     }
     if (len < max_len) {
-        int w = snprintf(out + len, max_len - len, ";FS=%.0f;TB=%lu;TRIG=%s", (double)app->sample_rate_hz,
-                         (unsigned long)app_timebase_ns(app), app->triggered ? "YES" : "NO");
+        int w = snprintf(out + len, max_len - len, ";FS=%.0f;TB=%lu;TRIG=%s;OVR=%s", (double)app->sample_rate_hz,
+                         (unsigned long)app_timebase_ns(app), app->triggered ? "YES" : "NO",
+                         app->overrun ? "YES" : "NO");
         if (w > 0) {
             len += (size_t)w;
         }
@@ -414,9 +417,9 @@ size_t app_usb_command(app_t *app, const char *line, char *reply, size_t max_len
             app->logic_thr_mv = (uint32_t)cmd.arg_i;
             w = snprintf(reply, max_len, "OK");
             break;
-        case USB_CMD_CAL:
-            app->cal_pending = true;
-            w = snprintf(reply, max_len, "OK");
+        case USB_CMD_CAL:      /* needs a scope capture: refused in LOGIC and METER */
+            app->cal_pending = scope_mode(app->mode);
+            w = snprintf(reply, max_len, app->cal_pending ? "OK" : "ERR");
             break;
         case USB_CMD_MEAS:
             return app_format_meas(app, reply, max_len);
@@ -425,8 +428,12 @@ size_t app_usb_command(app_t *app, const char *line, char *reply, size_t max_len
             w = snprintf(reply, max_len, "OK");
             break;
         case USB_CMD_CAPTURE:
-            app->capture_req = (uint16_t)cmd.arg_i;
-            w = snprintf(reply, max_len, "OK %ld", (long)cmd.arg_i);
+            if (scope_mode(app->mode)) {
+                app->capture_req = (uint16_t)cmd.arg_i;
+                w = snprintf(reply, max_len, "OK %ld", (long)cmd.arg_i);
+            } else {
+                w = snprintf(reply, max_len, "ERR");
+            }
             break;
         case USB_CMD_TB:
             if (cmd.arg_i >= 0 && (size_t)cmd.arg_i < TB_COUNT) {
@@ -549,8 +556,9 @@ static void draw_header(const app_t *app, uint16_t *fb, const palette_t *p) {
         snprintf(buf, sizeof buf, "T%u%c%s", (unsigned)(app->trig_src + 1u), app->trig_slope == TRIG_RISING ? '/' : '\\', v);
         lcd_fb_draw_text_scaled(fb, x, 1, buf, 1, app->triggered ? p->trig : p->dim);
     }
-    const char *st = app->run ? "RUN" : "HOLD";
-    lcd_fb_draw_text_scaled(fb, (int)LCD_WIDTH - lcd_text_width(st, 1) - 1, 1, st, 1, app->run ? p->pod[0] : p->hold);
+    const char *st = app->overrun ? "OVR" : (app->run ? "RUN" : "HOLD");
+    lcd_fb_draw_text_scaled(fb, (int)LCD_WIDTH - lcd_text_width(st, 1) - 1, 1, st, 1,
+                            (app->run && !app->overrun) ? p->pod[0] : p->hold);
 }
 
 static void draw_channel_line(const app_t *app, uint16_t *fb, const palette_t *p, int ch, int y, bool detail) {

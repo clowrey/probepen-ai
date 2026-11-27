@@ -194,10 +194,15 @@ static void capture_poll(void) {
     if (!g_peak_m) {
         return;
     }
-    size_t remaining = dma_channel_hw_addr((uint)g_cap_dma)->transfer_count & 0x0FFFFFFFu;
-    size_t written = g_cap_words - remaining;
-    while (written - g_peak_done >= g_peak_m && g_peak_out < g_peak_groups) {
-        if (written - g_peak_done > CAPTURE_MAX) {   /* fell a whole ring behind: skip to the newest data */
+    for (;;) {
+        /* re-read every pass: DMA keeps writing (about m/4 words) while a group is folded */
+        size_t remaining = dma_channel_hw_addr((uint)g_cap_dma)->transfer_count & 0x0FFFFFFFu;
+        size_t written = g_cap_words - remaining;
+        if (written - g_peak_done < g_peak_m || g_peak_out >= g_peak_groups) {
+            break;
+        }
+        if (written - g_peak_done + g_peak_m > CAPTURE_MAX) {
+            /* the oldest words of this group may be overwritten before they are read: skip ahead */
             g_peak_overrun = true;
             g_peak_done = written - g_peak_m;
         }
@@ -220,8 +225,8 @@ static void capture_start(void) {
     uint sm = 0u;
     g_peak_m = g_cap_logic ? 0u : app_peak_factor(&g_app);
     if (g_cap_logic) {
-        uint32_t kp = 2u * k > 65535u ? 65535u : 2u * k;   /* one PIO cycle per pod sample */
-        pio_sm_set_clkdiv_int_frac(pio, sm, (uint16_t)kp, 0u);
+        /* one PIO cycle per pod sample; APP_CLKDIV_MAX keeps 2k inside the 16-bit divider */
+        pio_sm_set_clkdiv_int_frac(pio, sm, (uint16_t)(2u * k), 0u);
         g_cap_words = (n + 7u) / 8u;
     } else if (g_peak_m) {
         pio_sm_set_clkdiv_int_frac(pio, sm, (uint16_t)APP_PEAK_CLKDIV, 0u);
@@ -247,6 +252,7 @@ static void capture_start(void) {
     pio_sm_clear_fifos(pio, sm);
     pio_sm_restart(pio, sm);
     pio_sm_exec(pio, sm, pio_encode_jmp((uint)(g_cap_logic ? g_pod_offset : g_adc_offset)));
+    pio->fdebug = 1u << (PIO_FDEBUG_RXSTALL_LSB + sm);   /* clear the stall flag (write 1) */
     dma_channel_configure((uint)g_cap_dma, &c, g_words, &pio->rxf[sm], g_cap_words, true);
     pio_sm_set_enabled(pio, sm, true);
 }
@@ -254,6 +260,8 @@ static void capture_start(void) {
 static void capture_finish(void) {
     PIO pio = g_cap_logic ? pio1 : pio0;
     pio_sm_set_enabled(pio, 0u, false);
+    /* a full RX FIFO stalls `in` (and stretches ADC_CLK) without any other sign: report it */
+    g_app.overrun = (pio->fdebug & (1u << PIO_FDEBUG_RXSTALL_LSB)) != 0u || (g_peak_m && g_peak_overrun);
     if (g_cap_logic) {
         g_n_nib = logic_unpack_pod_nibbles(g_words, g_cap_words, g_nib, CAPTURE_MAX);
         app_process_logic(&g_app, g_nib, g_n_nib);
@@ -279,11 +287,22 @@ static void capture_init(void) {
     g_pod_offset = pio_add_program(pio1, &pod_capture_program);
     pod_capture_program_init(pio1, 0u, (uint)g_pod_offset, 2.0f);
     g_cap_dma = dma_claim_unused_channel(true);
+
+    /* ADC_CLK runs at up to 75 MHz: fast slew and more drive than the 4 mA default */
+    gpio_set_slew_rate(PIN_ADC_CLK, GPIO_SLEW_RATE_FAST);
+    gpio_set_drive_strength(PIN_ADC_CLK, GPIO_DRIVE_STRENGTH_8MA);
+    /* RP2350 erratum E9 (A2 stepping): a pad with its pull-down on can latch high at about 2 V once
+     * driven, so the pod inputs run without pulls */
+    for (uint pin = PIN_POD_CH0; pin <= PIN_POD_CH3; ++pin) {
+        gpio_disable_pulls(pin);
+    }
 }
 
-/* ---- calibration in the last flash sector ---------------------------------------------------- */
+/* ---- calibration, one sector below the top of flash ------------------------------------------ */
 
-#define CAL_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE)
+/* Not the last sector: for RP2350, picotool adds a UF2 block at 0x10FFFF00 (erratum E10 workaround),
+ * which may alias into the top sector of a 2 MB part and erase the record on every drag-and-drop. */
+#define CAL_FLASH_OFFSET (PICO_FLASH_SIZE_BYTES - 2u * FLASH_SECTOR_SIZE)
 
 static void cal_load(void) {
     afe_cal_t cal;
@@ -382,6 +401,9 @@ int main(void) {
             lcd_flush();
             last_draw = now;
             fresh = false;
+        }
+        if (g_app.mode == APP_MODE_LOGIC) {
+            g_app.cal_pending = false;     /* CAL needs a scope capture; dropped if the mode changed */
         }
         if (g_app.run || g_app.cal_pending) {
             capture_start();

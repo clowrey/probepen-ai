@@ -4,6 +4,7 @@
 #define _BOARDS_PROBEPEN_AI_H
 
 // pico_cmake_set PICO_PLATFORM=rp2350
+// pico_cmake_set_default PICO_FLASH_SIZE_BYTES = (2 * 1024 * 1024)
 
 /* 48 GPIOs: the ADC buses use GPIO16..39 and the MCU ADC inputs GPIO40..47 */
 #ifndef PICO_RP2350A
