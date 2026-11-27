@@ -95,6 +95,15 @@
         <button id="sCsv" type="button" disabled>CSV</button>
         <span id="sStats" class="sstats"></span>
       </div>
+      <div class="toolbar stream-bar">
+        <b>Deep record</b>
+        <label>Rate <select id="dRate"><option value="75e6">75 MS/s</option><option value="37.5e6">37.5 MS/s</option><option value="25e6">25 MS/s</option><option value="10e6">10 MS/s</option><option value="1e6">1 MS/s</option></select></label>
+        <label>Channels <select id="dCh"><option value="3">CH1+2 (196 k each)</option><option value="1">CH1 (393 k)</option><option value="2">CH2 (393 k)</option></select></label>
+        <label>View <select id="dView"><option value="all">whole record</option><option value="trig" selected>around the trigger</option></select></label>
+        <button id="dGo" type="button">Record</button>
+        <button id="dCsv" type="button" disabled>CSV</button>
+        <span id="dStats" class="sstats"></span>
+      </div>
       <div class="plot-wrap"><canvas id="plot"></canvas><p class="plot-empty" id="plotEmpty"><span>Press
         <b>Capture</b> to read samples over USB, or hold <b>ASK</b> on the pen.</span></p></div>
       <div class="meas" id="meas"></div>

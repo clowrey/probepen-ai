@@ -16,6 +16,26 @@
     in pins, 32     side 0    ; ADC_CLK low: read both 8-bit buses (autopush every 32 bits = one sample)
 .wrap
 
+; Deep record: one byte per sample and channel. The leader drives ADC_CLK and reads one 8-bit bus (in base
+; GPIO16 = channel A, or GPIO32 = channel B alone); the follower runs the same two cycles without side-set and
+; reads channel B. Started together (pio_enable_sm_mask_in_sync) with the same divider they stay in lockstep.
+; Autopush every 32 bits, shifting right: 4 samples per word, the first in the low byte.
+
+.program ad9288_byte_lead
+.side_set 1
+
+.wrap_target
+    nop             side 1
+    in pins, 8      side 0
+.wrap
+
+.program ad9288_byte_follow
+
+.wrap_target
+    nop
+    in pins, 8
+.wrap
+
 % c-sdk {
 #include "hardware/clocks.h"
 #include "hardware/pio.h"
@@ -42,6 +62,15 @@ static inline void ad9288_capture_program_init(PIO pio, uint sm, uint offset, fl
     sm_config_set_in_shift(&c, false, true, 32);
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
     sm_config_set_clkdiv(&c, clkdiv);
+    pio_sm_init(pio, sm, offset, &c);
+}
+
+/* Deep record: a byte-wide reader (see the programs above); side_set selects the leader's ADC_CLK. */
+static inline void ad9288_byte_init(PIO pio, uint sm, uint offset, pio_sm_config c, uint in_base, uint32_t clkdiv) {
+    sm_config_set_in_pins(&c, in_base);
+    sm_config_set_in_shift(&c, true, true, 32);
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
+    sm_config_set_clkdiv_int_frac(&c, (uint16_t)clkdiv, 0u);
     pio_sm_init(pio, sm, offset, &c);
 }
 %}

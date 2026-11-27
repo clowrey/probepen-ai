@@ -104,6 +104,29 @@ void stream_push_words(stream_t *s, const uint32_t *words, size_t n, stream_emit
     }
 }
 
+void stream_push_codes(stream_t *s, const uint8_t *ch1, const uint8_t *ch2, size_t n, stream_emit_fn emit, void *ctx) {
+    if (!s) {
+        return;
+    }
+    size_t nch = (s->chmask == 3u) ? 2u : 1u;
+    size_t cap = STREAM_PAYLOAD_MAX - (STREAM_PAYLOAD_MAX % nch);
+    for (size_t i = 0u; i < n; ++i) {
+        if (s->fill == 0u) {
+            s->block_first = s->out_index;
+        }
+        if ((s->chmask & 1u) && ch1) {
+            s->block[STREAM_HDR_BYTES + s->fill++] = ch1[i];
+        }
+        if ((s->chmask & 2u) && ch2) {
+            s->block[STREAM_HDR_BYTES + s->fill++] = ch2[i];
+        }
+        ++s->out_index;
+        if (s->fill >= cap) {
+            emit_block(s, emit, ctx);
+        }
+    }
+}
+
 void stream_skip_raw(stream_t *s, uint32_t n, stream_emit_fn emit, void *ctx) {
     if (!s || n == 0u || s->avg == 0u) {
         return;

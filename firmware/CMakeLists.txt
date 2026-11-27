@@ -30,6 +30,7 @@ add_library(probepen_core STATIC
     src/calstore.c
     src/usb_proto.c
     src/stream.c
+    src/deep.c
 )
 target_include_directories(probepen_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_options(probepen_core PRIVATE -Wall -Wextra -Werror)

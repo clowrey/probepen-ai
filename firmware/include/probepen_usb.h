@@ -21,7 +21,8 @@ typedef enum {
     USB_CMD_CAPTURE = 8,
     USB_CMD_TB      = 9,    /* TB n: timebase index */
     USB_CMD_RUN     = 10,   /* RUN 0|1: hold / run */
-    USB_CMD_STREAM  = 11    /* STREAM rate_hz [chmask]: continuous 8-bit samples; STREAM 0 stops */
+    USB_CMD_STREAM  = 11,   /* STREAM rate_hz [chmask]: continuous 8-bit samples; STREAM 0 stops */
+    USB_CMD_DEEP    = 12    /* DEEP n [chmask] [rate_hz]: one long record (n 0 = as long as fits) */
 } usb_cmd_kind_t;
 
 typedef struct {
@@ -29,6 +30,7 @@ typedef struct {
     int32_t arg_i;
     float arg_f;
     bool valid;
+    int32_t arg_i2;
 } usb_cmd_t;
 
 uint16_t usb_crc16_ccitt(const uint8_t *data, size_t len);

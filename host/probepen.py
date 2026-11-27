@@ -9,6 +9,9 @@
                                                   # continuous 8-bit samples: RATE per channel, CH 1, 2 or 3
                                                   # (both); prints the throughput and losses it measured and
                                                   # writes the samples to OUT (.csv volts, else raw .bin)
+    python host/probepen.py PORT deep [N] [CH] [RATE] [OUT]
+                                                  # one long record (N 0 = as long as fits: 196 k samples per
+                                                  # channel, 393 k for one) at RATE (default 75 MS/s); CSV volts
 
 PORT is e.g. /dev/ttyACM0 or COM7. Uses pyserial when it is installed; on Linux it also works without it.
 
@@ -20,6 +23,9 @@ everything before the CRC; seq 0 is CH1, seq 1 is CH2. Sample codes rise with th
 and then sends blocks until `STREAM 0` (or a button), which ends with a `STREAM END ...` line:
 A5 5A flags chmask len(u16) first_sample_index(u32) payload[len] crc(u16), 8-bit codes, CH1 and CH2
 interleaved when both are on; flags bit0 = samples lost before this block (firmware/include/probepen_stream.h).
+`DEEP n [ch] [rate]` replies `OK N=.. CH=.. RATE=.. DIV=.. SECONDS=.. LSB1=.. ZERO1=.. LSB2=.. ZERO2=..`, takes
+the record, then sends `DEEP DATA N=.. TRIG=..`, the record as the same blocks, and `DEEP END`
+(firmware/include/probepen_deep.h).
 """
 from __future__ import annotations
 
@@ -272,6 +278,36 @@ class ProbePen:
             "device_end": end_line,
         }
 
+    def deep(self, n: int = 0, chmask: int = 3, rate: float = 75e6, timeout: float = 600.0) -> dict:
+        """One deep record: returns the plan, the trigger index and the samples in volts per channel."""
+        reply = self.command(f"DEEP {n} {chmask} {rate:g}")
+        if not reply.startswith("OK"):
+            raise RuntimeError(reply)
+        plan = parse_kv(reply)
+        dec = StreamDecoder()
+        dec.buf, self.buf = self.buf, b""
+        payload = bytearray()
+        info: dict = {}
+        t0 = time.monotonic()
+        done = False
+        while not done and time.monotonic() - t0 < timeout:
+            for ev in dec.feed(self.port.read(65536)):
+                if ev[0] == "block":
+                    payload += ev[4]
+                elif ev[1].startswith("DEEP DATA"):
+                    info = parse_kv(ev[1])
+                elif ev[1].startswith("DEEP END"):
+                    done = True
+        if not done:
+            raise TimeoutError("deep record did not finish")
+        chans = [0, 1] if chmask == 3 else [chmask - 1]
+        out = {"plan": plan, "trigger_index": int(info.get("TRIG", -1)), "transfer_s": round(time.monotonic() - t0, 3),
+               "crc_errors": dec.crc_errors, "lost_samples": dec.lost_samples}
+        for k, c in enumerate(chans):
+            lsb, zero = plan[f"LSB{c + 1}"], plan[f"ZERO{c + 1}"]
+            out[f"CH{c + 1}"] = [(b - zero) * lsb for b in payload[k::len(chans)]]
+        return out
+
     def wait_ask(self):
         """Yields (measurements, ch1, ch2) each time the ASK button is held."""
         while True:
@@ -339,6 +375,20 @@ def main(argv: list[str]) -> None:
         out = argv[6] if len(argv) > 6 else None
         for k, v in pen.stream(rate, chmask, seconds, out).items():
             print(f"{k:28s} {v}")
+    elif cmd == "deep":
+        n = int(argv[3]) if len(argv) > 3 else 0
+        chmask = int(argv[4]) if len(argv) > 4 else 3
+        rate = float(argv[5]) if len(argv) > 5 else 75e6
+        rec = pen.deep(n, chmask, rate)
+        names = [k for k in ("CH1", "CH2") if k in rec]
+        count = len(rec[names[0]])
+        print(f"{count} samples per channel at {rec['plan']['RATE']:g} S/s, trigger at {rec['trigger_index']}, "
+              f"sent in {rec['transfer_s']} s, {rec['crc_errors']} CRC errors")
+        if len(argv) > 6:
+            with open(argv[6], "w") as f:
+                f.write("t_s," + ",".join(n.lower() + "_v" for n in names) + "\n")
+                for i in range(count):
+                    f.write(f"{i / rec['plan']['RATE']:.9e}," + ",".join(f"{rec[n][i]:.4f}" for n in names) + "\n")
     elif cmd == "send":
         print(pen.command(" ".join(argv[3:])))
     else:

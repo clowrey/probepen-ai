@@ -15,6 +15,7 @@
 #include <string.h>
 
 #include "probepen_app.h"
+#include "probepen_deep.h"
 #include "probepen_lcd.h"
 #include "probepen_logic.h"
 #include "probepen_scope.h"
@@ -42,7 +43,8 @@ static size_t g_n_nib;
 
 /* ---- simulated probe signals ----------------------------------------------------------------- */
 
-enum { SIG_GND = 0, SIG_DC, SIG_SINE, SIG_SQUARE, SIG_TRIANGLE, SIG_SAW, SIG_PULSE, SIG_UART, SIG_AM, SIG_COUNT };
+enum { SIG_GND = 0, SIG_DC, SIG_SINE, SIG_SQUARE, SIG_TRIANGLE, SIG_SAW, SIG_PULSE, SIG_UART, SIG_AM, SIG_CANFD_H,
+       SIG_CANFD_L, SIG_COUNT };
 
 typedef struct {
     int kind;
@@ -97,6 +99,41 @@ static int uart_bit(double bits) {
     return ((unsigned char)UART_MSG[ch] >> (k - 1)) & 1;
 }
 
+/* A CAN FD frame every millisecond: 20 bits at the arbitration rate (SOF, ID, control, BRS), 533 at 4x that
+ * (64 data bytes and the CRC), then the CRC delimiter, ACK and end of frame at the arbitration rate. The bit
+ * values are pseudo-random: the frame's shape and timing, not a checked encoding. */
+static uint32_t bit_hash(uint32_t x) {
+    x ^= x >> 16;
+    x *= 0x7feb352du;
+    x ^= x >> 15;
+    x *= 0x846ca68bu;
+    x ^= x >> 16;
+    return x;
+}
+
+static bool canfd_dominant(double t, double arb_hz) {
+    const double period = 1e-3, head = 20.0, data = 533.0, tail = 11.0;
+    double tf = fmod(t, period);
+    if (tf < 0.0) {
+        tf += period;
+    }
+    double th = head / arb_hz, td = data / (4.0 * arb_hz);
+    uint32_t frame = (uint32_t)floor(t / period);
+    if (tf < th) {
+        uint32_t bit = (uint32_t)(tf * arb_hz);
+        return bit == 0u || (bit_hash(frame * 4096u + bit) & 1u);
+    }
+    if (tf < th + td) {
+        uint32_t bit = (uint32_t)((tf - th) * 4.0 * arb_hz);
+        return (bit_hash(frame * 4096u + 100u + bit) & 1u) != 0u;
+    }
+    if (tf < th + td + tail / arb_hz) {
+        uint32_t bit = (uint32_t)((tf - th - td) * arb_hz);
+        return bit == 1u;   /* the ACK slot */
+    }
+    return false;           /* recessive idle */
+}
+
 static float sig_value(const sig_t *s, double t) {
     double ph = t * (double)s->freq;
     double f = ph - floor(ph);
@@ -128,6 +165,12 @@ static float sig_value(const sig_t *s, double t) {
         v = s->offset + 0.5f * s->vpp * (float)(env * sin(2.0 * M_PI * f));
         break;
     }
+    case SIG_CANFD_H:   /* 2.5 V recessive, 3.5 V dominant */
+        v = 2.5f + (canfd_dominant(t, (double)s->freq) ? 1.0f : 0.0f);
+        break;
+    case SIG_CANFD_L:   /* 2.5 V recessive, 1.5 V dominant */
+        v = 2.5f - (canfd_dominant(t, (double)s->freq) ? 1.0f : 0.0f);
+        break;
     case SIG_GND:
     default:
         return 0.0f;   /* a grounded (or floating) tip reads 0 V */
@@ -445,6 +488,73 @@ static void sim_stream_poll(double now_ms) {
     }
 }
 
+/* ---- deep record (follows main.c deep_start / deep_poll) --------------------------------------- */
+
+static uint8_t g_deep[DEEP_BYTES];
+static double g_deep_end_ms;
+
+static void sim_deep_start(double now_ms) {
+    g_capturing = false;
+    g_app.deep_busy = true;
+    uint32_t n = g_app.deep_n;
+    double rate = (double)g_app.deep_rate_hz;
+    double t0 = now_ms * 1e-3 + (double)rnd() * 1e-3;
+    float alpha = 1.0f - expf(-2.0f * (float)M_PI * 31e6f / (float)rate);
+    float ya = sig_value(&g_sig[0], t0) + FE_OFFSET_V(0, g_app.range[0]);
+    float yb = sig_value(&g_sig[1], t0) + FE_OFFSET_V(1, g_app.range[1]);
+    bool both = g_app.deep_mask == 3u;
+    /* the bytes the PIO state machines would leave in RAM: the leader's bus first, the follower's after it */
+    for (uint32_t i = 0u; i < n; ++i) {
+        double t = t0 + (double)i / rate;
+        uint8_t a = adc_code(0, sig_value(&g_sig[0], t), &ya, alpha);
+        uint8_t b = adc_code(1, sig_value(&g_sig[1], t), &yb, alpha);
+        if (g_app.deep_mask == 2u) {
+            g_deep[i] = b;
+        } else {
+            g_deep[i] = rbit8(a);             /* channel A is bit-reversed on GPIO16..23 */
+            if (both) {
+                g_deep[n + i] = b;
+            }
+        }
+    }
+    g_deep_end_ms = now_ms + (double)n / rate * 1e3;
+}
+
+static void sim_deep_emit(const uint8_t *block, size_t len, void *ctx) {
+    (void)ctx;
+    usb_put(block, len);
+}
+
+static bool sim_deep_poll(double now_ms) {
+    if (now_ms < g_deep_end_ms) {
+        return false;
+    }
+    uint32_t n = g_app.deep_n;
+    uint8_t *ch1 = (g_app.deep_mask & 1u) ? g_deep : NULL;
+    uint8_t *ch2 = (g_app.deep_mask == 3u) ? g_deep + n : ((g_app.deep_mask == 2u) ? g_deep : NULL);
+    if (ch1) {
+        deep_decode(ch1, n, true);
+    }
+    if (ch2) {
+        deep_decode(ch2, n, false);
+    }
+    const uint8_t *src = (g_app.trig_src & 1u) ? ch2 : ch1;
+    long trig = src ? deep_find_trigger(src, n, 1u, (uint8_t)g_app.trig_level, 3u, g_app.trig_slope == TRIG_FALLING) : -1;
+    char line[80];
+    snprintf(line, sizeof line, "DEEP DATA N=%lu TRIG=%ld", (unsigned long)n, trig);
+    usb_puts_line(line);
+    stream_t st;
+    stream_plan(&st, g_app.deep_rate_hz, g_app.deep_mask, APP_ADC_MAX_HZ, 0u);
+    st.avg = 1u;
+    st.range_flags = (uint8_t)((g_app.range[0] == AFE_RANGE_10X ? STREAM_FLAG_CH1_10X : 0u) |
+                               (g_app.range[1] == AFE_RANGE_10X ? STREAM_FLAG_CH2_10X : 0u));
+    stream_push_codes(&st, ch1, ch2, n, sim_deep_emit, NULL);
+    stream_flush(&st, sim_deep_emit, NULL);
+    usb_puts_line("DEEP END");
+    g_app.deep_busy = false;
+    return true;
+}
+
 /* ---- exported API ------------------------------------------------------------------------------ */
 
 static uint8_t g_buttons;
@@ -514,6 +624,16 @@ EXPORT int sim_step(double now_ms) {
             sim_stream_stop();
             capture_start(now_ms);
         }
+    }
+    if (g_app.deep_req && !g_app.streaming) {
+        g_app.deep_req = false;
+        sim_deep_start(now_ms);
+    }
+    if (g_app.deep_busy) {
+        if (sim_deep_poll(now_ms)) {
+            capture_start(now_ms);
+        }
+        return 0;
     }
     if (g_app.streaming) {
         sim_stream_poll(now_ms);

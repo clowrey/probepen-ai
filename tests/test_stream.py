@@ -119,7 +119,8 @@ def test_averaging_and_gaps(core):
 
 def test_stream_command(core):
     cmd_t = type("UsbCmd", (ctypes.Structure,), {"_fields_": [
-        ("kind", ctypes.c_int), ("arg_i", ctypes.c_int32), ("arg_f", ctypes.c_float), ("valid", ctypes.c_bool)]})
+        ("kind", ctypes.c_int), ("arg_i", ctypes.c_int32), ("arg_f", ctypes.c_float), ("valid", ctypes.c_bool),
+        ("arg_i2", ctypes.c_int32)]})
     core.usb_parse_command.restype = cmd_t
     c = core.usb_parse_command(b"STREAM 250000 1")
     assert (c.kind, c.arg_i, c.valid) == (11, 1, True) and c.arg_f == 250000.0

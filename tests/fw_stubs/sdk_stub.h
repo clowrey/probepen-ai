@@ -88,6 +88,7 @@ void dma_channel_configure(uint channel, const dma_channel_config *config, volat
 void dma_channel_wait_for_finish_blocking(uint channel);
 bool dma_channel_is_busy(uint channel);
 void dma_channel_abort(uint channel);
+void dma_start_channel_mask(uint32_t chan_mask);
 void dma_channel_unclaim(uint channel);
 
 /* hardware/pio */
@@ -113,6 +114,9 @@ void sm_config_set_wrap(pio_sm_config *c, uint wrap_target, uint wrap);
 void sm_config_set_in_shift(pio_sm_config *c, bool shift_right, bool autopush, uint push_threshold);
 void sm_config_set_fifo_join(pio_sm_config *c, enum pio_fifo_join join);
 void sm_config_set_clkdiv(pio_sm_config *c, float div);
+void sm_config_set_clkdiv_int_frac(pio_sm_config *c, uint16_t div_int, uint8_t div_frac);
+void pio_enable_sm_mask_in_sync(PIO pio, uint32_t mask);
+void pio_set_sm_mask_enabled(PIO pio, uint32_t mask, bool enabled);
 int pio_sm_init(PIO pio, uint sm, uint initial_pc, const pio_sm_config *config);
 void pio_sm_set_enabled(PIO pio, uint sm, bool enabled);
 void pio_sm_clear_fifos(PIO pio, uint sm);

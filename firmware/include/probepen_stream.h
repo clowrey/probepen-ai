@@ -66,6 +66,9 @@ bool stream_plan(stream_t *s, float want_hz, uint8_t chmask, float adc_max_hz, u
 /* Raw AD9288 PIO words in (channel A bit-reversed in bits 0..7, channel B in bits 16..23, both inverted
  * by the front end). Full blocks go to emit. */
 void stream_push_words(stream_t *s, const uint32_t *words, size_t n, stream_emit_fn emit, void *ctx);
+/* Codes already rising with the tip voltage (deep record): ch1 and/or ch2 as the plan's chmask says,
+ * n samples each. The plan must have avg 1. */
+void stream_push_codes(stream_t *s, const uint8_t *ch1, const uint8_t *ch2, size_t n, stream_emit_fn emit, void *ctx);
 /* n raw words were dropped (DMA ring overrun): the partial block goes out first, and the next block
  * carries STREAM_FLAG_LOST and a jump in idx. */
 void stream_skip_raw(stream_t *s, uint32_t n, stream_emit_fn emit, void *ctx);

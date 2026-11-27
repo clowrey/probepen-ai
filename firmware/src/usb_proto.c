@@ -47,7 +47,7 @@ uint16_t usb_crc16_ccitt(const uint8_t *data, size_t len) {
 }
 
 usb_cmd_t usb_parse_command(const char *line) {
-    usb_cmd_t cmd = {USB_CMD_UNKNOWN, 0, 0.0f, false};
+    usb_cmd_t cmd = {USB_CMD_UNKNOWN, 0, 0.0f, false, 0};
     if (!line) {
         return cmd;
     }
@@ -89,6 +89,20 @@ usb_cmd_t usb_parse_command(const char *line) {
         cmd.kind = USB_CMD_TB;
         cmd.arg_i = (int32_t)strtol(arg, NULL, 10);
         cmd.valid = (cmd.arg_i >= 0);
+    } else if (match_prefix_ci(line, "DEEP", &arg)) {
+        char *end = NULL;
+        cmd.kind = USB_CMD_DEEP;
+        cmd.arg_i = (int32_t)strtol(arg, &end, 10);     /* samples per channel, 0 = the most that fits */
+        cmd.arg_i2 = 3;                                 /* channel mask */
+        cmd.arg_f = 75e6f;                              /* sample rate */
+        if (end && *end != '\0') {
+            char *e2 = NULL;
+            cmd.arg_i2 = (int32_t)strtol(end, &e2, 10);
+            if (e2 && *e2 != '\0') {
+                cmd.arg_f = strtof(e2, NULL);
+            }
+        }
+        cmd.valid = cmd.arg_i >= 0 && cmd.arg_i2 >= 1 && cmd.arg_i2 <= 3 && cmd.arg_f > 0.0f;
     } else if (match_prefix_ci(line, "STREAM", &arg) && *arg != '\0') {
         char *end = NULL;
         cmd.kind = USB_CMD_STREAM;

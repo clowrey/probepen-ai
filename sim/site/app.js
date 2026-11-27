@@ -10,7 +10,7 @@ const GAIN = [9.803, 53.56];                      // tip volts per ADC volt, +-5
 const LSB = GAIN.map((g) => (g * 1.024) / 256);   // volts per code
 const SIG_KINDS = [
   ["Grounded (0 V)", 0], ["DC", 1], ["Sine", 2], ["Square", 3], ["Triangle", 4], ["Sawtooth", 5],
-  ["Pulse", 6], ["UART 8N1 text", 7], ["AM sine", 8],
+  ["Pulse", 6], ["UART 8N1 text", 7], ["AM sine", 8], ["CAN FD, CAN_H wire", 9], ["CAN FD, CAN_L wire", 10],
 ];
 const BTN = ["ASK", "MODE", "UP", "DOWN"];
 const KEYS = { a: 0, m: 1, ArrowUp: 2, ArrowDown: 3 };
@@ -199,6 +199,11 @@ const PRESETS = [
     cmds: ["MODE 4", "GAIN 0", "RUN 1"],
   },
   {
+    name: "CAN FD 500k / 2M", note: "CH1 = CAN_H, CH2 = CAN_L: a 64-byte CAN FD frame every 1 ms, arbitration at 500 kbit/s and the data phase at 2 Mbit/s (pseudo-random bits). The screen catches a slice; press Record under Deep record (75 MS/s) to get whole frames: 196 k samples per channel, 2.6 ms, 37 samples per data bit.",
+    sig: [{ kind: 9, freq: 500e3, noise: 0.02 }, { kind: 10, freq: 500e3, noise: 0.02 }],
+    cmds: ["MODE 0", "GAIN 1", "TB 4", "TRIG 204", "RUN 1"],
+  },
+  {
     name: "SPI on the pod", note: "Logic pod: CS, SCK, MOSI and MISO of a 1 MHz SPI bus. LOGIC mode samples all four lines at the scope's rate.",
     pod: { kind: 1, freq: 1e6 }, cmds: ["MODE 3", "TB 4", "RUN 1"],
   },
@@ -232,15 +237,16 @@ function buildChannels() {
       field("kind").value = s.kind;
       field("vpp").value = `${+s.vpp.toPrecision(4)} V`;
       field("offset").value = `${+s.offset.toPrecision(4)} V`;
-      field("freq").value = s.kind === 7 ? `${eng(s.freq, "").trim()} baud` : eng(s.freq, "Hz");
+      field("freq").value = s.kind === 7 ? `${eng(s.freq, "").trim()} baud` : s.kind >= 9 ? eng(s.freq, "bit/s") : eng(s.freq, "Hz");
       field("duty").value = `${+(s.duty * 100).toPrecision(3)}`;
       field("noise").value = eng(s.noise, "V");
       const k = s.kind;
-      const show = { vpp: k >= 2, offset: k >= 1, freq: k >= 2, duty: k === 6, noise: k >= 1 };
+      const can = k >= 9;
+      const show = { vpp: k >= 2 && !can, offset: k >= 1 && !can, freq: k >= 2, duty: k === 6, noise: k >= 1 };
       for (const r of Object.keys(show)) fs.querySelector(`[data-row="${r}"]`).style.display = show[r] ? "" : "none";
       fs.querySelector('[data-l="vpp"]').textContent = k === 6 || k === 7 ? "High − low" : "Peak to peak";
       fs.querySelector('[data-l="offset"]').textContent = k === 1 ? "Level" : k === 6 || k === 7 ? "Low level" : "Offset";
-      fs.querySelector('[data-l="freq"]').textContent = k === 7 ? "Baud" : "Frequency";
+      fs.querySelector('[data-l="freq"]').textContent = k === 7 ? "Baud" : can ? "Arbitration" : "Frequency";
     };
     s.refresh = refresh;
     refresh();
@@ -459,6 +465,18 @@ function parseMeas(line) {
 }
 function onLine(line) {
   logLine("rx", `← ${line}`);
+  if (line.startsWith("DEEP DATA")) {    /* unsolicited: the record follows as blocks */
+    const kv = {};
+    line.split(/\s+/).slice(2).forEach((w) => { const [k, v] = w.split("="); kv[k] = +v; });
+    dp.trig = kv.TRIG;
+    dp.receiving = true;
+    return;
+  }
+  if (line.startsWith("DEEP END")) {
+    dp.receiving = false;
+    deepDone();
+    return;
+  }
   if (line.startsWith("STREAM END")) {   /* unsolicited, after the stream's last block */
     st.on = false;
     $("sStart").textContent = "Start";
@@ -490,6 +508,10 @@ const st = {
   t0: 0, lastT: 0, lastBytes: 0, lastSamples: 0, bps: 0, sps: 0,
 };
 function onBlock(m) {
+  if (dp.receiving) {
+    deepBlock(m);
+    return;
+  }
   const nch = m.chmask === 3 ? 2 : 1;
   const ns = m.payload.length / nch;
   if (st.next !== null && m.first > st.next) st.lost += m.first - st.next;
@@ -639,6 +661,139 @@ function streamCsv() {
   save(new Blob([out], { type: "text/csv" }), "probepen-stream.csv");
 }
 
+/* ---------- host app: deep record ---------- */
+const dp = { plan: null, mask: 3, a: null, b: null, got: 0, trig: -1, receiving: false, t0: 0, bytes: 0 };
+function deepStart() {
+  if (st.on) {
+    note("stop the stream first");
+    return;
+  }
+  const ch = +$("dCh").value, rate = +$("dRate").value;
+  send(`DEEP 0 ${ch} ${rate}`, (reply) => {
+    if (!reply.startsWith("OK")) {
+      note("the pen refused the deep record");
+      return;
+    }
+    const kv = {};
+    reply.split(/\s+/).slice(1).forEach((w) => { const [k, v] = w.split("="); kv[k] = +v; });
+    Object.assign(dp, { plan: kv, mask: ch, a: new Uint8Array(kv.N), b: new Uint8Array(kv.N), got: 0, trig: -1,
+      t0: performance.now(), bytes: 0 });
+    $("dStats").textContent = `recording ${kv.N.toLocaleString()} samples per channel (${eng(kv.SECONDS, "s")} of signal)…`;
+  });
+}
+function deepBlock(m) {
+  const nch = m.chmask === 3 ? 2 : 1;
+  const ns = m.payload.length / nch;
+  for (let i = 0; i < ns; i++) {
+    const k = m.first + i;
+    if (m.chmask === 3) {
+      dp.a[k] = m.payload[2 * i];
+      dp.b[k] = m.payload[2 * i + 1];
+    } else if (m.chmask === 1) {
+      dp.a[k] = m.payload[i];
+    } else {
+      dp.b[k] = m.payload[i];
+    }
+  }
+  dp.got += ns;
+  dp.bytes += m.total;
+}
+function deepDone() {
+  const n = dp.plan.N, nch = dp.mask === 3 ? 2 : 1;
+  const usbS = dp.bytes / (+$("sBudget").value || 1e6);   // what a real full-speed link would take
+  $("dStats").innerHTML = `${dp.got.toLocaleString()} of ${n.toLocaleString()} samples per channel · ` +
+    `${eng(n / dp.plan.RATE, "s")} at ${eng(dp.plan.RATE, "S/s")} · ${eng(dp.bytes, "B")} over USB ` +
+    `(about ${eng(usbS, "s")} on a ${eng(+$("sBudget").value, "B/s")} link) · ` +
+    (dp.trig >= 0 ? `trigger at sample ${dp.trig.toLocaleString()}` : `<span class="bad">no trigger in the record</span>`);
+  $("dCsv").disabled = false;
+  $("plotEmpty").style.display = "none";
+  note(`deep record: ${n.toLocaleString()} samples per channel, ${nch * n} bytes of samples`);
+  drawDeep();
+}
+function deepVolts(code, ch) {
+  return (code - dp.plan[ch ? "ZERO2" : "ZERO1"]) * dp.plan[ch ? "LSB2" : "LSB1"];
+}
+function drawDeep() {
+  if (!dp.plan || dp.got === 0) return;
+  const n = dp.plan.N;
+  let i0 = 0, i1 = n;
+  if ($("dView").value === "trig" && dp.trig >= 0) {
+    const half = 1500;
+    i0 = Math.max(0, dp.trig - half / 2);
+    i1 = Math.min(n, i0 + half * 1.5);
+  }
+  const cv = $("plot");
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = Math.round(w * dpr);
+  cv.height = Math.round(h * dpr);
+  const g = cv.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = "#07090d";
+  g.fillRect(0, 0, w, h);
+  const L = 52, R = 6, T = 8, B = 22, pw = w - L - R, ph = h - T - B;
+  const span = (dp.mask & 1 && dp.plan.LSB1 > 0.1) || (dp.mask & 2 && dp.plan.LSB2 > 0.1) ? 27.5 : 5.1;
+  g.strokeStyle = "#1c2330";
+  for (let i = 0; i <= 10; i++) { const x = L + (pw * i) / 10; g.beginPath(); g.moveTo(x, T); g.lineTo(x, T + ph); g.stroke(); }
+  for (let j = 0; j <= 8; j++) { const y = T + (ph * j) / 8; g.beginPath(); g.moveTo(L, y); g.lineTo(L + pw, y); g.stroke(); }
+  const y = (v) => T + ph / 2 - (v / span) * (ph / 2);
+  const m = i1 - i0, cols = Math.floor(pw);
+  const draw = (buf, ch, col) => {
+    g.strokeStyle = col;
+    g.lineWidth = 1.4;
+    g.globalAlpha = 0.85;
+    g.beginPath();
+    if (m <= cols) {
+      for (let i = 0; i < m; i++) {
+        const x = L + (pw * i) / Math.max(1, m - 1), yy = y(deepVolts(buf[i0 + i], ch));
+        i ? g.lineTo(x, yy) : g.moveTo(x, yy);
+      }
+    } else {
+      for (let c = 0; c < cols; c++) {
+        const a0 = i0 + Math.floor((c * m) / cols), a1 = Math.max(a0 + 1, i0 + Math.floor(((c + 1) * m) / cols));
+        let lo = 255, hi = 0;
+        for (let i = a0; i < a1; i++) { const v = buf[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+        g.moveTo(L + c + 0.5, y(deepVolts(hi, ch)));
+        g.lineTo(L + c + 0.5, y(deepVolts(lo, ch)) + 0.5);
+      }
+    }
+    g.stroke();
+    g.globalAlpha = 1;
+  };
+  if (dp.mask & 2) draw(dp.b, 1, "#3fc8e6");
+  if (dp.mask & 1) draw(dp.a, 0, "#ffd21f");
+  if (dp.trig >= i0 && dp.trig < i1) {
+    const x = L + (pw * (dp.trig - i0)) / Math.max(1, m - 1);
+    g.strokeStyle = "#ff7800";
+    g.setLineDash([4, 4]);
+    g.beginPath(); g.moveTo(x, T); g.lineTo(x, T + ph); g.stroke();
+    g.setLineDash([]);
+  }
+  g.fillStyle = "#8b93a3";
+  g.font = "11px system-ui, sans-serif";
+  g.textAlign = "right";
+  for (let j = 0; j <= 4; j++) { const v = span - (j * span) / 2; g.fillText(eng(v, "V", 2), L - 6, y(v) + 4); }
+  g.textAlign = "center";
+  const ref = dp.trig >= 0 ? dp.trig : 0;
+  for (let i = 0; i <= 10; i += 2) {
+    const k = i0 + (m * i) / 10;
+    g.fillText(eng((k - ref) / dp.plan.RATE, "s", 3), L + (pw * i) / 10, h - 6);
+  }
+}
+function deepCsv() {
+  if (!dp.plan) return;
+  const n = dp.plan.N;
+  let out = "t_s" + (dp.mask & 1 ? ",ch1_v" : "") + (dp.mask & 2 ? ",ch2_v" : "") + "\n";
+  const ref = dp.trig >= 0 ? dp.trig : 0;
+  for (let i = 0; i < n; i++) {
+    out += ((i - ref) / dp.plan.RATE).toExponential(6);
+    if (dp.mask & 1) out += "," + deepVolts(dp.a[i], 0).toFixed(4);
+    if (dp.mask & 2) out += "," + deepVolts(dp.b[i], 1).toFixed(4);
+    out += "\n";
+  }
+  save(new Blob([out], { type: "text/csv" }), "probepen-deep.csv");
+}
+
 /* ---------- host app: controls ---------- */
 let syncing = false;
 function buildHost() {
@@ -659,6 +814,9 @@ function buildHost() {
   $("hCap").addEventListener("click", capture);
   $("hCsv").addEventListener("click", downloadCsv);
   $("sStart").addEventListener("click", streamStart);
+  $("dGo").addEventListener("click", deepStart);
+  $("dCsv").addEventListener("click", deepCsv);
+  $("dView").addEventListener("change", drawDeep);
   $("sCsv").addEventListener("click", streamCsv);
   $("sBudget").addEventListener("change", (e) => ex && ex.sim_set_usb_budget(+e.target.value));
   $("cmdForm").addEventListener("submit", (e) => {

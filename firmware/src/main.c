@@ -40,11 +40,15 @@
 #define STREAM_RING_BITS 16u
 #define STREAM_RING_WORDS (1u << (STREAM_RING_BITS - 2u))
 
-static uint32_t g_words[STREAM_RING_WORDS] __attribute__((aligned(4u * STREAM_RING_WORDS)));   /* DMA rings */
+/* One buffer, used by whichever runs: the scope capture ring (first 16 KB), the stream ring (first 64 KB) or
+ * a deep record (all of it, DEEP_BYTES). Aligned for the 64 KB DMA ring. The LCD framebuffer is its last
+ * 63 KB: nothing is drawn while a deep record fills it, and the next frame is drawn from scratch. */
+static uint32_t g_words[DEEP_BYTES / 4u] __attribute__((aligned(4u * STREAM_RING_WORDS)));
+static uint16_t *const g_fb = (uint16_t *)((uint8_t *)g_words + DEEP_BYTES - 2u * LCD_PIXELS);
+_Static_assert(DEEP_BYTES - 2u * LCD_PIXELS >= 4u * STREAM_RING_WORDS, "framebuffer must not overlap the stream ring");
 static uint16_t g_ch_a[CAPTURE_MAX];
 static uint16_t g_ch_b[CAPTURE_MAX];
 static uint8_t g_nib[CAPTURE_MAX];
-static uint16_t g_fb[LCD_PIXELS];
 static uint8_t g_frame[7u + 2u * CAPTURE_MAX];
 static app_t g_app;
 static size_t g_n;       /* scope samples in g_ch_a / g_ch_b */
@@ -184,6 +188,9 @@ static bool g_capturing;
 static int g_adc_offset = -1;
 static int g_pod_offset = -1;
 static int g_cap_dma = -1;
+static int g_deep_dma_b = -1;
+static int g_lead_offset = -1;
+static int g_follow_offset = -1;
 static bool g_cap_logic;
 static size_t g_cap_words;
 
@@ -293,6 +300,9 @@ static void capture_init(void) {
     g_pod_offset = pio_add_program(pio1, &pod_capture_program);
     pod_capture_program_init(pio1, 0u, (uint)g_pod_offset, 2.0f);
     g_cap_dma = dma_claim_unused_channel(true);
+    g_deep_dma_b = dma_claim_unused_channel(true);
+    g_lead_offset = pio_add_program(pio0, &ad9288_byte_lead_program);
+    g_follow_offset = pio_add_program(pio0, &ad9288_byte_follow_program);
 
     /* ADC_CLK runs at up to 75 MHz: fast slew and more drive than the 4 mA default */
     gpio_set_slew_rate(PIN_ADC_CLK, GPIO_SLEW_RATE_FAST);
@@ -402,6 +412,87 @@ static void stream_poll(uint32_t now_ms) {
     }
 }
 
+/* ---- deep record (DEEP command) --------------------------------------------------------------- */
+
+#define DEEP_SM_LEAD   1u
+#define DEEP_SM_FOLLOW 2u
+
+static void deep_dma(uint ch, uint sm, uint8_t *dst, uint32_t words) {
+    dma_channel_config c = dma_channel_get_default_config(ch);
+    channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
+    channel_config_set_read_increment(&c, false);
+    channel_config_set_write_increment(&c, true);
+    channel_config_set_dreq(&c, pio_get_dreq(pio0, sm, false));
+    dma_channel_configure(ch, &c, dst, &pio0->rxf[sm], words, false);
+}
+
+/* Takes the record planned by app.c: the leader reads CH1 (or CH2 alone), the follower CH2. */
+static void deep_start(void) {
+    dma_channel_abort((uint)g_cap_dma);
+    pio_sm_set_enabled(pio0, 0u, false);
+    pio_sm_set_enabled(pio1, 0u, false);
+    g_capturing = false;
+    g_app.deep_busy = true;
+    gpio_put(PIN_CH1_GAIN_LO, g_app.range[0] == AFE_RANGE_10X);
+    gpio_put(PIN_CH2_GAIN_LO, g_app.range[1] == AFE_RANGE_10X);
+    uint8_t *buf = (uint8_t *)g_words;
+    uint32_t words = g_app.deep_n / 4u;
+    bool both = g_app.deep_mask == 3u;
+    pio_sm_config lead = ad9288_byte_lead_program_get_default_config((uint)g_lead_offset);
+    sm_config_set_sideset_pins(&lead, AD9288_CLK_PIN);
+    ad9288_byte_init(pio0, DEEP_SM_LEAD, (uint)g_lead_offset, lead, g_app.deep_mask == 2u ? 32u : 16u, g_app.deep_clkdiv);
+    pio_sm_clear_fifos(pio0, DEEP_SM_LEAD);
+    deep_dma((uint)g_cap_dma, DEEP_SM_LEAD, buf, words);
+    uint32_t mask = 1u << DEEP_SM_LEAD;
+    if (both) {
+        pio_sm_config fol = ad9288_byte_follow_program_get_default_config((uint)g_follow_offset);
+        ad9288_byte_init(pio0, DEEP_SM_FOLLOW, (uint)g_follow_offset, fol, 32u, g_app.deep_clkdiv);
+        pio_sm_clear_fifos(pio0, DEEP_SM_FOLLOW);
+        deep_dma((uint)g_deep_dma_b, DEEP_SM_FOLLOW, buf + g_app.deep_n, words);
+        mask |= 1u << DEEP_SM_FOLLOW;
+    }
+    dma_start_channel_mask((1u << (uint)g_cap_dma) | (both ? (1u << (uint)g_deep_dma_b) : 0u));
+    pio_enable_sm_mask_in_sync(pio0, mask);   /* same divider, same start cycle: the two stay in lockstep */
+}
+
+static void deep_emit(const uint8_t *block, size_t len, void *ctx) {
+    (void)ctx;
+    stdio_usb.out_chars((const char *)block, (int)len);
+}
+
+/* When the DMA is done: codes, trigger, then the record over USB. */
+static bool deep_poll(void) {
+    if (dma_channel_is_busy((uint)g_cap_dma) || dma_channel_is_busy((uint)g_deep_dma_b)) {
+        return false;
+    }
+    pio_set_sm_mask_enabled(pio0, (1u << DEEP_SM_LEAD) | (1u << DEEP_SM_FOLLOW), false);
+    uint8_t *buf = (uint8_t *)g_words;
+    uint32_t n = g_app.deep_n;
+    uint8_t *ch1 = (g_app.deep_mask & 1u) ? buf : NULL;
+    uint8_t *ch2 = (g_app.deep_mask == 3u) ? buf + n : ((g_app.deep_mask == 2u) ? buf : NULL);
+    if (ch1) {
+        deep_decode(ch1, n, true);     /* channel A's bus is bit-reversed on GPIO16..23 */
+    }
+    if (ch2) {
+        deep_decode(ch2, n, false);
+    }
+    const uint8_t *src = (g_app.trig_src & 1u) ? ch2 : ch1;
+    long trig = src ? deep_find_trigger(src, n, 1u, (uint8_t)g_app.trig_level, 3u, g_app.trig_slope == TRIG_FALLING) : -1;
+    printf("DEEP DATA N=%lu TRIG=%ld\n", (unsigned long)n, trig);
+    fflush(stdout);
+    stream_t s;
+    stream_plan(&s, g_app.deep_rate_hz, g_app.deep_mask, APP_ADC_MAX_HZ, 0u);
+    s.avg = 1u;
+    s.range_flags = (uint8_t)((g_app.range[0] == AFE_RANGE_10X ? STREAM_FLAG_CH1_10X : 0u) |
+                              (g_app.range[1] == AFE_RANGE_10X ? STREAM_FLAG_CH2_10X : 0u));
+    stream_push_codes(&s, ch1, ch2, n, deep_emit, NULL);
+    stream_flush(&s, deep_emit, NULL);
+    printf("DEEP END\n");
+    fflush(stdout);
+    g_app.deep_busy = false;
+    return true;
+}
+
 /* ---- calibration, one sector below the top of flash ------------------------------------------ */
 
 /* Not the last sector: for RP2350, picotool adds a UF2 block at 0x10FFFF00 (erratum E10 workaround),
@@ -492,6 +583,17 @@ int main(void) {
                 capture_start();
                 g_capturing = true;
             }
+        }
+        if (g_app.deep_req && !g_app.streaming) {
+            g_app.deep_req = false;
+            deep_start();
+        }
+        if (g_app.deep_busy) {
+            if (deep_poll()) {
+                capture_start();
+                g_capturing = true;
+            }
+            continue;
         }
         if (g_app.streaming) {
             stream_poll(now);

@@ -10,6 +10,7 @@
 
 #include "probepen_afe.h"
 #include "probepen_scope.h"
+#include "probepen_deep.h"
 #include "probepen_stream.h"
 
 #ifdef __cplusplus
@@ -94,6 +95,14 @@ typedef struct {
     stream_t stream_plan;       /* the plan of the running (or requested) stream */
     float stream_bps;           /* measured bytes per second on USB, from the main loop */
     uint32_t stream_lost;       /* lost-sample events so far */
+
+    /* deep record (DEEP command, see probepen_deep.h) */
+    bool deep_req;              /* the main loop takes the planned record, then sends it */
+    bool deep_busy;             /* set by the main loop while it captures and sends */
+    uint32_t deep_n;            /* samples per channel */
+    uint8_t deep_mask;
+    uint32_t deep_clkdiv;
+    float deep_rate_hz;
 } app_t;
 
 void app_init(app_t *app);

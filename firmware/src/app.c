@@ -490,6 +490,27 @@ size_t app_usb_command(app_t *app, const char *line, char *reply, size_t max_len
                              (double)l1, (double)z1, (double)l2, (double)z2);
             }
             break;
+        case USB_CMD_DEEP: {
+            uint32_t n, k;
+            float rate;
+            if (app->streaming || app->deep_busy ||
+                !deep_plan((uint32_t)cmd.arg_i, (uint8_t)cmd.arg_i2, cmd.arg_f, APP_ADC_MAX_HZ, &n, &k, &rate)) {
+                w = snprintf(reply, max_len, "ERR");
+                break;
+            }
+            float l1, z1, l2, z2;
+            app_stream_scale(app, 0, &l1, &z1);
+            app_stream_scale(app, 1, &l2, &z2);
+            app->deep_n = n;
+            app->deep_mask = (uint8_t)cmd.arg_i2;
+            app->deep_clkdiv = k;
+            app->deep_rate_hz = rate;
+            app->deep_req = true;
+            w = snprintf(reply, max_len, "OK N=%lu CH=%d RATE=%.1f DIV=%lu SECONDS=%.6f LSB1=%.5f ZERO1=%.2f LSB2=%.5f ZERO2=%.2f",
+                         (unsigned long)n, (int)cmd.arg_i2, (double)rate, (unsigned long)k, (double)n / (double)rate,
+                         (double)l1, (double)z1, (double)l2, (double)z2);
+            break;
+        }
         case USB_CMD_RUN:
             app->run = (cmd.arg_i != 0);
             w = snprintf(reply, max_len, "OK");
