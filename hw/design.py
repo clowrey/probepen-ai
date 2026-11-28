@@ -248,7 +248,8 @@ COMPONENTS: list[Comp] = [
 
     # ---- Analog Front End: Dual-Channel Single-Supply 2-Gain (CH1 & CH2) + 1.000 V Ref (afe) -
     # Nose 3-in-1 connector: WAGO 2060-453 SMD (default) + DNP KF250NH-3.81-3P + 14x2.8 mm F/B pads
-    C("J5", "wago_2060_3p", {"1": "CH1_TIP", "2": "AGND", "3": "CH2_TIP"}, block="afe"),
+    # DNP: JLC places the WAGO only with Standard assembly; it is hand-soldered (accessories.csv)
+    C("J5", "wago_2060_3p", {"1": "CH1_TIP", "2": "AGND", "3": "CH2_TIP"}, dnp=True, block="afe"),
 
     # Shared mid-scale reference REF_MID for the gain-stage pivots and the ADC ~AINx pins. It is
     # set equal to the dividers' resting voltage (tip at 0 V) so 0 V in sits at ADC mid-scale:

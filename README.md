@@ -32,7 +32,7 @@ local copy of the page (see [AI mode](#ai-mode)), since it needs an API key on y
 | **Front end** | Per channel: 940 kΩ (2 × 470 kΩ) with 1 pF into a 100 kΩ / 51 kΩ divider biased from the 3.000 V reference (rests at 0.978 V), BAV199 clamp, RS8752 buffer, RS8752 inverting gain stage pivoting on REF_MID (0.978 V), 74LVC2G66 gain switch. High range about ±5 V, low range about ±26 V |
 | **References and supplies** | REF3030 (3.000 V), two RT9013-33 LDOs (`+3V3_DIG`, and `+3V3_ANA` behind a 600 Ω ferrite); the analog ground island joins digital ground at one 0 Ω link (R16) |
 | **Logic pod** | 6-pin JST-SH side connector on GPIO0..3 (the 5 V tolerant pins), PTC-fused 3.3 V out, SRV05-4 ESD |
-| **Display and buttons** | 13-pin 0.7 mm LCD flex soldered to pads on the bottom side (SPI1), AO3401A backlight switch; four side-actuated buttons (ASK, MODE/BOOTSEL, UP, DOWN); two front white work-light LEDs |
+| **Display and buttons** | 1.14" 135 × 240 ST7789V IPS LCD (Wisevision N114-2413THBIG01-H13, LCSC C2890618), its 13-pin 0.7 mm flex soldered to pads on the bottom side (SPI1), AO3401A backlight switch; four side-actuated buttons (ASK, MODE/BOOTSEL, UP, DOWN); two front white work-light LEDs |
 | **Board** | 132 × 17.6 mm, tapered to 14 mm at the nose, 4 layers (JLC04161H-7628), 1.6 mm, single-sided assembly on the top |
 | **Case** | Two-piece build123d pen shell, 136 × 21.5 × 12.2 mm; screws self-tap into the plastic (no inserts) |
 
@@ -268,7 +268,7 @@ are not referenced to the USB host's ground.
 |---|---|---|
 | `J1` | USB-C (HRO TYPE-C-31-M-12) | power, USB full speed, 5.1 kΩ CC pull-downs |
 | `J3` | JST-SH 6-pin, side | logic pod: 1 GND, 2 fused 3.3 V, 3..6 POD_CH0..3 |
-| `J4` | LCD flex pads, 13-pin 0.7 mm, bottom side | IPS panel on SPI1 (CS, RST, DC, SCK, MOSI, backlight) |
+| `J4` | LCD flex pads, 13-pin 0.7 mm, bottom side | N114-2413THBIG01-H13 IPS panel on SPI1 (CS, RST, DC, SCK, MOSI, backlight) |
 | `J5` | WAGO 2060 3-pole, nose | CH1, AGND, CH2 |
 
 Test pads: `TP_5V`, `TP_3V3D`, `TP_3V3A`, `TP_3V0R`, `TP_1V1`, `TP_GND1`, `TP_GND2`, `TP_AGND`,
@@ -382,9 +382,17 @@ uploaded and taken through to the quote, but not ordered. The board was 138 mm l
 | **Total** | **about $269 after a $6 coupon, about $8.96 per board** |
 
 - **Not in the assembled price:** the AD9288 and the LCD (hand-soldered; see below for where to buy
-  the AD9288), and the WAGO 2060 terminal. JLC places the WAGO only with Standard assembly, which costs
-  $25 more per side and adds 5 mm edge rails. It is a large-pad SMD part that is easy to hand-solder;
-  LCSC C2765056 costs about $0.43.
+  the AD9288), and the WAGO 2060 terminal (`J5`, marked DNP). JLC places the WAGO only with Standard
+  assembly, which costs $25 more per side and adds 5 mm edge rails. It is a large-pad SMD part that is
+  easy to hand-solder; LCSC C2765056 costs about $0.43.
+- **The LCD** is the Wisevision (Newvisio) N114-2413THBIG01-H13, LCSC/JLC C2890618: 1.14", 135 × 240,
+  ST7789V, 17.6 × 31.0 × 1.6 mm, a 15.85 mm flex with 13 contacts at 0.7 mm. Its pin table is the one
+  `J4` uses (1–2 NC, 3 SDA, 4 SCL, 5 RS, 6 RESET, 7 CS, 8 GND, 9 NC, 10 VDD, 11 LEDK, 12 LEDA, 13 GND),
+  and seen from the glass with the flex pointing down, pin 1 is on the right, as on the board. The
+  contacts are exposed on the back of the flex, the side that lies on the pads. VDD is 2.4–3.3 V; the
+  backlight LED is 3.0 V at up to 20 mA, about 11 mA here through R48 (27 Ω). JLC lists it as
+  "Standard assembly only", so it is hand-soldered like the AD9288. Other 13-pin panels number their
+  pins differently: check the pin table before using another one.
 - **Part orientation was checked in JLC's placement viewer.** Pin 1 of each part was compared with
   the footprint's pad 1 and silkscreen marker. Five package types were wrong in the first placement
   file and are corrected in `hw/parts.py` (`rotation`):

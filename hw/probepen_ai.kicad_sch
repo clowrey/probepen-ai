@@ -7971,7 +7971,7 @@
 	(wire (pts (xy 49.53 458.47) (xy 46.99 458.47)) (stroke (width 0) (type default)) (uuid "894a656c-9c6b-5f72-a99b-2f2167de2f8f"))
 	(label "GND" (at 46.99 458.47 180) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "3420101b-a311-51a7-9165-484db1d6354b"))
 	(symbol (lib_id "Connector_Generic:Conn_01x03") (at 579.12 83.82 0) (unit 1)
-		(exclude_from_sim no) (in_bom yes) (on_board yes) (in_pos_files yes) (dnp no)
+		(exclude_from_sim no) (in_bom no) (on_board yes) (in_pos_files no) (dnp yes)
 		(uuid "ac2ae12a-6183-5b04-bb32-6231a8c1b56e")
 		(property "Reference" "J5" (at 579.12 78.74 0) (effects (font (size 1.27 1.27))))
 		(property "Value" "2060-453/998-404" (at 579.12 88.9 0) (effects (font (size 1.27 1.27))))

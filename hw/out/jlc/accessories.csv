@@ -1,6 +1,7 @@
 Item,Spec,Qty per board,Notes
-IPS Display,0.96in/1.14in 13P solder-on IPS LCD,1,Solders flat onto B.Cu J4 landing pads
-Probe Leads,"18-24 AWG test leads into the WAGO 2060 nose terminal, or probes soldered to the J5 pads",1,The WAGO terminal itself is in the assembled BOM
+IPS Display,"Wisevision (Newvisio) N114-2413THBIG01-H13, 1.14in 135x240 ST7789V, 13P 0.7 mm solder FPC (LCSC/JLC C2890618)",1,"Glass out, flex flat onto the B.Cu J4 pads: its pin table and pin-1 side match J4; checked against the datasheet drawing and the LCSC photos (contacts exposed on the back of the flex)"
+Nose Terminal,WAGO 2060-453/998-404 3-pole SMD (LCSC C2765056),1,DNP J5 on F.Cu; hand-soldered by user (JLC places it only with Standard assembly)
+Probe Leads,"18-24 AWG test leads into the WAGO 2060 nose terminal, or probes soldered to the J5 pads",1,
 Logic Pod Cable,JST-SH 6P SHR-06V-S-B + micro-grabber harness,1,Plugs into J3 (HC-SH1.0-6PWT)
 Dual 8-bit ADC,AD9288BSTZ-80 / MXT2088 LQFP-48,1,DNP on F.Cu U2; hand-soldered by user
 Front Worklight LEDs,XINGLIGHT XL-3806UWC side-view white LED,2,DNP on B.Cu nose tip LED1/LED2; hand-soldered by user
