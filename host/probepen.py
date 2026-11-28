@@ -11,7 +11,14 @@
                                                   # writes the samples to OUT (.csv volts, else raw .bin)
     python host/probepen.py PORT deep [N] [CH] [RATE] [OUT]
                                                   # one long record (N 0 = as long as fits: 196 k samples per
-                                                  # channel, 393 k for one) at RATE (default 75 MS/s); CSV volts
+                                                  # channel, 393 k for one) at RATE (default the fastest); CSV volts
+    python host/probepen.py PORT decode uart SRC BAUD [SECONDS]
+    python host/probepen.py PORT decode can SRC RATE [DATA_RATE] [SECONDS]
+                                                  # the pen decodes the bus and sends text: SRC 1 = CH1, 2 = CH2,
+                                                  # 3 = CH1 - CH2 (CAN_H - CAN_L); prints each line or frame
+    python host/probepen.py PORT watch [N] [COUNT] [OUT.jsonl]
+                                                  # continuous captures, one after another: prints each one's
+                                                  # measurements and appends {time, meas, ch1, ch2} to OUT
 
 PORT is e.g. /dev/ttyACM0 or COM7. Uses pyserial when it is installed; on Linux it also works without it.
 
@@ -26,6 +33,11 @@ interleaved when both are on; flags bit0 = samples lost before this block (firmw
 `DEEP n [ch] [rate]` replies `OK N=.. CH=.. RATE=.. DIV=.. SECONDS=.. LSB1=.. ZERO1=.. LSB2=.. ZERO2=..`, takes
 the record, then sends `DEEP DATA N=.. TRIG=..`, the record as the same blocks, and `DEEP END`
 (firmware/include/probepen_deep.h).
+`DECODE UART src baud` / `DECODE CAN src rate [data_rate]` replies `OK PROTO=.. SRC=.. RATE=.. DATA=.. FS=.. DIV=..
+SPB=.. MODE=LIVE|BURST COVER=.. BURSTN=..`, then sends one line per UART line or CAN frame until `DECODE 0` (or a
+button), which ends with `DECODE END ...` (firmware/include/probepen_decode.h):
+  DEC UART T=<s> BYTES=n FE=<framing errors> HEX=<bytes>
+  DEC CAN T=<s> ID=<hex> EXT= FD= BRS= ESI= RTR= DLC= LEN= ACK= ERR=NONE|STUFF|CRC|SC|FORM HEX=<data>
 """
 from __future__ import annotations
 
@@ -278,7 +290,7 @@ class ProbePen:
             "device_end": end_line,
         }
 
-    def deep(self, n: int = 0, chmask: int = 3, rate: float = 75e6, timeout: float = 600.0) -> dict:
+    def deep(self, n: int = 0, chmask: int = 3, rate: float = 0.0, timeout: float = 600.0) -> dict:
         """One deep record: returns the plan, the trigger index and the samples in volts per channel."""
         reply = self.command(f"DEEP {n} {chmask} {rate:g}")
         if not reply.startswith("OK"):
@@ -308,6 +320,38 @@ class ProbePen:
             out[f"CH{c + 1}"] = [(b - zero) * lsb for b in payload[k::len(chans)]]
         return out
 
+    def decode(self, proto: str, src: int, rate: float, data_rate: float = 0.0, seconds: float = 10.0):
+        """Starts a decode and yields each decoded record (parse_decoded) for `seconds`, then stops it."""
+        proto = proto.upper()
+        extra = f" {data_rate:g}" if proto == "CAN" and data_rate else ""
+        reply = self.command(f"DECODE {proto} {src} {rate:g}{extra}")
+        if not reply.startswith("OK"):
+            raise RuntimeError(reply)
+        yield {"plan": parse_kv(reply)}
+        t0 = time.monotonic()
+        stopped = False
+        while True:
+            if not stopped and time.monotonic() - t0 >= seconds:
+                self.port.write(b"DECODE 0\n")
+                stopped = True
+            try:
+                line = self.readline(timeout=0.2)
+            except TimeoutError:
+                if stopped and time.monotonic() - t0 > seconds + 3.0:
+                    return
+                continue
+            if line.startswith("DEC "):
+                yield parse_decoded(line)
+            elif line.startswith("DECODE END"):
+                yield {"end": parse_kv(line)}
+                return
+
+    def watch(self, n: int = 1024):
+        """Continuous captures: yields (measurements, ch1, ch2) for each capture, one straight after another."""
+        while True:
+            a, b = self.capture(n)
+            yield parse_meas(self.command("MEAS?")), a, b
+
     def wait_ask(self):
         """Yields (measurements, ch1, ch2) each time the ASK button is held."""
         while True:
@@ -319,6 +363,20 @@ class ProbePen:
                 meas = parse_meas(line[4:])
                 frames = dict(self.read_frame() for _ in range(2))
                 yield meas, frames[0], frames[1]
+
+
+def parse_decoded(line: str) -> dict:
+    """A `DEC UART ...` or `DEC CAN ...` line as a dict, with the payload as bytes and as text."""
+    words = line.split()
+    out: dict = {"proto": words[1]}
+    for w in words[2:]:
+        k, _, v = w.partition("=")
+        out[k.lower()] = v
+    data = bytes.fromhex(out.pop("hex", ""))
+    out["data"] = data
+    out["text"] = "".join(chr(c) if 32 <= c < 127 or c == 10 else ("" if c == 13 else ".") for c in data)
+    out["t"] = float(out["t"])
+    return out
 
 
 def snapshot(meas: dict, ch1: list[int], ch2: list[int]) -> dict:
@@ -378,7 +436,7 @@ def main(argv: list[str]) -> None:
     elif cmd == "deep":
         n = int(argv[3]) if len(argv) > 3 else 0
         chmask = int(argv[4]) if len(argv) > 4 else 3
-        rate = float(argv[5]) if len(argv) > 5 else 75e6
+        rate = float(argv[5]) if len(argv) > 5 else 0.0
         rec = pen.deep(n, chmask, rate)
         names = [k for k in ("CH1", "CH2") if k in rec]
         count = len(rec[names[0]])
@@ -389,6 +447,39 @@ def main(argv: list[str]) -> None:
                 f.write("t_s," + ",".join(n.lower() + "_v" for n in names) + "\n")
                 for i in range(count):
                     f.write(f"{i / rec['plan']['RATE']:.9e}," + ",".join(f"{rec[n][i]:.4f}" for n in names) + "\n")
+    elif cmd == "decode":
+        proto = argv[3].upper() if len(argv) > 3 else "UART"
+        src = int(argv[4]) if len(argv) > 4 else 1
+        rate = float(argv[5]) if len(argv) > 5 else (115200.0 if proto == "UART" else 500e3)
+        data_rate = float(argv[6]) if proto == "CAN" and len(argv) > 6 else 0.0
+        seconds = float(argv[7 if proto == "CAN" else 6]) if len(argv) > (7 if proto == "CAN" else 6) else 10.0
+        for rec in pen.decode(proto, src, rate, data_rate, seconds):
+            if "plan" in rec:
+                p = rec["plan"]
+                print(f"# {p['MODE'].lower()} at {p['FS']:g} S/s ({p['SPB']} samples per bit), "
+                      f"{p['COVER'] * 100:.0f} % of the time seen")
+            elif "end" in rec:
+                print("#", rec["end"])
+            elif rec["proto"] == "UART":
+                fe = f"  [{rec['fe']} framing errors]" if rec["fe"] != "0" else ""
+                print(f"{rec['t']:12.6f}  {rec['text'].rstrip(chr(10))}{fe}")
+            else:
+                status = "" if rec["err"] == "NONE" else f"  [{rec['err']} error]"
+                kind = ("FD" if rec["fd"] == "1" else "CAN") + (" BRS" if rec["brs"] == "1" else "")
+                print(f"{rec['t']:12.6f}  {rec['id']:>8s} {kind:6s} [{rec['len']}] {rec['text']}{status}")
+    elif cmd == "watch":
+        import json
+        n = int(argv[3]) if len(argv) > 3 else 1024
+        count = int(argv[4]) if len(argv) > 4 else 0
+        out = open(argv[5], "a", encoding="utf8") if len(argv) > 5 else None
+        for k, (meas, a, b) in enumerate(pen.watch(n), 1):
+            ch = [meas.get(c, {}) for c in ("CH1", "CH2")]
+            print(f"{k:5d}  " + "  ".join(f"{c}: {m.get('VPP', 0):.3f} Vpp {m.get('F', 0):.6g} Hz RMS {m.get('VRMS', 0):.3f}"
+                                         for c, m in zip(("CH1", "CH2"), ch)))
+            if out:
+                out.write(json.dumps({"time": time.time(), "meas": meas, "ch1": a, "ch2": b}) + "\n")
+            if count and k >= count:
+                break
     elif cmd == "send":
         print(pen.command(" ".join(argv[3:])))
     else:

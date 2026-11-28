@@ -28,6 +28,10 @@ class ScopeMeas(ctypes.Structure):
         ("freq_hz", ctypes.c_float),
         ("trigger_idx", ctypes.c_size_t),
         ("triggered", ctypes.c_bool),
+        ("vrms_ac", ctypes.c_float),
+        ("t_high_s", ctypes.c_float),
+        ("t_low_s", ctypes.c_float),
+        ("duty", ctypes.c_float),
     ]
 
 
@@ -38,6 +42,7 @@ class UsbCmd(ctypes.Structure):
         ("arg_f", ctypes.c_float),
         ("valid", ctypes.c_bool),
         ("arg_i2", ctypes.c_int32),
+        ("arg_f2", ctypes.c_float),
     ]
 
 

@@ -47,7 +47,7 @@ uint16_t usb_crc16_ccitt(const uint8_t *data, size_t len) {
 }
 
 usb_cmd_t usb_parse_command(const char *line) {
-    usb_cmd_t cmd = {USB_CMD_UNKNOWN, 0, 0.0f, false, 0};
+    usb_cmd_t cmd = {USB_CMD_UNKNOWN, 0, 0.0f, false, 0, 0.0f};
     if (!line) {
         return cmd;
     }
@@ -94,7 +94,7 @@ usb_cmd_t usb_parse_command(const char *line) {
         cmd.kind = USB_CMD_DEEP;
         cmd.arg_i = (int32_t)strtol(arg, &end, 10);     /* samples per channel, 0 = the most that fits */
         cmd.arg_i2 = 3;                                 /* channel mask */
-        cmd.arg_f = 75e6f;                              /* sample rate */
+        cmd.arg_f = 0.0f;                               /* sample rate, 0 = the fastest */
         if (end && *end != '\0') {
             char *e2 = NULL;
             cmd.arg_i2 = (int32_t)strtol(end, &e2, 10);
@@ -102,7 +102,7 @@ usb_cmd_t usb_parse_command(const char *line) {
                 cmd.arg_f = strtof(e2, NULL);
             }
         }
-        cmd.valid = cmd.arg_i >= 0 && cmd.arg_i2 >= 1 && cmd.arg_i2 <= 3 && cmd.arg_f > 0.0f;
+        cmd.valid = cmd.arg_i >= 0 && cmd.arg_i2 >= 1 && cmd.arg_i2 <= 3 && cmd.arg_f >= 0.0f;
     } else if (match_prefix_ci(line, "STREAM", &arg) && *arg != '\0') {
         char *end = NULL;
         cmd.kind = USB_CMD_STREAM;
@@ -112,6 +112,20 @@ usb_cmd_t usb_parse_command(const char *line) {
             cmd.arg_i = (int32_t)strtol(end, NULL, 10);
         }
         cmd.valid = end != arg && cmd.arg_f >= 0.0f && cmd.arg_i >= 1 && cmd.arg_i <= 3;
+    } else if (match_prefix_ci(line, "DECODE", &arg) && *arg != '\0') {
+        const char *rest = NULL;
+        cmd.kind = USB_CMD_DECODE;
+        if (match_prefix_ci(arg, "UART", &rest) || match_prefix_ci(arg, "CAN", &rest)) {
+            char *end = NULL;
+            cmd.arg_i = (ascii_upper(arg[0]) == 'U') ? 1 : 2;
+            cmd.arg_i2 = (int32_t)strtol(rest, &end, 10);
+            cmd.arg_f = (end && end != rest) ? strtof(end, &end) : 0.0f;
+            cmd.arg_f2 = (end && *end != '\0') ? strtof(end, NULL) : 0.0f;
+            cmd.valid = cmd.arg_i2 >= 1 && cmd.arg_i2 <= 3 && cmd.arg_f > 0.0f && cmd.arg_f2 >= 0.0f;
+        } else if (match_prefix_ci(arg, "0", &rest) || match_prefix_ci(arg, "STOP", &rest)) {
+            cmd.arg_i = 0;
+            cmd.valid = true;
+        }
     } else if (match_prefix_ci(line, "RUN", &arg) && *arg != '\0') {
         cmd.kind = USB_CMD_RUN;
         cmd.arg_i = (int32_t)strtol(arg, NULL, 10);

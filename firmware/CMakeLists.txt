@@ -21,6 +21,10 @@ project(probepen_ai C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+# System clock in MHz: 150 is the RP2354B's rating; 250 overclocks it and, at two PIO cycles per sample,
+# the AD9288 to 125 MS/s (rated 80). Every rate in the firmware follows from it (probepen_clock.h).
+set(PROBEPEN_SYS_MHZ 150 CACHE STRING "System clock, MHz (150 stock, 250 overclocked)")
+
 add_library(probepen_core STATIC
     src/afe_cal.c
     src/scope_capture.c
@@ -31,8 +35,10 @@ add_library(probepen_core STATIC
     src/usb_proto.c
     src/stream.c
     src/deep.c
+    src/decode.c
 )
 target_include_directories(probepen_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_definitions(probepen_core PUBLIC PROBEPEN_SYS_MHZ=${PROBEPEN_SYS_MHZ})
 target_compile_options(probepen_core PRIVATE -Wall -Wextra -Werror)
 
 if(COMMAND pico_sdk_init)
@@ -50,6 +56,8 @@ if(COMMAND pico_sdk_init)
         hardware_adc
         hardware_flash
         hardware_sync
+        hardware_vreg
+        hardware_clocks
     )
     # USB serial transmit: TinyUSB's default is a 64-byte buffer (one packet per write). Larger buffers let
     # one write carry many packets, which streaming needs.

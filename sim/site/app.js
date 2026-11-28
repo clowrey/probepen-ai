@@ -16,6 +16,9 @@ const BTN = ["ASK", "MODE", "UP", "DOWN"];
 const KEYS = { a: 0, m: 1, ArrowUp: 2, ArrowDown: 3 };
 
 const $ = (id) => document.getElementById(id);
+/* the firmware build: 150 MHz (stock, ADC to 75 MS/s) or 250 MHz (overclocked, ADC to 125 MS/s), from ?mhz= */
+const MHZ = new URLSearchParams(location.search).get("mhz") === "250" ? 250 : 150;
+const ADC_MAX = (MHZ * 1e6) / 2;
 let ex = null;            // wasm exports
 let buttons = 0;          // bitmask from the side buttons and the keyboard
 const held = new Map();   // pointerId -> button
@@ -43,7 +46,7 @@ const tbLabel = (ns) => eng(ns * 1e-9, "s") + "/div";
 async function loadWasm() {
   const stub = new Proxy({}, { get: () => () => 0 });   // WASI calls the firmware never makes
   const imports = { wasi_snapshot_preview1: stub, env: stub };
-  const resp = await fetch("probepen.wasm");
+  const resp = await fetch(MHZ === 150 ? "probepen.wasm" : `probepen-${MHZ}.wasm`);
   let inst;
   if (WebAssembly.instantiateStreaming) {
     try {
@@ -158,8 +161,8 @@ function buildPad() {
 
 /* ---------- probe inputs ---------- */
 const sig = [
-  { kind: 2, vpp: 3, offset: 0, freq: 50e3, duty: 0.5, noise: 0.01 },
-  { kind: 3, vpp: 3.3, offset: 1.65, freq: 25e3, duty: 0.5, noise: 0.005 },
+  { kind: 2, vpp: 3, offset: 0, freq: 50e3, duty: 0.5, noise: 0.01, rate2: 2e6 },
+  { kind: 3, vpp: 3.3, offset: 1.65, freq: 25e3, duty: 0.5, noise: 0.005, rate2: 2e6 },
 ];
 const pod = { kind: 0, freq: 1e6 };
 const PRESETS = [
@@ -169,12 +172,19 @@ const PRESETS = [
     cmds: ["MODE 0", "GAIN 0", "TB 6", "TRIG 140", "RUN 1"],
   },
   {
-    name: "UART 115200", note: "CH1: 3.3 V serial line sending \"ProbePen-AI\\r\\n\" at 115200 baud, 8N1. Falling-edge trigger on the start bit (hold MODE to change slope).",
+    name: "UART 115200", note: "CH1: 3.3 V serial line sending \"Hello world 0000\\r\\n\" (the number counts up) at 115200 baud, 8N1. Press Start under Decode: the pen decodes every byte live at 926 kS/s and prints the text, on its screen and below.",
     sig: [{ kind: 7, vpp: 3.3, offset: 0, freq: 115200, noise: 0.01 }, { kind: 0 }],
     cmds: ["MODE 1", "GAIN 1", "TB 8", "TRIG 150", "RUN 1"],
+    dec: { proto: "UART", src: 1, rate: "115200" },
   },
   {
-    name: "12 V PWM", note: "CH1: 12 V, 20 kHz, 30 % duty motor PWM. Auto-range moves CH1 to the ±26 V range (214 mV per step).",
+    name: "UART 1 Mbaud", note: "CH1: the same text at 1 Mbaud. Decoding needs 8 samples per bit, 8.3 MS/s: still live, every byte.",
+    sig: [{ kind: 7, vpp: 3.3, offset: 0, freq: 1e6, noise: 0.01 }, { kind: 0 }],
+    cmds: ["MODE 1", "GAIN 1", "TB 5", "TRIG 150", "RUN 1"],
+    dec: { proto: "UART", src: 1, rate: "1M" },
+  },
+  {
+    name: "12 V PWM", note: "CH1: 12 V, 20 kHz, 30 % duty motor PWM. Auto-range moves CH1 to the ±26 V range (214 mV per step). Press MODE until METER: DC level, AC RMS, and the pulse widths (+W 15 µs, −W 35 µs, duty 30 %).",
     sig: [{ kind: 6, vpp: 12, offset: 0, freq: 20e3, duty: 0.3, noise: 0.03 }, { kind: 0 }],
     cmds: ["MODE 1", "GAIN 0", "TB 7", "TRIG 150", "RUN 1"],
   },
@@ -194,14 +204,27 @@ const PRESETS = [
     cmds: ["MODE 1", "GAIN 0", "TB 11", "TRIG 128", "RUN 1"],
   },
   {
-    name: "12 V rail (meter)", note: "CH1: 12 V supply with 0.2 V of 100 Hz ripple, CH2: 3.3 V. METER mode reads the DC-sense ADC (12-bit) and VBUS.",
+    name: "12 V rail (meter)", note: "CH1: 12 V supply with 0.2 V of 100 Hz ripple, CH2: 3.3 V. METER mode shows each channel's DC level from the 12-bit DC-sense ADC, and from the scope capture its AC RMS (the ripple: about 71 mV), peak to peak, frequency and pulse widths. UP lengthens the window: a whole 100 Hz period needs 20 ms/div or more.",
     sig: [{ kind: 2, vpp: 0.2, offset: 12, freq: 100, noise: 0.02 }, { kind: 1, offset: 3.3, noise: 0.005 }],
-    cmds: ["MODE 4", "GAIN 0", "RUN 1"],
+    cmds: ["MODE 4", "GAIN 0", "TB 15", "RUN 1"],
   },
   {
-    name: "CAN FD 500k / 2M", note: "CH1 = CAN_H, CH2 = CAN_L: a 64-byte CAN FD frame every 1 ms, arbitration at 500 kbit/s and the data phase at 2 Mbit/s (pseudo-random bits). The screen catches a slice; press Record under Deep record (75 MS/s) to get whole frames: 196 k samples per channel, 2.6 ms, 37 samples per data bit.",
-    sig: [{ kind: 9, freq: 500e3, noise: 0.02 }, { kind: 10, freq: 500e3, noise: 0.02 }],
+    name: "CAN FD 500k / 2M", note: "CH1 = CAN_H, CH2 = CAN_L: a CAN FD frame every 1 ms, ID 123, \"Hello world 0000\" (16 bytes), arbitration at 500 kbit/s and the data phase at 2 Mbit/s, fully encoded (stuffing, CRC-17). Decode CH1 − CH2: 18.75 MS/s is beyond live decoding, so the pen takes bursts of 164 k samples (8.7 ms) and decodes each; about 44 % of frames are caught.",
+    sig: [{ kind: 9, freq: 500e3, rate2: 2e6, noise: 0.02 }, { kind: 10, freq: 500e3, rate2: 2e6, noise: 0.02 }],
     cmds: ["MODE 0", "GAIN 1", "TB 4", "TRIG 204", "RUN 1"],
+    dec: { proto: "CAN", src: 3, rate: "500k", data: "2M" },
+  },
+  {
+    name: "CAN FD 1M / 5M", note: "The same frames with arbitration at 1 Mbit/s and data at 5 Mbit/s. Decoding samples at 25 MS/s (5 per data bit) in bursts.",
+    sig: [{ kind: 9, freq: 1e6, rate2: 5e6, noise: 0.02 }, { kind: 10, freq: 1e6, rate2: 5e6, noise: 0.02 }],
+    cmds: ["MODE 0", "GAIN 1", "TB 3", "TRIG 204", "RUN 1"],
+    dec: { proto: "CAN", src: 3, rate: "1M", data: "5M" },
+  },
+  {
+    name: "CAN FD 500k, no BRS", note: "CAN FD frames without bit-rate switching: the whole frame at 500 kbit/s. 4.2 MS/s is decoded live: every frame.",
+    sig: [{ kind: 9, freq: 500e3, rate2: 500e3, noise: 0.02 }, { kind: 10, freq: 500e3, rate2: 500e3, noise: 0.02 }],
+    cmds: ["MODE 0", "GAIN 1", "TB 5", "TRIG 204", "RUN 1"],
+    dec: { proto: "CAN", src: 3, rate: "500k", data: "500k" },
   },
   {
     name: "SPI on the pod", note: "Logic pod: CS, SCK, MOSI and MISO of a 1 MHz SPI bus. LOGIC mode samples all four lines at the scope's rate.",
@@ -215,7 +238,10 @@ const PRESETS = [
 
 function applySignals() {
   if (!ex) return;
-  sig.forEach((s, ch) => ex.sim_set_signal(ch, s.kind, s.vpp, s.offset, s.freq, s.duty, s.noise));
+  sig.forEach((s, ch) => {
+    ex.sim_set_signal(ch, s.kind, s.vpp, s.offset, s.freq, s.duty, s.noise);
+    ex.sim_set_bitrate(ch, s.rate2 || 0);
+  });
   ex.sim_set_pod(pod.kind, pod.freq);
 }
 function buildChannels() {
@@ -229,6 +255,7 @@ function buildChannels() {
       <label data-row="vpp"><span data-l="vpp">Peak to peak</span><input data-k="vpp" inputmode="decimal"></label>
       <label data-row="offset"><span data-l="offset">Offset</span><input data-k="offset" inputmode="decimal"></label>
       <label data-row="freq"><span data-l="freq">Frequency</span><input data-k="freq" inputmode="decimal"></label>
+      <label data-row="rate2">Data rate<input data-k="rate2" inputmode="decimal"></label>
       <label data-row="duty">Duty %<input data-k="duty" inputmode="decimal"></label>
       <label data-row="noise">Noise rms<input data-k="noise" inputmode="decimal"></label>`;
     box.appendChild(fs);
@@ -240,9 +267,10 @@ function buildChannels() {
       field("freq").value = s.kind === 7 ? `${eng(s.freq, "").trim()} baud` : s.kind >= 9 ? eng(s.freq, "bit/s") : eng(s.freq, "Hz");
       field("duty").value = `${+(s.duty * 100).toPrecision(3)}`;
       field("noise").value = eng(s.noise, "V");
+      field("rate2").value = eng(s.rate2 || 4 * s.freq, "bit/s");
       const k = s.kind;
       const can = k >= 9;
-      const show = { vpp: k >= 2 && !can, offset: k >= 1 && !can, freq: k >= 2, duty: k === 6, noise: k >= 1 };
+      const show = { vpp: k >= 2 && !can, offset: k >= 1 && !can, freq: k >= 2, rate2: can, duty: k === 6, noise: k >= 1 };
       for (const r of Object.keys(show)) fs.querySelector(`[data-row="${r}"]`).style.display = show[r] ? "" : "none";
       fs.querySelector('[data-l="vpp"]').textContent = k === 6 || k === 7 ? "High − low" : "Peak to peak";
       fs.querySelector('[data-l="offset"]').textContent = k === 1 ? "Level" : k === 6 || k === 7 ? "Low level" : "Offset";
@@ -257,7 +285,7 @@ function buildChannels() {
       else {
         let v = parseSI(e.target.value);
         if (k === "duty") v /= 100;
-        if (isFinite(v)) s[k] = k === "freq" ? Math.max(0.01, v) : v;
+        if (isFinite(v)) s[k] = k === "freq" ? Math.max(0.01, v) : k === "rate2" ? Math.max(s.freq, v) : v;
       }
       refresh();
       applySignals();
@@ -288,7 +316,8 @@ function buildPresets() {
 }
 function applyPreset(i) {
   const p = PRESETS[i];
-  (p.sig || []).forEach((s, ch) => Object.assign(sig[ch], { vpp: 0, offset: 0, freq: 1e3, duty: 0.5, noise: 0 }, s));
+  (p.sig || []).forEach((s, ch) => Object.assign(sig[ch], { vpp: 0, offset: 0, freq: 1e3, duty: 0.5, noise: 0, rate2: 0 }, s));
+  if (p.dec) setDecodeControls(p.dec);
   if (p.pod) {
     Object.assign(pod, p.pod);
     $("podKind").value = pod.kind;
@@ -307,12 +336,30 @@ function updateNow() {
   const scope = s.mode !== "LOGIC" && s.mode !== "METER";
   const rng = (r) => (r ? "±26 V (214 mV/step)" : "±5 V (39 mV/step)");
   const trigV = (s.trig_level - 128) * LSB[s.range[s.trig_src]];
+  decodeStats(s);
+  if (s.decoding) {
+    const src = ["", "CH1", "CH2", "CH1 − CH2"][s.dec_src];
+    const proto = s.dec_proto === 1 ? `UART 8N1, ${eng(s.dec_rate, "").trim()} baud`
+      : `CAN${s.dec_data > s.dec_rate ? " FD" : ""}, ${eng(s.dec_rate, "bit/s")}${s.dec_data > s.dec_rate ? ` / ${eng(s.dec_data, "bit/s")} data` : ""}`;
+    $("now").innerHTML = [
+      ["Mode", `Decoding ${proto} from ${src}`],
+      ["Samples", `${eng(s.dec_fs, "S/s")} (${eng(s.adc_max, "Hz")} ÷ ${s.dec_div}), ${s.dec_spb.toFixed(1)} per ${s.dec_proto === 2 && s.dec_data > s.dec_rate ? "data " : ""}bit`],
+      ["How", s.dec_burst
+        ? `bursts: beyond the ${eng(s.dec_live_max, "S/s")} one core can decode as it comes (estimate at ${MHZ} MHz), so the pen takes ${s.dec_burst_n.toLocaleString()} samples (${eng(s.dec_burst_n / s.dec_fs, "s")}), decodes them, and takes the next: about <b>${Math.round(s.dec_cover * 100)} %</b> of the time is seen`
+        : `live: every sample, without gaps (up to ${eng(s.dec_live_max, "S/s")} at ${MHZ} MHz, an estimate)`],
+      ["Decoded", `${s.dec_records} ${s.dec_proto === 1 ? "lines" : "frames"}, <span class="${s.dec_errors ? "no" : "yes"}">${s.dec_errors} with errors</span>, ${s.dec_lost} gaps`],
+      ["Simulation", s.dec_speed < 0.98 ? `the browser makes ${eng(s.dec_speed * s.dec_fs, "S/s")}, so the simulated bus runs at ${Math.round(s.dec_speed * 100)} % of real time` : "real time"],
+      ["Ranges", `CH1 ${rng(s.range[0])}, CH2 ${rng(s.range[1])}, fixed while decoding`],
+    ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+    syncHostControls(s);
+    return;
+  }
   if (s.streaming) {
     const nch = st.mask === 3 ? 2 : 1;
     $("now").innerHTML = [
       ["Mode", "USB stream"],
       ["Samples", `${eng(s.stream_rate, "S/s")} per channel, ${nch === 2 ? "CH1 and CH2" : `CH${st.mask}`}, 8 bits`],
-      ["ADC", `${eng(s.stream_raw, "S/s")} (75 MHz ÷ ${Math.round(75e6 / s.stream_raw)})${s.stream_avg > 1 ? `, average of ${s.stream_avg} per sample` : ""}`],
+      ["ADC", `${eng(s.stream_raw, "S/s")} (${eng(ADC_MAX, "Hz")} ÷ ${Math.round(ADC_MAX / s.stream_raw)})${s.stream_avg > 1 ? `, average of ${s.stream_avg} per sample` : ""}`],
       ["Needs", `${eng(s.stream_rate * nch, "B/s")} of samples plus 12 bytes per 1 KB block`],
       ["USB sends", `${eng(s.stream_bps, "B/s")} (link set to ${eng(s.usb_budget, "B/s")})`],
       ["Losses", `<span class="${s.stream_lost ? "no" : "yes"}">${s.stream_lost} gap${s.stream_lost === 1 ? "" : "s"}</span>`],
@@ -324,10 +371,11 @@ function updateNow() {
   const rows = [
     ["Mode", `${s.mode}${s.run ? "" : " (held)"}`],
     ["Timebase", s.mode === "METER" ? "–" : `${tbLabel(s.tb_ns)}, ${eng(s.tb_ns * 1e-8, "s")} across the screen`],
-    ["Sample rate", s.mode === "METER" ? "DC-sense ADC, 10 readings/s" : `${eng(s.fs, "S/s")} (75 MHz ÷ ${s.clkdiv})${scope ? ", both channels" : ", 4 pod lines"}`],
+    ["Clock", `RP2354B at ${MHZ} MHz${MHZ > 150 ? " (overclocked)" : ""}: ADC up to ${eng(s.adc_max, "S/s")}${s.adc_max > 80e6 ? ", beyond the AD9288-80's 80 MS/s rating" : ""}`],
+    ["Sample rate", s.mode === "METER" ? `DC: DC-sense ADC, 10 readings/s. AC RMS and pulse widths: ${eng(s.fs, "S/s")} scope capture` : `${eng(s.fs, "S/s")} (${eng(s.adc_max, "Hz")} ÷ ${s.clkdiv})${scope ? ", both channels" : ", 4 pod lines"}`],
     ["Samples on screen", s.mode === "METER" ? "–" : `${s.screen}`],
     ["Record", s.mode === "METER" ? "–" : `${s.capture} samples per ${scope ? "channel" : "line"}, ${eng(s.capture / s.fs, "s")} of signal`],
-    ["Peak detect", s.peak_m ? `on: ADC at 2.5 MS/s, min and max of every ${s.peak_m} samples (catches pulses ≥ 0.4 µs)` : "off (every sample kept)"],
+    ["Peak detect", s.peak_m ? `on: ADC at ${eng(s.adc_max / 30, "S/s")}, min and max of every ${s.peak_m} samples (catches pulses ≥ ${eng(30 / s.adc_max, "s")})` : "off (every sample kept)"],
     ["Ranges", `CH1 ${rng(s.range[0])}, CH2 ${rng(s.range[1])}${s.auto ? ", auto" : ", fixed"}`],
     ["Trigger", scope ? `CH${s.trig_src + 1} ${s.slope ? "falling" : "rising"}, level ${s.trig_level} = ${eng(trigV, "V")}, ` +
       `<span class="${s.triggered ? "yes" : "no"}">${s.triggered ? "found" : "not found (free-running)"}</span>` : "–"],
@@ -464,7 +512,16 @@ function parseMeas(line) {
   return out;
 }
 function onLine(line) {
+  if (line.startsWith("DEC ")) {        /* unsolicited: one decoded line or frame */
+    onDecoded(line);
+    return;
+  }
   logLine("rx", `← ${line}`);
+  if (line.startsWith("DECODE END")) {
+    dc.on = false;
+    $("dcStart").textContent = "Start";
+    return;
+  }
   if (line.startsWith("DEEP DATA")) {    /* unsolicited: the record follows as blocks */
     const kv = {};
     line.split(/\s+/).slice(2).forEach((w) => { const [k, v] = w.split("="); kv[k] = +v; });
@@ -794,6 +851,127 @@ function deepCsv() {
   save(new Blob([out], { type: "text/csv" }), "probepen-deep.csv");
 }
 
+/* ---------- host app: bus decoding ---------- */
+const dc = { on: false, lines: 0, frames: 0, errors: 0, bytes: 0, t0: 0, uartOpen: null };
+function setDecodeControls(d) {
+  $("dcProto").value = d.proto;
+  $("dcSrc").value = String(d.src);
+  $("dcRate").value = d.rate;
+  if (d.data) $("dcData").value = d.data;
+  decodeFields();
+}
+function decodeFields() {
+  const can = $("dcProto").value === "CAN";
+  $("dcRateL").textContent = can ? "Bit rate" : "Baud";
+  $("dcDataL").style.display = can ? "" : "none";
+}
+function decodeStart() {
+  if (dc.on) {
+    send("DECODE 0");
+    return;
+  }
+  if (st.on) {
+    note("stop the stream first");
+    return;
+  }
+  const proto = $("dcProto").value, src = $("dcSrc").value;
+  const rate = parseSI($("dcRate").value), data = proto === "CAN" ? parseSI($("dcData").value) : 0;
+  if (!(rate > 0) || (proto === "CAN" && !(data >= rate))) {
+    note("decode: a bit rate such as 115200 or 500k, and a CAN data rate at least as fast");
+    return;
+  }
+  send(`DECODE ${proto} ${src} ${rate}${proto === "CAN" ? ` ${data}` : ""}`, (reply) => {
+    if (!reply.startsWith("OK")) {
+      note("the pen refused that decode (bit rate too fast for the ADC, or a stream running)");
+      return;
+    }
+    const kv = {};
+    reply.split(/\s+/).slice(1).forEach((w) => { const [k, v] = w.split("="); kv[k] = isNaN(+v) ? v : +v; });
+    Object.assign(dc, { on: true, t0: performance.now(), lines: 0, frames: 0, errors: 0, bytes: 0 });
+    termAdd(`<span class="t">— ${esc(reply.slice(3))}</span>`);
+    $("dcStart").textContent = "Stop";
+    $("termWrap").hidden = false;
+    $("termSub").textContent = `${proto} from ${["", "CH1", "CH2", "CH1 − CH2"][+src]}, ${eng(kv.FS, "S/s")}, ` +
+      (kv.MODE === "LIVE" ? "live: every bit" : `bursts: about ${Math.round(kv.COVER * 100)} % of the time`);
+    note(`decoding at ${eng(kv.FS, "S/s")} (${kv.SPB} samples per bit), ${kv.MODE === "LIVE" ? "live" : `in bursts of ${kv.BURSTN.toLocaleString()} samples`}`);
+  });
+}
+function termAdd(html) {
+  const t = $("term");
+  const stick = t.scrollTop + t.clientHeight >= t.scrollHeight - 4;
+  const div = document.createElement("div");
+  div.innerHTML = html;
+  t.appendChild(div);
+  while (t.childElementCount > 600) t.firstChild.remove();
+  if (stick) t.scrollTop = t.scrollHeight;
+}
+const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+function hexText(hex) {
+  let s = "";
+  for (let i = 0; i + 1 < hex.length; i += 2) {
+    const c = parseInt(hex.slice(i, i + 2), 16);
+    s += c === 10 ? "\n" : c === 13 ? "" : c >= 32 && c < 127 ? String.fromCharCode(c) : "·";
+  }
+  return s;
+}
+function onDecoded(line) {
+  const kv = {};
+  line.split(/\s+/).slice(2).forEach((w) => { const i = w.indexOf("="); kv[w.slice(0, i)] = w.slice(i + 1); });
+  const t = `<span class="t">${(+kv.T).toFixed(6)}</span> `;
+  if (line.startsWith("DEC UART")) {
+    dc.lines++;
+    dc.bytes += +kv.BYTES;
+    if (+kv.FE) dc.errors++;
+    const text = esc(hexText(kv.HEX || "").replace(/\n$/, ""));
+    termAdd(`${t}${text}${+kv.FE ? ` <span class="err">${kv.FE} framing error${+kv.FE > 1 ? "s" : ""}</span>` : ""}`);
+  } else {
+    dc.frames++;
+    const ok = kv.ERR === "NONE";
+    if (!ok) dc.errors++;
+    const kind = `${kv.FD === "1" ? "FD" : "CAN"}${kv.BRS === "1" ? " BRS" : ""}${kv.EXT === "1" ? " EXT" : ""}${kv.RTR === "1" ? " RTR" : ""}`;
+    const body = ok ? `[${kv.LEN}] ${esc(hexText(kv.HEX || ""))}` : "";
+    termAdd(`${t}<span class="id">${kv.ID}</span> ${kind} ${body} ` +
+      (ok ? `<span class="ok">CRC ok</span>${kv.ACK === "1" ? "" : " no ACK"}` : `<span class="err">${kv.ERR} error</span>`));
+  }
+}
+function decodeStats(s) {
+  if (!s.decoding && !dc.on) return;
+  const n = dc.frames || dc.lines;
+  $("dcStats").innerHTML = `${n.toLocaleString()} ${dc.frames ? "frames" : "lines"}` +
+    (dc.bytes ? ` · ${dc.bytes.toLocaleString()} bytes` : "") +
+    ` · <span class="${dc.errors ? "bad" : "good"}">${dc.errors ? `${dc.errors} with errors` : "no errors"}</span>` +
+    (s.dec_burst ? ` · bursts, ${Math.round(s.dec_cover * 100)} % seen` : " · live");
+}
+
+/* ---------- host app: continuous capture and its history ---------- */
+const HIST_MAX = 200;
+const hist = [];
+let histFollow = true;
+let capT = [];
+function addHistory(cap) {
+  hist.push({ ...cap, t: performance.now() });
+  if (hist.length > HIST_MAX) hist.shift();
+  capT.push(performance.now());
+  capT = capT.filter((x) => performance.now() - x < 2000);
+  const r = $("hHistPos");
+  r.max = String(hist.length - 1);
+  $("hHist").hidden = false;
+  if (histFollow) r.value = r.max;
+  showHistory();
+}
+function showHistory() {
+  if (!hist.length) return;
+  const i = +$("hHistPos").value;
+  const cap = hist[Math.min(i, hist.length - 1)];
+  lastCap = cap;
+  drawPlot($("plot"), cap, true);
+  showMeas(cap.meas);
+  const ago = (performance.now() - cap.t) / 1000;
+  const rate = capT.length > 1 ? (capT.length - 1) / ((capT[capT.length - 1] - capT[0]) / 1000) : 0;
+  $("hHistOut").textContent = `${i + 1} of ${hist.length}` + (histFollow ? " (latest)" : `, ${ago.toFixed(1)} s ago`) +
+    ($("hLive").checked && rate ? ` · ${rate.toFixed(1)} captures/s` : "");
+}
+
 /* ---------- host app: controls ---------- */
 let syncing = false;
 function buildHost() {
@@ -811,7 +989,38 @@ function buildHost() {
     send("CAL");
   });
   $("hMeas").addEventListener("click", () => send("MEAS?", (l) => showMeas(parseMeas(l))));
-  $("hCap").addEventListener("click", capture);
+  $("hCap").addEventListener("click", () => capBusy || capture());
+  $("hLive").addEventListener("change", (e) => {
+    histFollow = true;
+    if (e.target.checked && !capBusy) capture();
+  });
+  $("hHistPos").addEventListener("input", (e) => {
+    histFollow = +e.target.value >= hist.length - 1;
+    showHistory();
+  });
+  $("hHistLatest").addEventListener("click", () => {
+    histFollow = true;
+    $("hHistPos").value = $("hHistPos").max;
+    showHistory();
+  });
+  $("dcProto").addEventListener("change", () => {
+    $("dcRate").value = $("dcProto").value === "CAN" ? "500k" : "115200";
+    decodeFields();
+  });
+  $("dcStart").addEventListener("click", decodeStart);
+  $("dcClear").addEventListener("click", () => {
+    $("term").innerHTML = "";
+    Object.assign(dc, { lines: 0, frames: 0, errors: 0, bytes: 0 });
+  });
+  decodeFields();
+  $("clk").value = String(MHZ);
+  $("clk").addEventListener("change", (e) => {
+    const u = new URL(location.href);
+    if (e.target.value === "150") u.searchParams.delete("mhz");
+    else u.searchParams.set("mhz", e.target.value);
+    location.href = u.toString();
+  });
+  $("dRate").innerHTML = [1, 2, 3, 8, 75].map((k) => `<option value="${ADC_MAX / k}">${eng(ADC_MAX / k, "S/s")}</option>`).join("");
   $("hCsv").addEventListener("click", downloadCsv);
   $("sStart").addEventListener("click", streamStart);
   $("dGo").addEventListener("click", deepStart);
@@ -849,24 +1058,27 @@ function syncHostControls(s) {
 function capture() {
   const n = Math.max(1, Math.min(4096, parseInt($("hCapN").value, 10) || 1024));
   $("hCapN").value = n;
+  capBusy = true;
   send(`CAPTURE ${n}`, (reply) => {
     if (!reply.startsWith("OK")) {
+      capBusy = false;
+      $("hLive").checked = false;
       note("CAPTURE needs a scope mode (CH1+2, CH1 or CH2)");
       return;
     }
     frameSink = {
       frames: [],
       done: (fr) => send("MEAS?", (l) => {
-        const meas = parseMeas(l);
-        lastCap = { a: fr[0], b: fr[1], meas };
-        showMeas(meas);
-        drawPlot($("plot"), lastCap, true);
+        capBusy = false;
+        addHistory({ a: fr[0], b: fr[1], meas: parseMeas(l) });
         $("plotEmpty").style.display = "none";
         $("hCsv").disabled = false;
+        if ($("hLive").checked && !dc.on && !st.on) setTimeout(capture, 0);   /* the next one, straight away */
       }),
     };
   });
 }
+let capBusy = false;
 function showMeas(m) {
   lastMeas = m;
   const ch = (k, cls) => {

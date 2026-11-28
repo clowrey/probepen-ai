@@ -15,9 +15,15 @@ for f in firmware/src/*.c; do
     [ "$(basename "$f")" = main.c ] || srcs+=("$f")
 done
 
-"$CC" --target=wasm32-wasi "${SYSROOT[@]}" -std=c11 -O2 -D_DEFAULT_SOURCE -fvisibility=hidden -Ifirmware/include \
-    -nostartfiles -Wl,--no-entry -Wl,--export-dynamic -Wl,--strip-all \
-    -o sim/site/probepen.wasm "${srcs[@]}" -lm
+# One build per system clock the firmware supports (firmware/include/probepen_clock.h): the page loads
+# probepen.wasm (150 MHz, stock) or probepen-250.wasm (250 MHz, overclocked).
+for mhz in 150 250; do
+    out=sim/site/probepen.wasm
+    [ "$mhz" = 150 ] || out=sim/site/probepen-$mhz.wasm
+    "$CC" --target=wasm32-wasi "${SYSROOT[@]}" -std=c11 -O2 -D_DEFAULT_SOURCE -DPROBEPEN_SYS_MHZ=$mhz \
+        -fvisibility=hidden -Ifirmware/include -nostartfiles -Wl,--no-entry -Wl,--export-dynamic -Wl,--strip-all \
+        -o "$out" "${srcs[@]}" -lm
+done
 
 python3 - "${srcs[@]}" firmware/include/*.h <<'EOF'
 import hashlib, sys
@@ -26,4 +32,4 @@ for p in sorted(sys.argv[1:]):
     h.update(p.encode() + b"\0" + open(p, "rb").read())
 open("sim/site/build.txt", "w").write(f"sources {h.hexdigest()}\n")
 EOF
-ls -l sim/site/probepen.wasm
+ls -l sim/site/probepen*.wasm

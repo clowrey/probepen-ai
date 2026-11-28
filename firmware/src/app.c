@@ -156,6 +156,13 @@ void app_button_event(app_t *app, uint8_t button, btn_event_t ev) {
         }
         return;
     }
+    if (app->decoding) {    /* and a bus decode */
+        if (ev == BTN_EV_SHORT || ev == BTN_EV_LONG) {
+            app->decode_stop = true;
+            app->decode_req = true;
+        }
+        return;
+    }
     switch (button) {
     case BTN_MODE:
         if (ev == BTN_EV_SHORT) {
@@ -384,9 +391,11 @@ size_t app_format_meas(const app_t *app, char *out, size_t max_len) {
     out[0] = '\0';
     for (int c = 0; c < 2 && len < max_len; ++c) {
         const scope_meas_t *m = &app->meas[c];
-        int w = snprintf(out + len, max_len - len, "%sCH%d VPP=%.3f VMIN=%.3f VMAX=%.3f VAVG=%.3f F=%.1f RANGE=%s DC=%.3f",
+        int w = snprintf(out + len, max_len - len,
+                         "%sCH%d VPP=%.3f VMIN=%.3f VMAX=%.3f VAVG=%.3f F=%.1f RANGE=%s DC=%.3f VRMS=%.4f TH=%.4g TL=%.4g DUTY=%.3f",
                          c ? ";" : "", c + 1, (double)m->vpp, (double)m->vmin, (double)m->vmax, (double)m->vavg,
-                         (double)m->freq_hz, app->range[c] == AFE_RANGE_10X ? "10X" : "1X", (double)app->dc_v[c]);
+                         (double)m->freq_hz, app->range[c] == AFE_RANGE_10X ? "10X" : "1X", (double)app->dc_v[c],
+                         (double)m->vrms_ac, (double)m->t_high_s, (double)m->t_low_s, (double)m->duty);
         if (w < 0) {
             break;
         }
@@ -401,6 +410,24 @@ size_t app_format_meas(const app_t *app, char *out, size_t max_len) {
         }
     }
     return len < max_len ? len : max_len - 1u;
+}
+
+void app_decode_text(app_t *app, const char *text) {
+    if (!app || !text) {
+        return;
+    }
+    for (; *text; ++text) {
+        bool wrap = app->dec_log_col >= APP_DEC_COLS;
+        if (*text == '\n' || wrap) {
+            app->dec_log_line = (uint8_t)((app->dec_log_line + 1u) % APP_DEC_LINES);
+            app->dec_log_col = 0u;
+            memset(app->dec_log[app->dec_log_line], 0, sizeof app->dec_log[0]);
+            if (*text == '\n') {
+                continue;
+            }
+        }
+        app->dec_log[app->dec_log_line][app->dec_log_col++] = *text;
+    }
 }
 
 size_t app_usb_command(app_t *app, const char *line, char *reply, size_t max_len) {
@@ -464,6 +491,10 @@ size_t app_usb_command(app_t *app, const char *line, char *reply, size_t max_len
             }
             break;
         case USB_CMD_STREAM:
+            if (app->decoding) {
+                w = snprintf(reply, max_len, "ERR");
+                break;
+            }
             if (cmd.arg_f <= 0.0f) {
                 app->stream_want_hz = 0.0f;
                 app->stream_req = true;
@@ -493,8 +524,9 @@ size_t app_usb_command(app_t *app, const char *line, char *reply, size_t max_len
         case USB_CMD_DEEP: {
             uint32_t n, k;
             float rate;
-            if (app->streaming || app->deep_busy ||
-                !deep_plan((uint32_t)cmd.arg_i, (uint8_t)cmd.arg_i2, cmd.arg_f, APP_ADC_MAX_HZ, &n, &k, &rate)) {
+            if (app->streaming || app->deep_busy || app->decoding ||
+                !deep_plan((uint32_t)cmd.arg_i, (uint8_t)cmd.arg_i2, cmd.arg_f > 0.0f ? cmd.arg_f : APP_ADC_MAX_HZ,
+                           APP_ADC_MAX_HZ, &n, &k, &rate)) {
                 w = snprintf(reply, max_len, "ERR");
                 break;
             }
@@ -509,6 +541,32 @@ size_t app_usb_command(app_t *app, const char *line, char *reply, size_t max_len
             w = snprintf(reply, max_len, "OK N=%lu CH=%d RATE=%.1f DIV=%lu SECONDS=%.6f LSB1=%.5f ZERO1=%.2f LSB2=%.5f ZERO2=%.2f",
                          (unsigned long)n, (int)cmd.arg_i2, (double)rate, (unsigned long)k, (double)n / (double)rate,
                          (double)l1, (double)z1, (double)l2, (double)z2);
+            break;
+        }
+        case USB_CMD_DECODE: {
+            if (cmd.arg_i == 0) {
+                app->decode_stop = true;
+                app->decode_req = app->decoding;
+                w = snprintf(reply, max_len, "OK");
+                break;
+            }
+            dec_t plan;
+            if (app->streaming || app->deep_busy ||
+                !dec_plan(&plan, (uint8_t)cmd.arg_i, (uint8_t)cmd.arg_i2, cmd.arg_f, cmd.arg_f2, APP_ADC_MAX_HZ)) {
+                w = snprintf(reply, max_len, "ERR");
+                break;
+            }
+            app->decode_plan = plan;
+            app->decode_stop = false;
+            app->decode_req = true;
+            memset(app->dec_log, 0, sizeof app->dec_log);
+            app->dec_log_line = 0u;
+            app->dec_log_col = 0u;
+            w = snprintf(reply, max_len, "OK PROTO=%s SRC=%d RATE=%.0f DATA=%.0f FS=%.1f DIV=%lu SPB=%.2f MODE=%s COVER=%.3f BURSTN=%lu",
+                         plan.proto == DEC_PROTO_UART ? "UART" : "CAN", (int)plan.src, (double)plan.rate,
+                         (double)plan.data_rate, (double)plan.fs, (unsigned long)plan.clkdiv, (double)plan.spb_data,
+                         plan.burst ? "BURST" : "LIVE", (double)plan.coverage,
+                         (unsigned long)(plan.burst ? plan.burst_n : 0u));
             break;
         }
         case USB_CMD_RUN:
@@ -730,21 +788,75 @@ static void render_logic(const app_t *app, uint16_t *fb, const palette_t *p, con
     }
 }
 
+/* Per channel: DC (12-bit DC-sense ADC) large, then from the scope capture the AC RMS, peak to peak and
+ * frequency, and the pulse widths (time high, time low, duty). */
 static void render_meter(const app_t *app, uint16_t *fb, const palette_t *p) {
-    int scale = LCD_WIDTH >= 200u ? 3 : 2;
-    int row = (PLOT_H - 2) / 2;
+    int big = LCD_WIDTH >= 200u ? 2 : 1;
+    int row = (PLOT_H + 2) / 2;
     for (int c = 0; c < 2; ++c) {
-        char v[24], lbl[8];
-        int y = PLOT_Y0 + 2 + c * row;
-        snprintf(lbl, sizeof lbl, "CH%d", c + 1);
-        lcd_fb_draw_text_scaled(fb, 2, y, lbl, 1, p->dim);
-        snprintf(v, sizeof v, "%+.3fV", (double)app->dc_v[c]);
-        lcd_fb_draw_text_scaled(fb, (int)LCD_WIDTH - lcd_text_width(v, scale) - 2, y + LCD_GLYPH_H, v, scale, p->ch[c]);
+        const scope_meas_t *m = &app->meas[c];
+        char v[24], a[16], b[16], f[16], buf[64];
+        int y = PLOT_Y0 + 1 + c * row;
+        snprintf(buf, sizeof buf, "CH%d %s", c + 1, app->range[c] == AFE_RANGE_10X ? "+-26V" : "+-5V");
+        lcd_fb_draw_text_scaled(fb, 2, y + (big - 1) * 4, buf, 1, p->dim);
+        snprintf(v, sizeof v, "%+.3fV DC", (double)app->dc_v[c]);
+        lcd_fb_draw_text_scaled(fb, (int)LCD_WIDTH - lcd_text_width(v, big) - 2, y, v, big, p->ch[c]);
+        y += big * LCD_GLYPH_H + 2;
+        app_format_eng(m->vrms_ac, "V", a, sizeof a);
+        app_format_eng(m->vpp, "V", b, sizeof b);
+        app_format_eng(m->freq_hz, "Hz", f, sizeof f);
+        snprintf(buf, sizeof buf, "AC %srms %spp %s", a, b, m->freq_hz > 0.0f ? f : "--");
+        lcd_fb_draw_text_scaled(fb, 2, y, buf, 1, p->text);
+        y += LCD_GLYPH_H + 1;
+        if (m->t_high_s > 0.0f) {
+            app_format_eng(m->t_high_s, "s", a, sizeof a);
+            app_format_eng(m->t_low_s, "s", b, sizeof b);
+            snprintf(buf, sizeof buf, "+W %s -W %s D %.1f%%", a, b, (double)(m->duty * 100.0f));
+        } else {
+            snprintf(buf, sizeof buf, "+W -- -W --  (UP: longer window)");
+        }
+        lcd_fb_draw_text_scaled(fb, 2, y, buf, 1, p->text);
     }
-    char v[16], buf[48];
+    char v[16], w[16], buf[64];
     app_format_eng(app->vbus_v, "V", v, sizeof v);
-    snprintf(buf, sizeof buf, "VBUS %s  %s", v, app->auto_range ? "AUTO RANGE" : "FIXED RANGE");
+    app_format_eng((float)app_capture_samples(app, 4096u) / app_sample_rate_hz(app), "s", w, sizeof w);   /* main.c's CAPTURE_MAX */
+    snprintf(buf, sizeof buf, "VBUS %s %s window %s", v, app->auto_range ? "AUTO" : "FIXED", w);
     lcd_fb_draw_text_scaled(fb, 2, FOOT_Y + LCD_GLYPH_H + 1, buf, 1, p->dim);
+}
+
+static void render_decode(const app_t *app, uint16_t *fb, const palette_t *p) {
+    const dec_t *d = &app->decode_plan;
+    static const char *const SRC[] = {"?", "CH1", "CH2", "CH1-CH2"};
+    char r1[16], r2[16], buf[64];
+    lcd_fb_rect(fb, 0, 0, (int)LCD_WIDTH, HDR_H - 1, lcd_rgb565(22, 26, 34));
+    app_format_eng(d->rate, "", r1, sizeof r1);
+    if (d->proto == DEC_PROTO_CAN && d->data_rate > d->rate) {
+        app_format_eng(d->data_rate, "", r2, sizeof r2);
+        snprintf(buf, sizeof buf, "CAN %s %s/%s", SRC[d->src & 3u], r1, r2);
+    } else {
+        snprintf(buf, sizeof buf, "%s %s %s", d->proto == DEC_PROTO_UART ? "UART" : "CAN", SRC[d->src & 3u], r1);
+    }
+    lcd_fb_draw_text_scaled(fb, 2, 1, buf, 1, p->text);
+    if (d->burst) {
+        snprintf(buf, sizeof buf, "BURST %d%%", (int)(d->coverage * 100.0f + 0.5f));
+    } else {
+        snprintf(buf, sizeof buf, "LIVE");
+    }
+    lcd_fb_draw_text_scaled(fb, (int)LCD_WIDTH - lcd_text_width(buf, 1) - 1, 1, buf, 1, p->pod[0]);
+    int lh = LCD_GLYPH_H + 1;
+    int lines = ((int)LCD_HEIGHT - HDR_H - lh - 2) / lh;
+    if (lines > (int)APP_DEC_LINES) {
+        lines = (int)APP_DEC_LINES;
+    }
+    for (int i = 0; i < lines; ++i) {   /* oldest first; the last line is the one being written */
+        int k = ((int)app->dec_log_line - (lines - 1) + i + 2 * (int)APP_DEC_LINES) % (int)APP_DEC_LINES;
+        lcd_fb_draw_text_scaled(fb, 2, HDR_H + 1 + i * lh, app->dec_log[k], 1, p->ch[0]);
+    }
+    snprintf(buf, sizeof buf, "%lu rec  %lu err  %lu lost", (unsigned long)d->records, (unsigned long)d->errors,
+             (unsigned long)d->lost_events);
+    lcd_fb_draw_text_scaled(fb, 2, (int)LCD_HEIGHT - lh, buf, 1, (d->errors || d->lost_events) ? p->trig : p->dim);
+    lcd_fb_draw_text_scaled(fb, (int)LCD_WIDTH - lcd_text_width("btn: stop", 1) - 1, (int)LCD_HEIGHT - lh, "btn: stop", 1,
+                            p->dim);
 }
 
 static void render_stream(const app_t *app, uint16_t *fb, const palette_t *p) {
@@ -786,6 +898,10 @@ void app_render(const app_t *app, uint16_t *fb, const uint16_t *ch_a, const uint
     lcd_fb_clear(fb, p.bg);
     if (app->streaming) {
         render_stream(app, fb, &p);
+        return;
+    }
+    if (app->decoding) {
+        render_decode(app, fb, &p);
         return;
     }
     draw_header(app, fb, &p);

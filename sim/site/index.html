@@ -15,6 +15,10 @@
     the bottom, as a computer would over USB.</p>
   <p class="links"><a href="https://github.com/clowrey/probepen-ai">Repository</a>
     <a href="https://github.com/clowrey/probepen-ai#scope-specifications">Specifications</a>
+    <label class="clk">Firmware built for <select id="clk">
+      <option value="150">150 MHz (stock): ADC to 75 MS/s</option>
+      <option value="250">250 MHz (overclocked): ADC to 125 MS/s</option>
+    </select></label>
     <span id="status" class="status">Loading firmware…</span></p>
 </header>
 
@@ -37,7 +41,7 @@
         <thead><tr><th>Button</th><th>Short press</th><th>Held</th></tr></thead>
         <tbody>
           <tr><td>ASK</td><td>run / hold</td><td>send a snapshot to the host app</td></tr>
-          <tr><td>MODE</td><td>CH1+2, CH1, CH2, LOGIC, METER</td><td>trigger source and slope</td></tr>
+          <tr><td>MODE</td><td>CH1+2, CH1, CH2, LOGIC, METER (DC, AC RMS, pulse widths)</td><td>trigger source and slope</td></tr>
           <tr><td>UP / DOWN</td><td>slower / faster timebase</td><td>trigger level up / down</td></tr>
         </tbody>
       </table>
@@ -82,7 +86,24 @@
         <button id="hMeas" type="button">Measure</button>
         <span class="cap"><button id="hCap" type="button">Capture</button>
           <input id="hCapN" value="1024" inputmode="numeric" aria-label="Samples per channel"> samples</span>
+        <label title="Ask for the next capture as soon as one arrives, and keep the last 200"><input type="checkbox" id="hLive"> Continuous</label>
         <button id="hCsv" type="button" disabled>CSV</button>
+      </div>
+      <div class="toolbar hist" id="hHist" hidden>
+        <b>History</b>
+        <input type="range" id="hHistPos" min="0" max="0" value="0" aria-label="Capture to show">
+        <span id="hHistOut" class="sstats"></span>
+        <button id="hHistLatest" type="button">Latest</button>
+      </div>
+      <div class="toolbar stream-bar">
+        <b>Decode</b>
+        <label>Bus <select id="dcProto"><option value="UART">UART 8N1</option><option value="CAN">CAN / CAN FD</option></select></label>
+        <label>From <select id="dcSrc"><option value="1">CH1</option><option value="2">CH2</option><option value="3">CH1 − CH2</option></select></label>
+        <label><span id="dcRateL">Baud</span> <input id="dcRate" value="115200" inputmode="decimal"></label>
+        <label id="dcDataL">Data rate <input id="dcData" value="2M" inputmode="decimal" aria-label="CAN FD data-phase bit rate"></label>
+        <button id="dcStart" type="button">Start</button>
+        <button id="dcClear" type="button">Clear</button>
+        <span id="dcStats" class="sstats"></span>
       </div>
       <div class="toolbar stream-bar">
         <b>Stream</b>
@@ -97,7 +118,7 @@
       </div>
       <div class="toolbar stream-bar">
         <b>Deep record</b>
-        <label>Rate <select id="dRate"><option value="75e6">75 MS/s</option><option value="37.5e6">37.5 MS/s</option><option value="25e6">25 MS/s</option><option value="10e6">10 MS/s</option><option value="1e6">1 MS/s</option></select></label>
+        <label>Rate <select id="dRate"></select></label>
         <label>Channels <select id="dCh"><option value="3">CH1+2 (196 k each)</option><option value="1">CH1 (393 k)</option><option value="2">CH2 (393 k)</option></select></label>
         <label>View <select id="dView"><option value="all">whole record</option><option value="trig" selected>around the trigger</option></select></label>
         <button id="dGo" type="button">Record</button>
@@ -107,6 +128,10 @@
       <div class="plot-wrap"><canvas id="plot"></canvas><p class="plot-empty" id="plotEmpty"><span>Press
         <b>Capture</b> to read samples over USB, or hold <b>ASK</b> on the pen.</span></p></div>
       <div class="meas" id="meas"></div>
+      <div class="term-wrap" id="termWrap" hidden>
+        <h3>Decoded <span class="sub" id="termSub"></span></h3>
+        <div class="term" id="term" aria-live="off"></div>
+      </div>
       <div class="host-cols">
         <div class="console-wrap">
           <div class="console" id="console" aria-live="polite"></div>

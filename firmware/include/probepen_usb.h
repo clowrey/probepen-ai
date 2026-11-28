@@ -22,7 +22,10 @@ typedef enum {
     USB_CMD_TB      = 9,    /* TB n: timebase index */
     USB_CMD_RUN     = 10,   /* RUN 0|1: hold / run */
     USB_CMD_STREAM  = 11,   /* STREAM rate_hz [chmask]: continuous 8-bit samples; STREAM 0 stops */
-    USB_CMD_DEEP    = 12    /* DEEP n [chmask] [rate_hz]: one long record (n 0 = as long as fits) */
+    USB_CMD_DEEP    = 12,   /* DEEP n [chmask] [rate_hz]: one long record (n 0 = as long as fits, rate 0 = the fastest) */
+    USB_CMD_DECODE  = 13    /* DECODE UART src baud | DECODE CAN src rate [data_rate] | DECODE 0 (stop);
+                               src 1 = CH1, 2 = CH2, 3 = CH1 - CH2. arg_i = protocol (0 = stop), arg_i2 = src,
+                               arg_f = rate, arg_f2 = data rate */
 } usb_cmd_kind_t;
 
 typedef struct {
@@ -31,6 +34,7 @@ typedef struct {
     float arg_f;
     bool valid;
     int32_t arg_i2;
+    float arg_f2;
 } usb_cmd_t;
 
 uint16_t usb_crc16_ccitt(const uint8_t *data, size_t len);

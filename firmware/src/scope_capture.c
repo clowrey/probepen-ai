@@ -1,4 +1,5 @@
 #include "probepen_scope.h"
+#include <math.h>
 #include <stddef.h>
 
 static uint8_t rbit8(uint8_t b) {
@@ -127,6 +128,10 @@ void scope_measure_buffer(
     out_meas->freq_hz = 0.0f;
     out_meas->trigger_idx = 0u;
     out_meas->triggered = false;
+    out_meas->vrms_ac = 0.0f;
+    out_meas->t_high_s = 0.0f;
+    out_meas->t_low_s = 0.0f;
+    out_meas->duty = 0.0f;
 
     if (!samples || count == 0u) {
         return;
@@ -186,6 +191,69 @@ void scope_measure_buffer(
             out_meas->freq_hz = sample_rate_hz / avg_period_samples;
         }
     }
+
+    /* Pulse widths: a Schmitt trigger centred on the midpoint, so equal rise and fall times cancel. Only
+     * whole intervals between two transitions count. The AC RMS uses whole periods (first to last rising
+     * transition) when there are two or more, else the whole record. */
+    size_t rms_from = 0u, rms_to = count;
+    if (sample_rate_hz > 0.0f && smax > (uint16_t)(smin + 6u)) {
+        uint16_t h2 = (uint16_t)((smax - smin) / 32u + 1u);
+        uint16_t up = (uint16_t)(mid_code + h2), dn = (uint16_t)(mid_code - h2);
+        int lvl = -1;
+        size_t last_t = 0u, first_rise = 0u, last_rise = 0u, rises = 0u;
+        bool have_t = false;
+        double sum_hi = 0.0, sum_lo = 0.0;
+        size_t n_hi = 0u, n_lo = 0u;
+        for (size_t i = 0u; i < count; ++i) {
+            uint16_t s = samples[i] & SCOPE_CODE_MAX;
+            int now = lvl;
+            if (s >= up) {
+                now = 1;
+            } else if (s <= dn) {
+                now = 0;
+            }
+            if (now != lvl) {
+                if (lvl >= 0) {   /* a transition */
+                    if (have_t) {
+                        if (now == 0) {
+                            sum_hi += (double)(i - last_t);
+                            ++n_hi;
+                        } else {
+                            sum_lo += (double)(i - last_t);
+                            ++n_lo;
+                        }
+                    }
+                    if (now == 1) {
+                        if (rises++ == 0u) {
+                            first_rise = i;
+                        }
+                        last_rise = i;
+                    }
+                    have_t = true;
+                    last_t = i;
+                }
+                lvl = now;
+            }
+        }
+        if (n_hi > 0u && n_lo > 0u) {
+            out_meas->t_high_s = (float)(sum_hi / (double)n_hi) / sample_rate_hz;
+            out_meas->t_low_s = (float)(sum_lo / (double)n_lo) / sample_rate_hz;
+            out_meas->duty = out_meas->t_high_s / (out_meas->t_high_s + out_meas->t_low_s);
+        }
+        if (rises >= 2u && last_rise > first_rise) {
+            rms_from = first_rise;
+            rms_to = last_rise;
+        }
+    }
+    double s1 = 0.0, s2 = 0.0;
+    for (size_t i = rms_from; i < rms_to; ++i) {
+        double s = (double)(samples[i] & SCOPE_CODE_MAX);
+        s1 += s;
+        s2 += s * s;
+    }
+    double nn = (double)(rms_to - rms_from);
+    double var = nn > 0.0 ? s2 / nn - (s1 / nn) * (s1 / nn) : 0.0;
+    out_meas->vrms_ac = (float)sqrt(var > 0.0 ? var : 0.0) * code_scale;
 }
 
 void scope_decimate_min_max(

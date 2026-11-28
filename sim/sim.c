@@ -53,11 +53,12 @@ typedef struct {
     float freq;     /* Hz (UART: baud) */
     float duty;     /* 0..1, pulse width / period */
     float noise;    /* V rms */
+    float rate2;    /* CAN FD data phase, bit/s (0 = 4x the arbitration rate) */
 } sig_t;
 
 static sig_t g_sig[2] = {
-    {SIG_SINE, 3.0f, 0.0f, 50e3f, 0.5f, 0.01f},
-    {SIG_SQUARE, 3.3f, 1.65f, 25e3f, 0.5f, 0.005f},
+    {SIG_SINE, 3.0f, 0.0f, 50e3f, 0.5f, 0.01f, 0.0f},
+    {SIG_SQUARE, 3.3f, 1.65f, 25e3f, 0.5f, 0.005f, 0.0f},
 };
 
 enum { POD_COUNTER = 0, POD_SPI, POD_UART_PWM };
@@ -73,19 +74,22 @@ static float gauss(void) {   /* about N(0, 1), cheap */
     return (rnd() + rnd() + rnd() + rnd() - 2.0f) * 1.7320508f;
 }
 
-static const char UART_MSG[] = "ProbePen-AI\r\n";
+/* UART: "Hello world 0000\r\n", the number counting up message by message, 8N1, then 20 idle bits */
+#define UART_MSG_LEN 18L
+static char g_uart_msg[UART_MSG_LEN + 1];
+static long g_uart_msg_n = -1;
 
-/* UART level (0 or 1) at bit time b (bits since the message began, 8N1 frames then 20 idle bits) */
 static int uart_bit(double bits) {
-    long len = (long)(sizeof UART_MSG - 1u);
     long frame = 10L;
-    long period = len * frame + 20L;
-    long b = (long)floor(bits);
-    b %= period;
-    if (b < 0) {
-        b += period;
+    long period = UART_MSG_LEN * frame + 20L;
+    double whole = floor(bits);
+    long msg = (long)floor(whole / (double)period);
+    long b = (long)(whole - (double)msg * (double)period);
+    if (msg != g_uart_msg_n) {
+        snprintf(g_uart_msg, sizeof g_uart_msg, "Hello world %04ld\r\n", ((msg % 10000L) + 10000L) % 10000L);
+        g_uart_msg_n = msg;
     }
-    if (b >= len * frame) {
+    if (b >= UART_MSG_LEN * frame) {
         return 1;   /* idle high */
     }
     long ch = b / frame;
@@ -96,42 +100,151 @@ static int uart_bit(double bits) {
     if (k == 9) {
         return 1;   /* stop bit */
     }
-    return ((unsigned char)UART_MSG[ch] >> (k - 1)) & 1;
+    return ((unsigned char)g_uart_msg[ch] >> (k - 1)) & 1;
 }
 
-/* A CAN FD frame every millisecond: 20 bits at the arbitration rate (SOF, ID, control, BRS), 533 at 4x that
- * (64 data bytes and the CRC), then the CRC delimiter, ACK and end of frame at the arbitration rate. The bit
- * values are pseudo-random: the frame's shape and timing, not a checked encoding. */
-static uint32_t bit_hash(uint32_t x) {
-    x ^= x >> 16;
-    x *= 0x7feb352du;
-    x ^= x >> 15;
-    x *= 0x846ca68bu;
-    x ^= x >> 16;
-    return x;
+/* CAN FD: frames with ID 0x123 carrying "Hello world 0000" (16 bytes, DLC 10), the number counting up frame
+ * by frame, encoded in full: bit stuffing, BRS (the data phase at the data rate from the BRS bit's sample
+ * point to the CRC delimiter's), stuff count, CRC-17 with fixed stuff bits, ACK from another node, EOF.
+ * One frame per millisecond, or per twice the frame's length on slow buses. The CRC steps are the
+ * firmware's own (decode.c); the bit layout here is written separately from its decoder. */
+#define CAN_MAX_BITS 1200
+typedef struct {
+    float arb, data;          /* the rates the timeline was built for */
+    double period;
+    long frame;               /* the frame in the timeline, -1 none */
+    uint32_t n;
+    double len;               /* frame length, s */
+    uint8_t dom[CAN_MAX_BITS];
+    double t[CAN_MAX_BITS + 1];
+} can_tl_t;
+static can_tl_t g_can[2];
+
+static void can_build(can_tl_t *c, long frame) {
+    uint8_t fb[11 + 9 + 4 + 8 * 16];   /* field bits SOF .. data */
+    uint8_t ph[CAN_MAX_BITS];         /* 0 arbitration, 1 data, 2 BRS bit, 3 CRC delimiter */
+    uint32_t nf = 0u, n = 0u;
+    bool brs = c->data > c->arb * 1.001f;
+    char msg[17];
+    snprintf(msg, sizeof msg, "Hello world %04ld", ((frame % 10000L) + 10000L) % 10000L);
+    const uint32_t id = 0x123u;
+    const uint8_t dlc = 10u;          /* 16 bytes */
+    fb[nf++] = 0u;                    /* SOF */
+    for (int k = 10; k >= 0; --k) {
+        fb[nf++] = (uint8_t)((id >> k) & 1u);
+    }
+    fb[nf++] = 0u;                    /* RRS */
+    fb[nf++] = 0u;                    /* IDE: base ID */
+    fb[nf++] = 1u;                    /* FDF */
+    fb[nf++] = 0u;                    /* res */
+    uint32_t brs_at = nf;
+    fb[nf++] = brs ? 1u : 0u;         /* BRS */
+    fb[nf++] = 0u;                    /* ESI */
+    for (int k = 3; k >= 0; --k) {
+        fb[nf++] = (uint8_t)((dlc >> k) & 1u);
+    }
+    for (int i = 0; i < 16; ++i) {
+        for (int k = 7; k >= 0; --k) {
+            fb[nf++] = (uint8_t)(((uint8_t)msg[i] >> k) & 1u);
+        }
+    }
+    /* dynamic stuffing, SOF .. data; the CRC covers the stuff bits */
+    uint32_t crc = 1u << 16;
+    uint8_t prev = 2u, same = 0u;
+    uint16_t stuff = 0u;
+    int phase = 0;
+    for (uint32_t i = 0u; i < nf; ++i) {
+        uint8_t b = fb[i];
+        ph[n] = (uint8_t)(i == brs_at && brs ? 2 : phase);
+        c->dom[n++] = (uint8_t)(b == 0u);
+        if (i == brs_at && brs) {
+            phase = 1;
+        }
+        crc = dec_crc17_bit(crc, b);
+        same = (uint8_t)(b == prev ? same + 1u : 1u);
+        prev = b;
+        if (same == 5u && i + 1u < nf) {   /* none after the last data bit: the fixed stuff bit follows */
+            uint8_t s = (uint8_t)(b ^ 1u);
+            ph[n] = (uint8_t)phase;
+            c->dom[n++] = (uint8_t)(s == 0u);
+            crc = dec_crc17_bit(crc, s);
+            ++stuff;
+            prev = s;
+            same = 1u;
+        }
+    }
+    /* stuff count (Gray code + parity) and CRC-17, a fixed stuff bit before every fourth bit */
+    uint8_t sc = dec_stuff_count_bits(stuff);
+    uint8_t tail[4 + 17];
+    for (int k = 3; k >= 0; --k) {
+        tail[3 - k] = (uint8_t)((sc >> k) & 1u);
+        crc = dec_crc17_bit(crc, tail[3 - k]);
+    }
+    for (int k = 16; k >= 0; --k) {
+        tail[4 + 16 - k] = (uint8_t)((crc >> k) & 1u);
+    }
+    for (uint32_t k = 0u; k < sizeof tail; ++k) {
+        if ((k & 3u) == 0u) {
+            uint8_t f = (uint8_t)(prev ^ 1u);
+            ph[n] = (uint8_t)phase;
+            c->dom[n++] = (uint8_t)(f == 0u);
+            prev = f;
+        }
+        ph[n] = (uint8_t)phase;
+        c->dom[n++] = (uint8_t)(tail[k] == 0u);
+        prev = tail[k];
+    }
+    ph[n] = (uint8_t)(brs ? 3 : 0);
+    c->dom[n++] = 0u;                 /* CRC delimiter */
+    ph[n] = 0u;
+    c->dom[n++] = 1u;                 /* ACK slot, driven by a receiver */
+    for (int k = 0; k < 8; ++k) {     /* ACK delimiter and end of frame */
+        ph[n] = 0u;
+        c->dom[n++] = 0u;
+    }
+    double ta = 1.0 / (double)c->arb, td = 1.0 / (double)c->data, sp = (double)DEC_SAMPLE_POINT;
+    double t = 0.0;
+    for (uint32_t i = 0u; i < n; ++i) {
+        c->t[i] = t;
+        t += ph[i] == 0u ? ta : ph[i] == 1u ? td : ph[i] == 2u ? sp * ta + (1.0 - sp) * td : sp * td + (1.0 - sp) * ta;
+    }
+    c->t[n] = t;
+    c->n = n;
+    c->len = t;
+    c->frame = frame;
 }
 
-static bool canfd_dominant(double t, double arb_hz) {
-    const double period = 1e-3, head = 20.0, data = 533.0, tail = 11.0;
-    double tf = fmod(t, period);
-    if (tf < 0.0) {
-        tf += period;
+static bool canfd_dominant(int ch, double t, float arb, float data) {
+    can_tl_t *c = &g_can[ch & 1];
+    if (!(data >= arb)) {
+        data = 4.0f * arb;            /* no data rate set: 4x the arbitration rate */
     }
-    double th = head / arb_hz, td = data / (4.0 * arb_hz);
-    uint32_t frame = (uint32_t)floor(t / period);
-    if (tf < th) {
-        uint32_t bit = (uint32_t)(tf * arb_hz);
-        return bit == 0u || (bit_hash(frame * 4096u + bit) & 1u);
+    if (c->arb != arb || c->data != data) {
+        c->arb = arb;
+        c->data = data;
+        can_build(c, 0);
+        double ms = ceil(2.0 * c->len * 1e3);
+        c->period = ms > 1.0 ? ms * 1e-3 : 1e-3;
+        c->frame = -1;
     }
-    if (tf < th + td) {
-        uint32_t bit = (uint32_t)((tf - th) * 4.0 * arb_hz);
-        return (bit_hash(frame * 4096u + 100u + bit) & 1u) != 0u;
+    double fr = floor(t / c->period);
+    double tf = t - fr * c->period;
+    if ((long)fr != c->frame) {
+        can_build(c, (long)fr);
     }
-    if (tf < th + td + tail / arb_hz) {
-        uint32_t bit = (uint32_t)((tf - th - td) * arb_hz);
-        return bit == 1u;   /* the ACK slot */
+    if (tf >= c->len) {
+        return false;                 /* recessive idle */
     }
-    return false;           /* recessive idle */
+    uint32_t lo = 0u, hi = c->n;      /* the bit with t[lo] <= tf < t[lo + 1] */
+    while (hi - lo > 1u) {
+        uint32_t mid = (lo + hi) / 2u;
+        if (c->t[mid] <= tf) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    return c->dom[lo] != 0u;
 }
 
 static float sig_value(const sig_t *s, double t) {
@@ -166,10 +279,10 @@ static float sig_value(const sig_t *s, double t) {
         break;
     }
     case SIG_CANFD_H:   /* 2.5 V recessive, 3.5 V dominant */
-        v = 2.5f + (canfd_dominant(t, (double)s->freq) ? 1.0f : 0.0f);
+        v = 2.5f + (canfd_dominant(s == &g_sig[1], t, s->freq, s->rate2) ? 1.0f : 0.0f);
         break;
     case SIG_CANFD_L:   /* 2.5 V recessive, 1.5 V dominant */
-        v = 2.5f - (canfd_dominant(t, (double)s->freq) ? 1.0f : 0.0f);
+        v = 2.5f - (canfd_dominant(s == &g_sig[1], t, s->freq, s->rate2) ? 1.0f : 0.0f);
         break;
     case SIG_GND:
     default:
@@ -297,7 +410,7 @@ static void capture_finish(void) {
     uint32_t m = app_peak_factor(&g_app);
     float ya = 0.0f, yb = 0.0f;
     if (m) {
-        /* peak detect: raw words at 2.5 MS/s, folded m at a time by the firmware's own scope_peak_group() */
+        /* peak detect: raw words at APP_ADC_MAX_HZ / 30, folded m at a time by the firmware's own scope_peak_group() */
         double fs_raw = APP_ADC_MAX_HZ / APP_PEAK_CLKDIV;
         float alpha = 1.0f - expf(-2.0f * (float)M_PI * 31e6f / (float)fs_raw);
         size_t groups = n / 2u;
@@ -555,13 +668,125 @@ static bool sim_deep_poll(double now_ms) {
     return true;
 }
 
+/* ---- bus decoding (follows main.c decode_start / decode_poll / decode_stop) --------------------- */
+
+/* The browser cannot make 18.75 M noisy samples a second, so the simulated pen falls behind real time
+ * when the plan asks for more than this: nothing is lost, the bus just runs slower than the clock. */
+#define SIM_DEC_SAMPLES_PER_S 6.0e6
+
+static dec_t g_dec;
+static double g_dec_t0;          /* signal time of sample 0, s */
+static double g_dec_last_ms;
+static double g_dec_speed = 1.0; /* simulated seconds per real second, last step */
+static uint32_t g_burst_left;    /* samples still to take in this burst */
+static bool g_burst_started;
+static float g_dya, g_dyb;
+static uint8_t g_dec_codes[1024];
+
+static void sim_decode_emit(const dec_record_t *rec, void *ctx) {
+    (void)ctx;
+    char line[DEC_LINE_MAX];
+    char text[DEC_TEXT_MAX];
+    dec_format_line(&g_dec, rec, line, sizeof line);
+    usb_puts_line(line);
+    dec_format_text(rec, text, sizeof text);
+    app_decode_text(&g_app, text);
+}
+
+static void sim_decode_start(double now_ms) {
+    g_capturing = false;
+    g_dec = g_app.decode_plan;
+    g_dec_t0 = now_ms * 1e-3;
+    g_dec_last_ms = now_ms;
+    g_dec_speed = 1.0;
+    g_burst_left = 0u;
+    g_burst_started = false;
+    g_dya = sig_value(&g_sig[0], g_dec_t0);
+    g_dyb = sig_value(&g_sig[1], g_dec_t0);
+    g_app.decoding = true;
+}
+
+static void sim_decode_stop(void) {
+    char line[160];
+    dec_flush(&g_dec, sim_decode_emit, NULL);
+    snprintf(line, sizeof line, "DECODE END RECORDS=%lu ERRORS=%lu LOST=%lu SAMPLES=%llu",
+             (unsigned long)g_dec.records, (unsigned long)g_dec.errors, (unsigned long)g_dec.lost_events,
+             (unsigned long long)g_dec.pos);
+    usb_puts_line(line);
+    g_app.decode_plan = g_dec;
+    g_app.decoding = false;
+}
+
+/* n codes of the decode source, rising with the tip voltage, from sample index g_dec.pos on */
+static void sim_decode_codes(uint32_t n, bool as_words) {
+    double fs = (double)g_dec.fs;
+    float alpha = 1.0f - expf(-2.0f * (float)M_PI * 31e6f / (float)fs);
+    bool need_a = g_dec.src != DEC_SRC_CH2, need_b = g_dec.src != DEC_SRC_CH1;
+    for (uint32_t i = 0u; i < n; ++i) {
+        double t = g_dec_t0 + (double)(g_dec.pos + i) / fs;
+        uint8_t ra = need_a ? adc_code(0, sig_value(&g_sig[0], t), &g_dya, alpha) : 127u;   /* raw, inverted */
+        uint8_t rb = need_b ? adc_code(1, sig_value(&g_sig[1], t), &g_dyb, alpha) : 127u;
+        if (as_words) {
+            g_words[i] = pio_word(ra, rb);
+        } else {
+            int a = 255 - ra, b = 255 - rb;
+            int v = g_dec.src == DEC_SRC_CH1 ? a : (g_dec.src == DEC_SRC_CH2 ? b : 128 + a - b);
+            g_dec_codes[i] = (uint8_t)(v < 0 ? 0 : (v > 255 ? 255 : v));
+        }
+    }
+}
+
+static void sim_decode_poll(double now_ms) {
+    double dt = now_ms - g_dec_last_ms;
+    g_dec_last_ms = now_ms;
+    if (dt > 250.0) {
+        dt = 250.0;   /* a background tab: carry on where it stopped */
+    }
+    double fs = (double)g_dec.fs;
+    double want = fs * dt * 1e-3;
+    double cap = SIM_DEC_SAMPLES_PER_S * dt * 1e-3;
+    uint64_t todo = (uint64_t)(want < cap ? want : cap);
+    g_dec_speed = want > 0.0 ? (double)todo / want : 1.0;
+    while (todo > 0u) {
+        if (!g_dec.burst) {   /* live: raw words from the ring, as main.c reads them */
+            uint32_t n = todo > 1024u ? 1024u : (uint32_t)todo;
+            sim_decode_codes(n, true);
+            dec_push_words(&g_dec, g_words, n, sim_decode_emit, NULL);
+            todo -= n;
+            continue;
+        }
+        if (g_burst_left == 0u) {   /* burst: the time spent decoding the last one goes unseen */
+            if (g_burst_started) {
+                double gap = (double)g_dec.burst_n * (double)DEC_CYCLES_PER_SAMPLE / (double)APP_SYS_HZ * fs;
+                dec_skip(&g_dec, (uint64_t)gap, false, sim_decode_emit, NULL);
+            }
+            g_burst_started = true;
+            g_burst_left = g_dec.burst_n;
+        }
+        uint32_t n = todo > 1024u ? 1024u : (uint32_t)todo;
+        if (n > g_burst_left) {
+            n = g_burst_left;
+        }
+        sim_decode_codes(n, false);
+        dec_push_codes(&g_dec, g_dec_codes, n, sim_decode_emit, NULL);
+        g_burst_left -= n;
+        todo -= n;
+    }
+    /* statistics for the screen and the page */
+    dec_t *p = &g_app.decode_plan;
+    p->records = g_dec.records;
+    p->errors = g_dec.errors;
+    p->lost_events = g_dec.lost_events;
+    p->pos = g_dec.pos;
+}
+
 /* ---- exported API ------------------------------------------------------------------------------ */
 
 static uint8_t g_buttons;
 static double g_last_dc = -1e9, g_last_draw = -1e9;
 static bool g_fresh;
 static uint32_t g_flash_writes;
-static char g_info[768];
+static char g_info[1280];
 
 EXPORT void sim_init(void) {
     app_init(&g_app);
@@ -596,6 +821,13 @@ EXPORT void sim_set_usb_budget(double bytes_per_s) {
     g_usb_budget = bytes_per_s > 1000.0 ? bytes_per_s : 1000.0;
 }
 
+/* CAN FD data-phase bit rate of a channel's CAN signal (0 = 4x its arbitration rate). */
+EXPORT void sim_set_bitrate(int ch, float data_hz) {
+    if (ch >= 0 && ch <= 1) {
+        g_sig[ch].rate2 = data_hz > 0.0f ? data_hz : 0.0f;
+    }
+}
+
 EXPORT void sim_set_pod(int kind, float freq) {
     g_pod_kind = kind;
     g_pod_freq = freq > 0.0f ? freq : 1.0f;
@@ -624,6 +856,26 @@ EXPORT int sim_step(double now_ms) {
             sim_stream_stop();
             capture_start(now_ms);
         }
+    }
+    if (g_app.decode_req) {
+        g_app.decode_req = false;
+        if (g_app.decoding) {
+            sim_decode_stop();
+        }
+        if (!g_app.decode_stop) {
+            sim_decode_start(now_ms);
+        } else {
+            capture_start(now_ms);
+        }
+    }
+    if (g_app.decoding) {
+        sim_decode_poll(now_ms);
+        if (now_ms - g_last_draw >= 250.0) {
+            app_render(&g_app, g_fb, g_ch_a, g_ch_b, g_n, g_nib, g_n_nib);
+            g_last_draw = now_ms;
+            return 1;
+        }
+        return 0;
     }
     if (g_app.deep_req && !g_app.streaming) {
         g_app.deep_req = false;
@@ -663,8 +915,8 @@ EXPORT int sim_step(double now_ms) {
         g_app.cal_changed = false;
     }
     if (g_app.ask_pending) {
-        char meas[320];
-        char line[340];
+        char meas[512];
+        char line[540];
         app_format_meas(&g_app, meas, sizeof meas);
         snprintf(line, sizeof line, "ASK %s", meas);
         usb_puts_line(line);
@@ -706,7 +958,7 @@ EXPORT char *sim_usb_in_buf(void) {
     return g_usb_in;
 }
 EXPORT void sim_usb_in_commit(void) {
-    char reply[320];
+    char reply[512];
     g_usb_in[sizeof g_usb_in - 1u] = '\0';
     app_usb_command(&g_app, g_usb_in, reply, sizeof reply);
     usb_puts_line(reply);
@@ -739,5 +991,17 @@ EXPORT const char *sim_info(void) {
              (unsigned long)g_app.stream_plan.avg, (double)g_app.stream_bps, (unsigned long)g_app.stream_lost,
              g_usb_budget, (unsigned long)g_flash_writes, (double)g_app.cal[0].offset_1x_v, (double)g_app.cal[1].offset_1x_v,
              (double)g_app.cal[0].offset_10x_v, (double)g_app.cal[1].offset_10x_v);
+    size_t len = strlen(g_info) - 1u;   /* reopen the object for the decode fields */
+    const dec_t *d = &g_app.decode_plan;
+    snprintf(g_info + len, sizeof g_info - len,
+             ",\"decoding\":%d,\"dec_proto\":%u,\"dec_src\":%u,\"dec_rate\":%.0f,\"dec_data\":%.0f,\"dec_fs\":%.1f,"
+             "\"dec_div\":%lu,\"dec_spb\":%.2f,\"dec_burst\":%d,\"dec_cover\":%.3f,\"dec_burst_n\":%lu,\"dec_records\":%lu,"
+             "\"dec_errors\":%lu,\"dec_lost\":%lu,\"dec_seconds\":%.4f,\"dec_speed\":%.3f,"
+             "\"sys_mhz\":%d,\"adc_max\":%.0f,\"dec_live_max\":%.0f}",
+             (int)g_app.decoding, (unsigned)d->proto, (unsigned)d->src, (double)d->rate, (double)d->data_rate,
+             (double)d->fs, (unsigned long)d->clkdiv, (double)d->spb_data, (int)d->burst, (double)d->coverage,
+             (unsigned long)d->burst_n, (unsigned long)d->records, (unsigned long)d->errors,
+             (unsigned long)d->lost_events, d->fs > 0.0f ? (double)d->pos / (double)d->fs : 0.0, g_dec_speed,
+             (int)PROBEPEN_SYS_MHZ, (double)APP_ADC_MAX_HZ, (double)DEC_LIVE_MAX_HZ);
     return g_info;
 }

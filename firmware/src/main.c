@@ -21,7 +21,9 @@
 
 #ifdef PICO_RP2350
 #include "hardware/adc.h"
+#include "hardware/clocks.h"
 #include "hardware/dma.h"
+#include "hardware/vreg.h"
 #include "hardware/flash.h"
 #include "hardware/gpio.h"
 #include "hardware/sync.h"
@@ -97,7 +99,10 @@ static void lcd_delay(void *ctx, uint32_t ms) {
 static const lcd_bus_t LCD_BUS = {lcd_write_cmd, lcd_write_data, lcd_delay, NULL};
 static int g_lcd_dma = -1;
 
-static void lcd_flush(void) {
+static bool g_lcd_busy;
+
+/* Starts sending the framebuffer (about 13 ms at 40 MHz); lcd_flush_poll() finishes it. */
+static void lcd_flush_begin(void) {
     lcd_panel_set_window(&LCD_BUS, 0u, 0u, (uint16_t)(LCD_WIDTH - 1u), (uint16_t)(LCD_HEIGHT - 1u));
     /* 16-bit frames send each RGB565 pixel MSB first, as the panel wants */
     spi_set_format(spi1, 16u, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
@@ -107,12 +112,31 @@ static void lcd_flush(void) {
     channel_config_set_transfer_data_size(&c, DMA_SIZE_16);
     channel_config_set_dreq(&c, spi_get_dreq(spi1, true));
     dma_channel_configure((uint)g_lcd_dma, &c, &spi_get_hw(spi1)->dr, g_fb, LCD_PIXELS, true);
-    dma_channel_wait_for_finish_blocking((uint)g_lcd_dma);
-    while (spi_is_busy(spi1)) {
-        tight_loop_contents();
+    g_lcd_busy = true;
+}
+
+/* True when no frame is on its way (a frame in flight is finished here once its DMA is done). */
+static bool lcd_flush_poll(void) {
+    if (!g_lcd_busy) {
+        return true;
+    }
+    if (dma_channel_is_busy((uint)g_lcd_dma) || spi_is_busy(spi1)) {
+        return false;
     }
     gpio_put(PIN_LCD_CS_N, 1);
     spi_set_format(spi1, 8u, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
+    g_lcd_busy = false;
+    return true;
+}
+
+static void lcd_flush(void) {
+    while (!lcd_flush_poll()) {   /* a frame from the decode screen may still be going out */
+        tight_loop_contents();
+    }
+    lcd_flush_begin();
+    while (!lcd_flush_poll()) {
+        tight_loop_contents();
+    }
 }
 
 static void lcd_init_hw(void) {
@@ -143,6 +167,14 @@ static void gpio_out(uint pin, bool level) {
 }
 
 static void hal_init(void) {
+    if (PROBEPEN_SYS_MHZ != 150) {
+        /* Overclocked build: raise the core voltage first, then the PLL. clk_peri follows clk_sys, so this
+         * comes before the LCD's SPI is set up; USB runs from its own PLL. To check on the first board: the
+         * flash clock (QMI divider) and the AD9288 at 125 MS/s, both beyond their ratings. */
+        vreg_set_voltage(VREG_VOLTAGE_1_20);
+        sleep_ms(2);
+        set_sys_clock_khz((uint32_t)PROBEPEN_SYS_MHZ * 1000u, true);
+    }
     stdio_init_all();
     stdio_set_translate_crlf(&stdio_usb, false);   /* binary wave frames go out on the same port */
     gpio_out(PIN_ADC_S1, 1);           /* AD9288 S1/S2 = 1/1: both channels running, outputs aligned */
@@ -447,34 +479,40 @@ static void deep_dma(uint ch, uint sm, uint8_t *dst, uint32_t words) {
     dma_channel_configure(ch, &c, dst, &pio0->rxf[sm], words, false);
 }
 
-/* Takes the record planned by app.c: the leader reads CH1 (or CH2 alone), the follower CH2. */
-static void deep_start(void) {
+/* One byte-wide record of n samples per channel at 75 MHz / clkdiv: the leader reads CH1 (or CH2 alone),
+ * the follower CH2. Also used by the burst decoder. */
+static void deep_capture_start(uint8_t chmask, uint32_t n, uint32_t clkdiv) {
     dma_channel_abort((uint)g_cap_dma);
-    pio_set_sm_mask_enabled(pio0, 1u | (1u << ENCB_SM), false);
+    pio_set_sm_mask_enabled(pio0, 1u | (1u << ENCB_SM) | (1u << DEEP_SM_LEAD) | (1u << DEEP_SM_FOLLOW), false);
     pio_sm_set_enabled(pio1, 0u, false);
     g_capturing = false;
-    g_app.deep_busy = true;
     gpio_put(PIN_CH1_GAIN_LO, g_app.range[0] == AFE_RANGE_10X);
     gpio_put(PIN_CH2_GAIN_LO, g_app.range[1] == AFE_RANGE_10X);
     uint8_t *buf = (uint8_t *)g_words;
-    uint32_t words = g_app.deep_n / 4u;
-    bool both = g_app.deep_mask == 3u;
+    uint32_t words = n / 4u;
+    bool both = chmask == 3u;
     pio_sm_config lead = ad9288_byte_lead_program_get_default_config((uint)g_lead_offset);
-    sm_config_set_sideset_pins(&lead, g_app.deep_mask == 2u ? AD9288_CLKB_PIN : AD9288_CLK_PIN);   /* clock the channel it reads */
-    ad9288_byte_init(pio0, DEEP_SM_LEAD, (uint)g_lead_offset, lead, g_app.deep_mask == 2u ? 32u : 16u, g_app.deep_clkdiv);
+    sm_config_set_sideset_pins(&lead, chmask == 2u ? AD9288_CLKB_PIN : AD9288_CLK_PIN);   /* clock the channel it reads */
+    ad9288_byte_init(pio0, DEEP_SM_LEAD, (uint)g_lead_offset, lead, chmask == 2u ? 32u : 16u, clkdiv);
     pio_sm_clear_fifos(pio0, DEEP_SM_LEAD);
     deep_dma((uint)g_cap_dma, DEEP_SM_LEAD, buf, words);
     uint32_t mask = 1u << DEEP_SM_LEAD;
     if (both) {
         pio_sm_config fol = ad9288_byte_lead_program_get_default_config((uint)g_lead_offset);
         sm_config_set_sideset_pins(&fol, AD9288_CLKB_PIN);   /* channel B's own encode clock, in phase */
-        ad9288_byte_init(pio0, DEEP_SM_FOLLOW, (uint)g_lead_offset, fol, 32u, g_app.deep_clkdiv);
+        ad9288_byte_init(pio0, DEEP_SM_FOLLOW, (uint)g_lead_offset, fol, 32u, clkdiv);
         pio_sm_clear_fifos(pio0, DEEP_SM_FOLLOW);
-        deep_dma((uint)g_deep_dma_b, DEEP_SM_FOLLOW, buf + g_app.deep_n, words);
+        deep_dma((uint)g_deep_dma_b, DEEP_SM_FOLLOW, buf + n, words);
         mask |= 1u << DEEP_SM_FOLLOW;
     }
     dma_start_channel_mask((1u << (uint)g_cap_dma) | (both ? (1u << (uint)g_deep_dma_b) : 0u));
     pio_enable_sm_mask_in_sync(pio0, mask);   /* same divider, same start cycle: the two stay in lockstep */
+}
+
+/* Takes the record planned by app.c. */
+static void deep_start(void) {
+    g_app.deep_busy = true;
+    deep_capture_start(g_app.deep_mask, g_app.deep_n, g_app.deep_clkdiv);
 }
 
 static void deep_emit(const uint8_t *block, size_t len, void *ctx) {
@@ -515,6 +553,134 @@ static bool deep_poll(void) {
     return true;
 }
 
+/* ---- bus decoding (DECODE command, see probepen_decode.h) ------------------------------------- */
+
+_Static_assert(DEC_BURST_BYTES <= DEEP_BYTES - 2u * LCD_PIXELS, "a decode burst must leave the framebuffer alone");
+static dec_t g_dec;
+static uint32_t g_dec_consumed;        /* live: raw words taken from the ring in this DMA run */
+static uint64_t g_dec_t0_us;           /* when sample 0 was taken */
+static uint64_t g_dec_burst_us;        /* burst: when the burst in flight started */
+
+static void decode_emit(const dec_record_t *rec, void *ctx) {
+    (void)ctx;
+    char line[DEC_LINE_MAX];
+    char text[DEC_TEXT_MAX];
+    dec_format_line(&g_dec, rec, line, sizeof line);
+    printf("%s\n", line);
+    dec_format_text(rec, text, sizeof text);
+    app_decode_text(&g_app, text);
+}
+
+static void decode_burst_start(void) {
+    uint8_t mask = g_dec.src == DEC_SRC_DIFF ? 3u : g_dec.src;
+    g_dec_burst_us = to_us_since_boot(get_absolute_time());
+    deep_capture_start(mask, g_dec.burst_n, g_dec.clkdiv);
+}
+
+static void decode_start(void) {
+    dma_channel_abort((uint)g_cap_dma);
+    pio_set_sm_mask_enabled(pio0, 1u | (1u << ENCB_SM), false);
+    pio_sm_set_enabled(pio1, 0u, false);
+    g_capturing = false;
+    g_dec = g_app.decode_plan;
+    g_dec_t0_us = to_us_since_boot(get_absolute_time());
+    if (g_dec.burst) {
+        decode_burst_start();
+    } else {   /* live: both channels run into the stream ring, as for STREAM */
+        gpio_put(PIN_CH1_GAIN_LO, g_app.range[0] == AFE_RANGE_10X);
+        gpio_put(PIN_CH2_GAIN_LO, g_app.range[1] == AFE_RANGE_10X);
+        pio_sm_set_clkdiv_int_frac(pio0, 0u, (uint16_t)g_dec.clkdiv, 0u);
+        encb_prepare(g_dec.clkdiv);
+        pio_sm_clear_fifos(pio0, 0u);
+        pio_sm_restart(pio0, 0u);
+        pio_sm_exec(pio0, 0u, pio_encode_jmp((uint)g_adc_offset));
+        stream_dma_start();
+        g_dec_consumed = 0u;
+        pio_enable_sm_mask_in_sync(pio0, 1u | (1u << ENCB_SM));
+    }
+    g_app.decoding = true;
+}
+
+static void decode_stop(void) {
+    pio_set_sm_mask_enabled(pio0, 1u | (1u << ENCB_SM) | (1u << DEEP_SM_LEAD) | (1u << DEEP_SM_FOLLOW), false);
+    dma_channel_abort((uint)g_cap_dma);
+    dma_channel_abort((uint)g_deep_dma_b);
+    dec_flush(&g_dec, decode_emit, NULL);
+    printf("DECODE END RECORDS=%lu ERRORS=%lu LOST=%lu SAMPLES=%llu\n", (unsigned long)g_dec.records,
+           (unsigned long)g_dec.errors, (unsigned long)g_dec.lost_events, (unsigned long long)g_dec.pos);
+    fflush(stdout);
+    g_app.decode_plan = g_dec;
+    g_app.decoding = false;
+    while (!lcd_flush_poll()) {
+        tight_loop_contents();
+    }
+}
+
+static void decode_poll(void) {
+    if (!g_dec.burst) {
+        if (!dma_channel_is_busy((uint)g_cap_dma)) {   /* the 28-bit count ran out: start a new run */
+            dec_skip(&g_dec, STREAM_DMA_COUNT - g_dec_consumed, true, decode_emit, NULL);
+            stream_dma_start();
+            g_dec_consumed = 0u;
+            return;
+        }
+        uint32_t remaining = dma_channel_hw_addr((uint)g_cap_dma)->transfer_count & 0x0FFFFFFFu;
+        uint32_t avail = (STREAM_DMA_COUNT - remaining) - g_dec_consumed;
+        if (avail > STREAM_RING_WORDS - 512u) {   /* the decoder fell behind and the ring lapped */
+            uint32_t drop = avail - STREAM_RING_WORDS / 2u;
+            dec_skip(&g_dec, drop, true, decode_emit, NULL);
+            g_dec_consumed += drop;
+            avail -= drop;
+        }
+        for (int pass = 0; pass < 8 && avail > 0u; ++pass) {
+            uint32_t idx = g_dec_consumed % STREAM_RING_WORDS;
+            uint32_t n = avail;
+            if (n > STREAM_RING_WORDS - idx) {
+                n = STREAM_RING_WORDS - idx;
+            }
+            if (n > 2048u) {
+                n = 2048u;
+            }
+            dec_push_words(&g_dec, &g_words[idx], n, decode_emit, NULL);
+            g_dec_consumed += n;
+            avail -= n;
+        }
+    } else {
+        if (dma_channel_is_busy((uint)g_cap_dma) || dma_channel_is_busy((uint)g_deep_dma_b)) {
+            return;
+        }
+        pio_set_sm_mask_enabled(pio0, (1u << DEEP_SM_LEAD) | (1u << DEEP_SM_FOLLOW), false);
+        uint8_t *buf = (uint8_t *)g_words;
+        uint32_t n = g_dec.burst_n;
+        uint8_t *codes = buf;
+        if (g_dec.src == DEC_SRC_CH2) {
+            deep_decode(buf, n, false);
+        } else {
+            deep_decode(buf, n, true);          /* channel A's bus is bit-reversed on GPIO16..23 */
+            if (g_dec.src == DEC_SRC_DIFF) {
+                uint8_t *b = buf + n;
+                deep_decode(b, n, false);
+                for (uint32_t i = 0u; i < n; ++i) {
+                    int v = 128 + (int)buf[i] - (int)b[i];
+                    buf[i] = (uint8_t)(v < 0 ? 0 : (v > 255 ? 255 : v));
+                }
+            }
+        }
+        /* the time since the last burst ended went unseen */
+        uint64_t at = (uint64_t)((double)(g_dec_burst_us - g_dec_t0_us) * 1e-6 * (double)g_dec.fs);
+        if (at > g_dec.pos) {
+            dec_skip(&g_dec, at - g_dec.pos, false, decode_emit, NULL);
+        }
+        dec_push_codes(&g_dec, codes, n, decode_emit, NULL);
+        decode_burst_start();
+    }
+    dec_t *p = &g_app.decode_plan;   /* statistics for the screen */
+    p->records = g_dec.records;
+    p->errors = g_dec.errors;
+    p->lost_events = g_dec.lost_events;
+    p->pos = g_dec.pos;
+}
+
 /* ---- calibration, one sector below the top of flash ------------------------------------------ */
 
 /* Not the last sector: for RP2350, picotool adds a UF2 block at 0x10FFFF00 (erratum E10 workaround),
@@ -543,7 +709,7 @@ static void cal_save(void) {
 static void usb_poll(void) {
     static char line[64];
     static size_t len;
-    char reply[320];
+    char reply[512];
     for (int guard = 0; guard < 64; ++guard) {
         int c = getchar_timeout_us(0);
         if (c == PICO_ERROR_TIMEOUT) {
@@ -606,6 +772,28 @@ int main(void) {
                 g_capturing = true;
             }
         }
+        if (g_app.decode_req) {
+            g_app.decode_req = false;
+            if (g_app.decoding) {
+                decode_stop();
+            }
+            if (!g_app.decode_stop) {
+                decode_start();
+            } else {
+                capture_start();
+                g_capturing = true;
+            }
+        }
+        if (g_app.decoding) {
+            decode_poll();
+            /* the screen goes out by DMA while decoding goes on; drawn when the last frame is done */
+            if (now - last_draw >= 250u && lcd_flush_poll()) {
+                app_render(&g_app, g_fb, g_ch_a, g_ch_b, g_n, g_nib, g_n_nib);
+                lcd_flush_begin();
+                last_draw = now;
+            }
+            continue;
+        }
         if (g_app.deep_req && !g_app.streaming) {
             g_app.deep_req = false;
             deep_start();
@@ -641,7 +829,7 @@ int main(void) {
             g_app.cal_changed = false;
         }
         if (g_app.ask_pending) {
-            char meas[320];
+            char meas[512];
             app_format_meas(&g_app, meas, sizeof meas);
             printf("ASK %s\n", meas);
             send_frames(g_app.win_start, g_app.win_len);
@@ -685,7 +873,7 @@ int main(void) {
     g_n = scope_unpack_ad9288(g_words, g_n, g_ch_a, g_ch_b, CAPTURE_MAX);
     app_process_scope(&g_app, g_ch_a, g_ch_b, g_n);
     app_render(&g_app, g_fb, g_ch_a, g_ch_b, g_n, g_nib, g_n_nib);
-    char meas[320];
+    char meas[512];
     app_format_meas(&g_app, meas, sizeof meas);
     printf("%s\n", meas);
     (void)send_frames;

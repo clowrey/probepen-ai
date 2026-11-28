@@ -31,6 +31,7 @@
   }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; }
 body {
   background: var(--bg);
@@ -50,6 +51,8 @@ h3 { font-size: 14px; margin: 0 0 4px; }
 .lede { margin: 0 0 6px; max-width: 70ch; color: var(--muted); }
 .links { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; margin: 0 0 10px; }
 .status { color: var(--muted); font-size: 13px; }
+.clk { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+.clk select { width: auto; }
 .status.ok { color: var(--ok); }
 .status.err { color: var(--err); }
 
@@ -135,6 +138,19 @@ input[type="range"] { padding: 0; accent-color: var(--accent); }
 .sstats { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .sstats .bad { color: var(--err); }
 .sstats .good { color: var(--ok); }
+.toolbar input[type="checkbox"] { width: auto; accent-color: var(--accent); }
+.hist { margin-top: 8px; }
+.hist input[type="range"] { flex: 1 1 200px; width: auto; padding: 0; }
+.hist b, .stream-bar b { font-size: 13px; }
+.term-wrap { margin-top: 12px; }
+.term {
+  height: 220px; overflow: auto; background: #07090d; color: #d7f5df; border-radius: 6px; padding: 8px;
+  font: 13px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace; white-space: pre-wrap; word-break: break-word;
+}
+.term .t { color: #6f7a8c; }
+.term .id { color: #7fb4ff; }
+.term .err { color: #ff6b6b; }
+.term .ok { color: #49d07a; }
 .cap { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
 .cap input { width: 5.5em; }
 .plot-wrap { position: relative; margin-top: 12px; }

@@ -67,7 +67,7 @@ def test_deep_command_parse(core):
         ("arg_i2", ctypes.c_int32)]})
     core.usb_parse_command.restype = cmd_t
     c = core.usb_parse_command(b"DEEP")
-    assert (c.kind, c.arg_i, c.arg_i2, c.arg_f, c.valid) == (12, 0, 3, 75e6, True)
+    assert (c.kind, c.arg_i, c.arg_i2, c.arg_f, c.valid) == (12, 0, 3, 0.0, True)
     c = core.usb_parse_command(b"DEEP 50000 2 25e6")
     assert (c.arg_i, c.arg_i2, c.arg_f, c.valid) == (50000, 2, 25e6, True)
     assert not core.usb_parse_command(b"DEEP 100 4").valid

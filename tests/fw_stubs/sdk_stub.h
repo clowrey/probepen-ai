@@ -17,6 +17,12 @@ typedef volatile uint32_t io_wo_32;
 typedef uint64_t absolute_time_t;
 absolute_time_t get_absolute_time(void);
 uint32_t to_ms_since_boot(absolute_time_t t);
+uint64_t to_us_since_boot(absolute_time_t t);
+
+/* hardware/clocks, hardware/vreg */
+bool set_sys_clock_khz(uint32_t freq_khz, bool required);
+enum vreg_voltage { VREG_VOLTAGE_1_10 = 11, VREG_VOLTAGE_1_15 = 12, VREG_VOLTAGE_1_20 = 13 };
+void vreg_set_voltage(enum vreg_voltage voltage);
 void sleep_ms(uint32_t ms);
 static inline void tight_loop_contents(void) {}
 bool stdio_init_all(void);

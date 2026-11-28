@@ -1,7 +1,8 @@
 #ifndef PROBEPEN_DEEP_H
 #define PROBEPEN_DEEP_H
 
-/* Deep record (USB command DEEP): one long capture at up to 75 MS/s into most of the RAM.
+/* Deep record (USB command DEEP): one long capture at up to APP_ADC_MAX_HZ (75 MS/s at 150 MHz, 125 MS/s at
+ * 250 MHz) into most of the RAM.
  *
  * Two PIO state machines run in lockstep: one drives ADC_CLK and reads channel A's 8 bits, the other reads
  * channel B's 8 bits on the same cycle. Each packs 4 samples per 32-bit word into its own region of the
@@ -29,7 +30,7 @@ extern "C" {
 /* Largest record per channel for a channel mask (1, 2 or 3), a multiple of 4. */
 uint32_t deep_max_samples(uint8_t chmask);
 /* Samples per channel (want_n 0 = the most that fits, else rounded down to a multiple of 4) and the PIO
- * divider for want_hz (75 MS/s / an integer). False for a bad mask, rate or count. */
+ * divider for want_hz (adc_max_hz / an integer). False for a bad mask, rate or count. */
 bool deep_plan(uint32_t want_n, uint8_t chmask, float want_hz, float adc_max_hz, uint32_t *n_out,
                uint32_t *clkdiv_out, float *rate_out);
 /* Raw PIO bytes to codes in place: channel A's bus is bit-reversed on the pins; both are inverted by the

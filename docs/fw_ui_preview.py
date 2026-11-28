@@ -19,10 +19,13 @@ FW = ROOT / "firmware"
 OUT = ROOT / "docs" / "img" / "ui_screens.png"
 
 
-def build(lcd096: bool, tmp: Path) -> ctypes.CDLL:
-    so = tmp / "libpp.so"
+def build(lcd096: bool, tmp: Path, with_sim: bool = False) -> ctypes.CDLL:
+    so = tmp / ("libsim.so" if with_sim else "libpp.so")
     srcs = [str(s) for s in sorted((FW / "src").glob("*.c")) if s.name != "main.c"]
-    cmd = ["gcc", "-std=c11", "-O2", "-shared", "-fPIC", f"-I{FW / 'include'}", *srcs, "-lm", "-o", str(so)]
+    if with_sim:
+        srcs.append(str(ROOT / "sim" / "sim.c"))
+    cmd = ["gcc", "-std=c11", "-O2", "-D_DEFAULT_SOURCE", "-shared", "-fPIC", f"-I{FW / 'include'}", *srcs, "-lm",
+           "-o", str(so)]
     if lcd096:
         cmd.insert(1, "-DPROBEPEN_LCD_096")
     subprocess.run(cmd, check=True)
@@ -41,7 +44,7 @@ def screens(lcd096: bool = False) -> list[Image.Image]:
     w, h = lcd_size(lcd096)
     with tempfile.TemporaryDirectory() as tmp:
         lib = build(lcd096, Path(tmp))
-        app = ctypes.create_string_buffer(4096)
+        app = ctypes.create_string_buffer(8192)
         reply = ctypes.create_string_buffer(512)
         lib.app_init(app)
 
@@ -79,12 +82,54 @@ def screens(lcd096: bool = False) -> list[Image.Image]:
                     v = fb[y * w + x]
                     px[x, y] = (((v >> 11) & 31) * 255 // 31, ((v >> 5) & 63) * 255 // 63, (v & 31) * 255 // 31)
             imgs.append(im)
+        imgs += decode_screens(lcd096, Path(tmp), w, h)
         return imgs
+
+
+def to_image(fb, w: int, h: int) -> Image.Image:
+    im = Image.new("RGB", (w, h))
+    px = im.load()
+    for y in range(h):
+        for x in range(w):
+            v = fb[y * w + x]
+            px[x, y] = (((v >> 11) & 31) * 255 // 31, ((v >> 5) & 63) * 255 // 63, (v & 31) * 255 // 31)
+    return im
+
+
+def decode_screens(lcd096: bool, tmp: Path, w: int, h: int) -> list[Image.Image]:
+    """The decode screen, from the simulated board (sim/sim.c runs the main loop): UART, then CAN FD."""
+    sim = build(lcd096, tmp, with_sim=True)
+    sim.sim_step.argtypes = [ctypes.c_double]
+    sim.sim_usb_in_buf.restype = ctypes.c_void_p
+    sim.sim_fb.restype = ctypes.POINTER(ctypes.c_uint16)
+    sim.sim_set_signal.argtypes = [ctypes.c_int, ctypes.c_int] + [ctypes.c_float] * 5
+    sim.sim_set_bitrate.argtypes = [ctypes.c_int, ctypes.c_float]
+    out = []
+    for sigs, rate2, command in (
+        ([(7, 3.3, 0, 115200, 0.5, 0.01), (0, 0, 0, 1, 0.5, 0)], 0, "DECODE UART 1 115200"),
+        ([(9, 0, 0, 500e3, 0.5, 0.02), (10, 0, 0, 500e3, 0.5, 0.02)], 2e6, "DECODE CAN 3 500000 2000000"),
+    ):
+        sim.sim_init()
+        for ch, sg in enumerate(sigs):
+            sim.sim_set_signal(ch, *sg)
+            sim.sim_set_bitrate(ch, rate2)
+        t = 0.0
+        for line in ("GAIN 1", command):
+            buf = line.encode() + b"\0"
+            ctypes.memmove(sim.sim_usb_in_buf(), buf, len(buf))
+            sim.sim_usb_in_commit()
+        for _ in range(60):
+            t += 16.0
+            sim.sim_step(ctypes.c_double(t))
+            sim.sim_usb_out_clear()
+        out.append(to_image(sim.sim_fb(), w, h))
+    return out
 
 
 def sheet(imgs: list[Image.Image], scale: int = 3, gap: int = 12) -> Image.Image:
     w, h = imgs[0].size
-    W, H = 2 * w * scale + 3 * gap, 2 * h * scale + 3 * gap
+    rows = (len(imgs) + 1) // 2
+    W, H = 2 * w * scale + 3 * gap, rows * h * scale + (rows + 1) * gap
     out = Image.new("RGB", (W, H), (255, 255, 255))
     for k, im in enumerate(imgs):
         x = gap + (k % 2) * (w * scale + gap)

@@ -11,15 +11,17 @@
 #include "probepen_afe.h"
 #include "probepen_scope.h"
 #include "probepen_deep.h"
+#include "probepen_decode.h"
 #include "probepen_stream.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define APP_SYS_HZ        150000000.0f   /* RP2354B default system clock */
-#define APP_ADC_MAX_HZ    75000000.0f    /* two PIO cycles per sample at clkdiv 1 (AD9288-80) */
-#define APP_FW_VERSION    "0.3"
+#include "probepen_clock.h"              /* APP_SYS_HZ, APP_ADC_MAX_HZ (150 MHz: 75 MS/s; 250 MHz: 125 MS/s) */
+#define APP_FW_VERSION    "0.4"
+#define APP_DEC_LINES     12u            /* decoded text on the screen: 12 lines of 40 characters */
+#define APP_DEC_COLS      40u
 
 typedef enum {
     APP_MODE_DUAL = 0,   /* both scope channels */
@@ -103,6 +105,15 @@ typedef struct {
     uint8_t deep_mask;
     uint32_t deep_clkdiv;
     float deep_rate_hz;
+
+    /* bus decoding (DECODE command, see probepen_decode.h) */
+    bool decode_req;            /* the main loop starts the planned decode, or stops it (decode_stop) */
+    bool decode_stop;
+    bool decoding;              /* set by the main loop while a decode runs */
+    dec_t decode_plan;          /* the plan; the main loop copies its statistics back into it */
+    char dec_log[APP_DEC_LINES][APP_DEC_COLS + 1];   /* decoded text for the screen, a ring of lines */
+    uint8_t dec_log_line;       /* the line being written */
+    uint8_t dec_log_col;
 } app_t;
 
 void app_init(app_t *app);
@@ -112,7 +123,7 @@ uint32_t app_timebase_ns(const app_t *app);           /* time per division */
 uint32_t app_clkdiv(const app_t *app);                 /* integer PIO divider for the scope / pod clock */
 float app_sample_rate_hz(const app_t *app);           /* = APP_ADC_MAX_HZ / clkdiv */
 size_t app_screen_samples(const app_t *app);          /* samples across the 10 divisions */
-/* Peak detect at slow timebases: the ADC runs at APP_ADC_MAX_HZ / APP_PEAK_CLKDIV (2.5 MS/s) and every
+/* Peak detect at slow timebases: the ADC runs at APP_ADC_MAX_HZ / APP_PEAK_CLKDIV (2.5 MS/s at 150 MHz) and every
  * m = app_peak_factor() raw samples become two (min and max), which gives the timebase's sample rate.
  * 0 = off (fast timebases and logic mode sample directly). */
 #define APP_PEAK_CLKDIV 30u
@@ -128,6 +139,9 @@ void app_set_dc(app_t *app, uint16_t raw_ch1, uint16_t raw_ch2, uint16_t raw_vbu
 
 /* The range flags and per-channel scale of a stream: volts = (code - zero) * lsb. */
 void app_stream_scale(const app_t *app, int ch, float *lsb_v, float *zero_code);
+
+/* Adds decoded text to the screen's log ('\n' starts a new line; long lines wrap). */
+void app_decode_text(app_t *app, const char *text);
 
 /* One text command line in, one reply line out (no newline). Returns the reply length. */
 size_t app_usb_command(app_t *app, const char *line, char *reply, size_t max_len);

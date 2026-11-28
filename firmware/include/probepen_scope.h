@@ -22,6 +22,10 @@ typedef struct {
     float freq_hz;
     size_t trigger_idx;
     bool triggered;
+    float vrms_ac;      /* RMS of the signal minus its mean, over whole periods when there are any */
+    float t_high_s;     /* mean time above the midpoint per period, 0 without a whole period */
+    float t_low_s;      /* mean time below it */
+    float duty;         /* t_high / (t_high + t_low), 0..1 */
 } scope_meas_t;
 
 #define SCOPE_CODE_MAX 255u   /* AD9288: 8-bit codes */
