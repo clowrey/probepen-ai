@@ -696,6 +696,7 @@ static void sim_decode_emit(const dec_record_t *rec, void *ctx) {
 static void sim_decode_start(double now_ms) {
     g_capturing = false;
     g_dec = g_app.decode_plan;
+    dec_reset(&g_dec);                 /* a restart's plan may carry the last run's figures */
     g_dec_t0 = now_ms * 1e-3;
     g_dec_last_ms = now_ms;
     g_dec_speed = 1.0;
@@ -713,7 +714,7 @@ static void sim_decode_stop(void) {
              (unsigned long)g_dec.records, (unsigned long)g_dec.errors, (unsigned long)g_dec.lost_events,
              (unsigned long long)g_dec.pos);
     usb_puts_line(line);
-    g_app.decode_plan = g_dec;
+    dec_copy_stats(&g_app.decode_plan, &g_dec);
     g_app.decoding = false;
 }
 
@@ -773,11 +774,8 @@ static void sim_decode_poll(double now_ms) {
         todo -= n;
     }
     /* statistics for the screen and the page */
-    dec_t *p = &g_app.decode_plan;
-    p->records = g_dec.records;
-    p->errors = g_dec.errors;
-    p->lost_events = g_dec.lost_events;
-    p->pos = g_dec.pos;
+    dec_copy_stats(&g_app.decode_plan, &g_dec);   /* for the screen */
+    app_decode_tick(&g_app);   /* UART auto-baud */
 }
 
 /* ---- exported API ------------------------------------------------------------------------------ */
@@ -975,7 +973,7 @@ EXPORT void sim_usb_out_clear(void) {
 
 /* Live capture settings for the page's info panel, as JSON. */
 EXPORT const char *sim_info(void) {
-    static const char *const MODES[APP_MODE_COUNT] = {"CH1+2", "CH1", "CH2", "LOGIC", "METER"};
+    static const char *const MODES[APP_MODE_COUNT] = {"CH1+2", "CH1", "CH2", "LOGIC", "METER", "DECODE"};
     size_t n = app_capture_samples(&g_app, CAPTURE_MAX);
     snprintf(g_info, sizeof g_info,
              "{\"mode\":\"%s\",\"tb_ns\":%lu,\"fs\":%.1f,\"clkdiv\":%lu,\"peak_m\":%lu,\"screen\":%lu,"
@@ -997,11 +995,14 @@ EXPORT const char *sim_info(void) {
              ",\"decoding\":%d,\"dec_proto\":%u,\"dec_src\":%u,\"dec_rate\":%.0f,\"dec_data\":%.0f,\"dec_fs\":%.1f,"
              "\"dec_div\":%lu,\"dec_spb\":%.2f,\"dec_burst\":%d,\"dec_cover\":%.3f,\"dec_burst_n\":%lu,\"dec_records\":%lu,"
              "\"dec_errors\":%lu,\"dec_lost\":%lu,\"dec_seconds\":%.4f,\"dec_speed\":%.3f,"
-             "\"sys_mhz\":%d,\"adc_max\":%.0f,\"dec_live_max\":%.0f}",
+             "\"sys_mhz\":%d,\"adc_max\":%.0f,\"dec_live_max\":%.0f,\"dec_edges\":%lu,\"dec_seen\":%.0f,\"dec_min_run\":%lu,\"dec_check\":%d,"
+             "\"dec_preset\":%d,\"dec_auto\":%d,\"dec_hold\":%d}",
              (int)g_app.decoding, (unsigned)d->proto, (unsigned)d->src, (double)d->rate, (double)d->data_rate,
              (double)d->fs, (unsigned long)d->clkdiv, (double)d->spb_data, (int)d->burst, (double)d->coverage,
              (unsigned long)d->burst_n, (unsigned long)d->records, (unsigned long)d->errors,
              (unsigned long)d->lost_events, d->fs > 0.0f ? (double)d->pos / (double)d->fs : 0.0, g_dec_speed,
-             (int)PROBEPEN_SYS_MHZ, (double)APP_ADC_MAX_HZ, (double)DEC_LIVE_MAX_HZ);
+             (int)PROBEPEN_SYS_MHZ, (double)APP_ADC_MAX_HZ, (double)DEC_LIVE_MAX_HZ, (unsigned long)d->edges,
+             (double)dec_seen_rate(d), (unsigned long)(d->min_run == UINT32_MAX ? 0u : d->min_run),
+             g_app.decoding ? dec_rate_check(d) : 0, (int)g_app.dec_preset, (int)g_app.dec_auto, (int)g_app.dec_hold);
     return g_info;
 }

@@ -92,6 +92,7 @@ typedef struct {
     uint64_t pos;           /* samples seen (and skipped) since the start */
     uint64_t run_start;
     bool run_flushed;       /* this run was already handled as idle */
+    bool run_from_edge;     /* this run began at an edge (not at the start or after a gap) */
     uint32_t idle_samples;
     /* bit engine */
     float spb;              /* samples per bit now */
@@ -117,7 +118,22 @@ typedef struct {
     /* statistics */
     uint32_t records, errors, lost_events;
     uint64_t lost_samples;
+    uint32_t edges;
+    uint32_t min_run;       /* shortest run seen (3 samples or more): one bit at the bus's fastest rate */
+    bool listen;            /* only measure (edges, min_run): nothing is emitted (the pen's UART auto-baud) */
 } dec_t;
+
+/* The bit rate the edges show (sample rate / shortest run), 0 before any: when nothing decodes, this tells
+ * whether the rate is set wrong. */
+float dec_seen_rate(const dec_t *d);
+/* Do the edges agree with the rate set? DEC_RATE_OK (or too few edges to say), DEC_RATE_TOO_FAST (runs of 4
+ * samples or less: the bus is faster than this sample rate resolves), DEC_RATE_SLOWER / DEC_RATE_FASTER (the
+ * shortest run is more than 15 % off one bit of the fastest phase). */
+enum { DEC_RATE_OK = 0, DEC_RATE_TOO_FAST, DEC_RATE_SLOWER, DEC_RATE_FASTER };
+int dec_rate_check(const dec_t *d);
+/* The statistics (records, errors, losses, samples, edges, shortest run) from the running decoder into the
+ * app's copy of the plan, for the screen; the plan itself is left alone (it may already be the next one). */
+void dec_copy_stats(dec_t *dst, const dec_t *src);
 
 /* Plans a decode: clkdiv, sample rate, live or burst. False for a bad protocol, source or rate. */
 bool dec_plan(dec_t *d, uint8_t proto, uint8_t src, float rate, float data_rate, float adc_max_hz);

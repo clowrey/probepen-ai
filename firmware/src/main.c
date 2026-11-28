@@ -583,6 +583,7 @@ static void decode_start(void) {
     pio_sm_set_enabled(pio1, 0u, false);
     g_capturing = false;
     g_dec = g_app.decode_plan;
+    dec_reset(&g_dec);                 /* a restart's plan may carry the last run's figures */
     g_dec_t0_us = to_us_since_boot(get_absolute_time());
     if (g_dec.burst) {
         decode_burst_start();
@@ -609,7 +610,7 @@ static void decode_stop(void) {
     printf("DECODE END RECORDS=%lu ERRORS=%lu LOST=%lu SAMPLES=%llu\n", (unsigned long)g_dec.records,
            (unsigned long)g_dec.errors, (unsigned long)g_dec.lost_events, (unsigned long long)g_dec.pos);
     fflush(stdout);
-    g_app.decode_plan = g_dec;
+    dec_copy_stats(&g_app.decode_plan, &g_dec);
     g_app.decoding = false;
     while (!lcd_flush_poll()) {
         tight_loop_contents();
@@ -674,11 +675,8 @@ static void decode_poll(void) {
         dec_push_codes(&g_dec, codes, n, decode_emit, NULL);
         decode_burst_start();
     }
-    dec_t *p = &g_app.decode_plan;   /* statistics for the screen */
-    p->records = g_dec.records;
-    p->errors = g_dec.errors;
-    p->lost_events = g_dec.lost_events;
-    p->pos = g_dec.pos;
+    dec_copy_stats(&g_app.decode_plan, &g_dec);   /* for the screen */
+    app_decode_tick(&g_app);   /* UART auto-baud */
 }
 
 /* ---- calibration, one sector below the top of flash ------------------------------------------ */

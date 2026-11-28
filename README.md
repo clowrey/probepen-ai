@@ -100,6 +100,14 @@ below); the table after that sets out what the hardware allows for the rest.
   1.2 Mbaud, and classic CAN and CAN FD without a bit-rate switch to 1 Mbit/s. **Burst** above that: the pen
   records 320 k samples at full rate, decodes them, and records again, so some frames are missed. CAN FD at
   500 k / 2 Mbit/s samples at 18.75 MS/s in bursts of 8.7 ms and sees about 44 % of the time (58 % at 250 MHz).
+- **On the pen alone:** DECODE is the last mode on the MODE button. UP and DOWN pick the bus, ASK holds,
+  and the decoded text scrolls on the screen. *UART auto* listens at 8.3 MS/s, takes the shortest pulse as one
+  bit, picks the nearest standard baud (300 to 2 M) and starts decoding. A `DECODE` from the host also puts the
+  pen in this mode.
+- **When the rate is wrong**, the pen says so: it compares the shortest pulse it sees with one bit at the rate
+  set (`edges show ~115kbit/s: rate?`, or `edges too fast: rate set too low` when the pulses are shorter than
+  the sample rate can time), and the simulator page shows the same.
+- For CH1 − CH2 both channels are put on the same range, so the two codes subtract.
 - `host/probepen.py PORT decode uart 1 115200` or `decode can 3 500000 2000000` prints each line or frame.
 
 **Two ways to decode.**
@@ -261,8 +269,12 @@ the decode screen (from the simulated board) with UART live and CAN FD in bursts
 | Button | Short press | Held |
 |---|---|---|
 | ASK | run / hold | send the measurements and the screen's samples to the host (`ASK …` line + frames) |
-| MODE | next mode: CH1+2, CH1, CH2, LOGIC, METER | trigger source and slope |
-| any | while streaming or decoding: stop | |
+| MODE | next mode: CH1+2, CH1, CH2, LOGIC, METER, DECODE | trigger source and slope |
+| any | while streaming: stop | |
+
+In DECODE, UP and DOWN step through the buses (UART on CH1 with auto-baud or at 9600 to 1 M, UART on CH2
+with auto-baud, CAN at 125 k to 1 M, CAN FD at 500 k/2 M to 1 M/8 M, CAN on CH1 − CH2), ASK holds and goes on,
+and MODE leaves (back to CH1+2).
 | UP / DOWN | slower / faster timebase | trigger level up / down (repeats) |
 
 USB (CDC serial, one command per line): `*IDN?`, `MODE n` (0..4), `TB n`, `GAIN 0|1|10` (0 = auto

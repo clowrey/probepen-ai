@@ -4,7 +4,7 @@
 "use strict";
 
 const W = 240, H = 135;
-const MODES = ["CH1+2", "CH1", "CH2", "LOGIC", "METER"];
+const MODES = ["CH1+2", "CH1", "CH2", "LOGIC", "METER", "DECODE"];
 const TB_NS = [100, 200, 500, 1e3, 2e3, 5e3, 1e4, 2e4, 5e4, 1e5, 2e5, 5e5, 1e6, 2e6, 5e6, 1e7, 2e7, 5e7];
 const GAIN = [9.803, 53.56];                      // tip volts per ADC volt, +-5 V and +-26 V ranges
 const LSB = GAIN.map((g) => (g * 1.024) / 256);   // volts per code
@@ -281,8 +281,11 @@ function buildChannels() {
     fs.addEventListener("change", (e) => {
       const k = e.target.dataset.k;
       if (!k) return;
-      if (k === "kind") s.kind = +e.target.value;
-      else {
+      if (k === "kind") {
+        const was = s.kind;
+        s.kind = +e.target.value;
+        if (s.kind !== was) Object.assign(s, KIND_DEFAULTS[s.kind] || {});   /* a sine's 50 kHz is no baud rate */
+      } else {
         let v = parseSI(e.target.value);
         if (k === "duty") v /= 100;
         if (isFinite(v)) s[k] = k === "freq" ? Math.max(0.01, v) : k === "rate2" ? Math.max(s.freq, v) : v;
@@ -290,6 +293,7 @@ function buildChannels() {
       refresh();
       applySignals();
       markPreset(-1);
+      decodeFollowSignal(ch);
     });
   });
   $("podKind").addEventListener("change", (e) => { pod.kind = +e.target.value; applySignals(); markPreset(-1); });
@@ -347,6 +351,8 @@ function updateNow() {
       ["How", s.dec_burst
         ? `bursts: beyond the ${eng(s.dec_live_max, "S/s")} one core can decode as it comes (estimate at ${MHZ} MHz), so the pen takes ${s.dec_burst_n.toLocaleString()} samples (${eng(s.dec_burst_n / s.dec_fs, "s")}), decodes them, and takes the next: about <b>${Math.round(s.dec_cover * 100)} %</b> of the time is seen`
         : `live: every sample, without gaps (up to ${eng(s.dec_live_max, "S/s")} at ${MHZ} MHz, an estimate)`],
+      ["Edges", !s.dec_edges ? "none yet" : s.dec_min_run <= 4 ? `${s.dec_edges.toLocaleString()}, some faster than this sample rate resolves`
+        : `${s.dec_edges.toLocaleString()}, the shortest about one bit at ${eng(s.dec_seen, "bit/s")}`],
       ["Decoded", `${s.dec_records} ${s.dec_proto === 1 ? "lines" : "frames"}, <span class="${s.dec_errors ? "no" : "yes"}">${s.dec_errors} with errors</span>, ${s.dec_lost} gaps`],
       ["Simulation", s.dec_speed < 0.98 ? `the browser makes ${eng(s.dec_speed * s.dec_fs, "S/s")}, so the simulated bus runs at ${Math.round(s.dec_speed * 100)} % of real time` : "real time"],
       ["Ranges", `CH1 ${rng(s.range[0])}, CH2 ${rng(s.range[1])}, fixed while decoding`],
@@ -513,11 +519,16 @@ function parseMeas(line) {
 }
 function onLine(line) {
   if (line.startsWith("DEC ")) {        /* unsolicited: one decoded line or frame */
+    if (!dc.on) {                        /* started on the pen (DECODE mode) */
+      dc.on = true;
+      $("dcStart").textContent = "Stop";
+      $("termWrap").hidden = false;
+    }
     onDecoded(line);
     return;
   }
   logLine("rx", `← ${line}`);
-  if (line.startsWith("DECODE END")) {
+  if (line.startsWith("DECODE END")) {   /* the pen may start again at once (UP / DOWN, auto-baud) */
     dc.on = false;
     $("dcStart").textContent = "Start";
     return;
@@ -853,6 +864,24 @@ function deepCsv() {
 
 /* ---------- host app: bus decoding ---------- */
 const dc = { on: false, lines: 0, frames: 0, errors: 0, bytes: 0, t0: 0, uartOpen: null };
+/* what a signal kind starts with when it is picked by hand */
+const KIND_DEFAULTS = {
+  7: { vpp: 3.3, offset: 0, freq: 115200, noise: 0.01 },
+  9: { freq: 500e3, rate2: 2e6, noise: 0.02 },
+  10: { freq: 500e3, rate2: 2e6, noise: 0.02 },
+};
+const siText = (v) => eng(v, "", 6).replace(/\s/g, "");   /* 115200 -> "115.2k", exact */
+/* The Decode bar follows a UART or CAN signal on a tip: its bus, channel and bit rates (not while decoding). */
+function decodeFollowSignal(ch) {
+  if (dc.on) return;
+  const s = sig[ch], o = sig[1 - ch];
+  if (s.kind === 7) {
+    setDecodeControls({ proto: "UART", src: ch + 1, rate: siText(s.freq) });
+  } else if (s.kind >= 9) {
+    const pair = o.kind >= 9 && o.kind !== s.kind;   /* CAN_H and CAN_L on the two tips: decode CH1 - CH2 */
+    setDecodeControls({ proto: "CAN", src: pair ? 3 : ch + 1, rate: siText(s.freq), data: siText(s.rate2 || 4 * s.freq) });
+  }
+}
 function setDecodeControls(d) {
   $("dcProto").value = d.proto;
   $("dcSrc").value = String(d.src);
@@ -940,7 +969,12 @@ function decodeStats(s) {
   $("dcStats").innerHTML = `${n.toLocaleString()} ${dc.frames ? "frames" : "lines"}` +
     (dc.bytes ? ` · ${dc.bytes.toLocaleString()} bytes` : "") +
     ` · <span class="${dc.errors ? "bad" : "good"}">${dc.errors ? `${dc.errors} with errors` : "no errors"}</span>` +
-    (s.dec_burst ? ` · bursts, ${Math.round(s.dec_cover * 100)} % seen` : " · live");
+    (s.dec_burst ? ` · bursts, ${Math.round(s.dec_cover * 100)} % seen` : " · live") +
+    (n >= 5 && dc.errors >= n
+      ? ` · <span class="bad">every ${dc.frames ? "frame" : "line"} has errors: check the ${dc.frames ? "bit rates and the source" : "baud rate and the source"}</span>` : "") +
+    (s.dec_check === 1 ? ` · <span class="bad">the edges are faster than ${eng(s.dec_fs / 4, "bit/s")}: the rate is set too low</span>`
+      : s.dec_check >= 2 ? ` · <span class="bad">the edges show about ${eng(s.dec_seen, "bit/s")}, not ${eng(s.dec_proto === 2 ? s.dec_data : s.dec_rate, "bit/s")}: is the rate right?</span>` : "") +
+    (s.decoding && !s.dec_edges && s.dec_seconds > 0.5 ? ` · <span class="bad">no edges on the source</span>` : "");
 }
 
 /* ---------- host app: continuous capture and its history ---------- */

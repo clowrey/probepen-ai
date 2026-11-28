@@ -28,7 +28,8 @@ typedef enum {
     APP_MODE_CH1,
     APP_MODE_CH2,
     APP_MODE_LOGIC,      /* 4-channel logic pod */
-    APP_MODE_METER,      /* DC volts from the MCU ADC */
+    APP_MODE_METER,      /* DC from the MCU ADC; AC RMS and pulse widths from the scope capture */
+    APP_MODE_DECODE,     /* bus decoding on the pen: UP / DOWN pick the bus, ASK holds */
     APP_MODE_COUNT
 } app_mode_t;
 
@@ -114,6 +115,9 @@ typedef struct {
     char dec_log[APP_DEC_LINES][APP_DEC_COLS + 1];   /* decoded text for the screen, a ring of lines */
     uint8_t dec_log_line;       /* the line being written */
     uint8_t dec_log_col;
+    int8_t dec_preset;          /* DECODE mode: the bus picked with UP / DOWN (-1: set over USB) */
+    bool dec_hold;              /* DECODE mode, ASK: stopped until ASK again */
+    bool dec_auto;              /* UART auto-baud: listening for the shortest bit */
 } app_t;
 
 void app_init(app_t *app);
@@ -142,6 +146,12 @@ void app_stream_scale(const app_t *app, int ch, float *lsb_v, float *zero_code);
 
 /* Adds decoded text to the screen's log ('\n' starts a new line; long lines wrap). */
 void app_decode_text(app_t *app, const char *text);
+/* While decoding, after the main loop has copied the decoder's statistics into decode_plan: UART auto-baud
+ * picks a rate once it has seen enough edges (and asks for a restart through decode_req). */
+void app_decode_tick(app_t *app);
+/* DECODE mode's buses (UP / DOWN), for the screen and the host. */
+size_t app_decode_preset_count(void);
+const char *app_decode_preset_name(int i);
 
 /* One text command line in, one reply line out (no newline). Returns the reply length. */
 size_t app_usb_command(app_t *app, const char *line, char *reply, size_t max_len);

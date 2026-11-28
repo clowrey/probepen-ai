@@ -145,6 +145,138 @@ static bool scope_mode(app_mode_t m) {
     return m == APP_MODE_DUAL || m == APP_MODE_CH1 || m == APP_MODE_CH2;
 }
 
+/* ---- DECODE mode: the buses UP / DOWN step through ------------------------------------------- */
+
+typedef struct {
+    uint8_t proto, src;
+    float rate, data;       /* rate 0: UART auto-baud */
+    const char *name;
+} dec_preset_t;
+
+static const dec_preset_t DEC_PRESETS[] = {
+    {DEC_PROTO_UART, DEC_SRC_CH1, 0.0f, 0.0f, "UART CH1 auto"},
+    {DEC_PROTO_UART, DEC_SRC_CH1, 9600.0f, 0.0f, "UART CH1 9600"},
+    {DEC_PROTO_UART, DEC_SRC_CH1, 19200.0f, 0.0f, "UART CH1 19200"},
+    {DEC_PROTO_UART, DEC_SRC_CH1, 38400.0f, 0.0f, "UART CH1 38400"},
+    {DEC_PROTO_UART, DEC_SRC_CH1, 57600.0f, 0.0f, "UART CH1 57600"},
+    {DEC_PROTO_UART, DEC_SRC_CH1, 115200.0f, 0.0f, "UART CH1 115200"},
+    {DEC_PROTO_UART, DEC_SRC_CH1, 230400.0f, 0.0f, "UART CH1 230400"},
+    {DEC_PROTO_UART, DEC_SRC_CH1, 460800.0f, 0.0f, "UART CH1 460800"},
+    {DEC_PROTO_UART, DEC_SRC_CH1, 921600.0f, 0.0f, "UART CH1 921600"},
+    {DEC_PROTO_UART, DEC_SRC_CH1, 1e6f, 0.0f, "UART CH1 1M"},
+    {DEC_PROTO_UART, DEC_SRC_CH2, 0.0f, 0.0f, "UART CH2 auto"},
+    {DEC_PROTO_CAN, DEC_SRC_DIFF, 125e3f, 0.0f, "CAN 125k"},
+    {DEC_PROTO_CAN, DEC_SRC_DIFF, 250e3f, 0.0f, "CAN 250k"},
+    {DEC_PROTO_CAN, DEC_SRC_DIFF, 500e3f, 0.0f, "CAN 500k"},
+    {DEC_PROTO_CAN, DEC_SRC_DIFF, 1e6f, 0.0f, "CAN 1M"},
+    {DEC_PROTO_CAN, DEC_SRC_DIFF, 500e3f, 2e6f, "CAN FD 500k/2M"},
+    {DEC_PROTO_CAN, DEC_SRC_DIFF, 500e3f, 5e6f, "CAN FD 500k/5M"},
+    {DEC_PROTO_CAN, DEC_SRC_DIFF, 1e6f, 5e6f, "CAN FD 1M/5M"},
+    {DEC_PROTO_CAN, DEC_SRC_DIFF, 1e6f, 8e6f, "CAN FD 1M/8M"},
+};
+#define DEC_PRESET_COUNT ((int)(sizeof DEC_PRESETS / sizeof DEC_PRESETS[0]))
+#define AUTO_LISTEN_BAUD 1e6f   /* auto-baud listens at 1 Mbaud's sample rate (8.3 MS/s at 150 MHz, live) */
+#define AUTO_EDGES       40u    /* edges to see before picking a rate */
+
+static const float STD_BAUD[] = {300.0f, 1200.0f, 2400.0f, 4800.0f, 9600.0f, 14400.0f, 19200.0f, 38400.0f, 57600.0f,
+                                 76800.0f, 115200.0f, 230400.0f, 250000.0f, 460800.0f, 500000.0f, 921600.0f, 1e6f,
+                                 1.5e6f, 2e6f};
+
+size_t app_decode_preset_count(void) {
+    return (size_t)DEC_PRESET_COUNT;
+}
+
+const char *app_decode_preset_name(int i) {
+    return (i >= 0 && i < DEC_PRESET_COUNT) ? DEC_PRESETS[i].name : "";
+}
+
+static void decode_begin(app_t *app, const dec_t *plan) {
+    if (plan->src == DEC_SRC_DIFF && app->range[0] != app->range[1]) {
+        /* CH1 - CH2 subtracts codes, so both channels need the same range: +-5 V unless either channel's last
+         * capture went past 4.5 V */
+        float peak = 0.0f;
+        for (int c = 0; c < 2; ++c) {
+            peak = fmaxf(peak, fmaxf(fabsf(app->meas[c].vmin), fabsf(app->meas[c].vmax)));
+        }
+        app->range[0] = app->range[1] = peak > 4.5f ? AFE_RANGE_10X : AFE_RANGE_1X;
+    }
+    app->decode_plan = *plan;
+    app->decode_stop = false;
+    app->decode_req = true;
+    app->dec_hold = false;
+}
+
+static void decode_halt(app_t *app) {
+    if (app->decoding || app->decode_req) {
+        app->decode_stop = true;
+        app->decode_req = true;
+    }
+    app->dec_auto = false;
+}
+
+static void decode_start_preset(app_t *app) {
+    if (app->dec_preset < 0 || app->dec_preset >= DEC_PRESET_COUNT) {
+        app->dec_preset = 0;
+    }
+    const dec_preset_t *p = &DEC_PRESETS[app->dec_preset];
+    bool aut = p->proto == DEC_PROTO_UART && !(p->rate > 0.0f);
+    dec_t plan;
+    if (!dec_plan(&plan, p->proto, p->src, aut ? AUTO_LISTEN_BAUD : p->rate, p->data, APP_ADC_MAX_HZ)) {
+        return;
+    }
+    plan.listen = aut;
+    app->dec_auto = aut;
+    app_decode_text(app, "\n-- ");
+    app_decode_text(app, p->name);
+    app_decode_text(app, aut ? " (listening)\n" : "\n");
+    decode_begin(app, &plan);
+}
+
+/* Mode changes go through here: leaving DECODE stops it, entering starts the bus last picked. */
+static void set_mode(app_t *app, app_mode_t m) {
+    if (app->mode == APP_MODE_DECODE && m != APP_MODE_DECODE) {
+        decode_halt(app);
+    }
+    app_mode_t was = app->mode;
+    app->mode = m;
+    if (m == APP_MODE_DECODE && was != APP_MODE_DECODE && !app->streaming && !app->deep_busy) {
+        decode_start_preset(app);
+    }
+    if (m == APP_MODE_CH2) {
+        app->trig_src = 1u;
+    } else if (m == APP_MODE_CH1) {
+        app->trig_src = 0u;
+    }
+}
+
+void app_decode_tick(app_t *app) {
+    if (!app || !app->decoding || !app->dec_auto || app->decode_req) {
+        return;
+    }
+    const dec_t *d = &app->decode_plan;
+    float seen = dec_seen_rate(d);
+    if (d->edges < AUTO_EDGES || !(seen > 0.0f)) {
+        return;
+    }
+    float baud = seen;
+    for (size_t i = 0u; i < sizeof STD_BAUD / sizeof STD_BAUD[0]; ++i) {
+        float r = seen / STD_BAUD[i];
+        if (r > 0.94f && r < 1.06f) {
+            baud = STD_BAUD[i];
+            break;
+        }
+    }
+    dec_t plan;
+    if (!dec_plan(&plan, DEC_PROTO_UART, d->src, baud, 0.0f, APP_ADC_MAX_HZ)) {
+        return;
+    }
+    char buf[40];
+    snprintf(buf, sizeof buf, "-- %.0f baud\n", (double)baud);
+    app_decode_text(app, buf);
+    app->dec_auto = false;
+    decode_begin(app, &plan);
+}
+
 void app_button_event(app_t *app, uint8_t button, btn_event_t ev) {
     if (!app || ev == BTN_EV_NONE) {
         return;
@@ -156,22 +288,40 @@ void app_button_event(app_t *app, uint8_t button, btn_event_t ev) {
         }
         return;
     }
-    if (app->decoding) {    /* and a bus decode */
+    if (app->mode == APP_MODE_DECODE) {
+        if (ev != BTN_EV_SHORT) {
+            return;
+        }
+        if (button == BTN_MODE) {
+            set_mode(app, APP_MODE_DUAL);            /* DECODE is the last mode */
+        } else if (button == BTN_ASK) {              /* hold / go on */
+            if (app->decoding && !app->decode_stop) {
+                decode_halt(app);
+                app->dec_hold = true;
+            } else {
+                decode_start_preset(app);
+            }
+        } else if (button == BTN_UP || button == BTN_DOWN) {
+            int n = DEC_PRESET_COUNT;
+            if (app->dec_preset < 0) {   /* from a decode the host set: the first bus, or the last */
+                app->dec_preset = (int8_t)(button == BTN_UP ? 0 : n - 1);
+            } else {
+                app->dec_preset = (int8_t)((app->dec_preset + (button == BTN_UP ? 1 : n - 1)) % n);
+            }
+            decode_start_preset(app);
+        }
+        return;
+    }
+    if (app->decoding) {    /* a decode the host started in another mode: any button stops it */
         if (ev == BTN_EV_SHORT || ev == BTN_EV_LONG) {
-            app->decode_stop = true;
-            app->decode_req = true;
+            decode_halt(app);
         }
         return;
     }
     switch (button) {
     case BTN_MODE:
         if (ev == BTN_EV_SHORT) {
-            app->mode = (app_mode_t)((app->mode + 1) % APP_MODE_COUNT);
-            if (app->mode == APP_MODE_CH2) {
-                app->trig_src = 1u;
-            } else if (app->mode == APP_MODE_CH1) {
-                app->trig_src = 0u;
-            }
+            set_mode(app, (app_mode_t)((app->mode + 1) % APP_MODE_COUNT));
         } else if (ev == BTN_EV_LONG && scope_mode(app->mode)) {
             /* cycle CH1 rising -> CH1 falling -> CH2 rising -> CH2 falling */
             if (app->trig_slope == TRIG_RISING) {
@@ -445,7 +595,7 @@ size_t app_usb_command(app_t *app, const char *line, char *reply, size_t max_len
             break;
         case USB_CMD_MODE:
             if (cmd.arg_i >= 0 && cmd.arg_i < (int32_t)APP_MODE_COUNT) {
-                app->mode = (app_mode_t)cmd.arg_i;
+                set_mode(app, (app_mode_t)cmd.arg_i);
                 w = snprintf(reply, max_len, "OK");
             } else {
                 w = snprintf(reply, max_len, "ERR");
@@ -545,8 +695,8 @@ size_t app_usb_command(app_t *app, const char *line, char *reply, size_t max_len
         }
         case USB_CMD_DECODE: {
             if (cmd.arg_i == 0) {
-                app->decode_stop = true;
-                app->decode_req = app->decoding;
+                decode_halt(app);
+                app->dec_hold = true;
                 w = snprintf(reply, max_len, "OK");
                 break;
             }
@@ -556,12 +706,13 @@ size_t app_usb_command(app_t *app, const char *line, char *reply, size_t max_len
                 w = snprintf(reply, max_len, "ERR");
                 break;
             }
-            app->decode_plan = plan;
-            app->decode_stop = false;
-            app->decode_req = true;
+            app->mode = APP_MODE_DECODE;   /* the pen shows it; UP / DOWN then step through its own buses */
+            app->dec_preset = -1;
+            app->dec_auto = false;
             memset(app->dec_log, 0, sizeof app->dec_log);
             app->dec_log_line = 0u;
             app->dec_log_col = 0u;
+            decode_begin(app, &plan);
             w = snprintf(reply, max_len, "OK PROTO=%s SRC=%d RATE=%.0f DATA=%.0f FS=%.1f DIV=%lu SPB=%.2f MODE=%s COVER=%.3f BURSTN=%lu",
                          plan.proto == DEC_PROTO_UART ? "UART" : "CAN", (int)plan.src, (double)plan.rate,
                          (double)plan.data_rate, (double)plan.fs, (unsigned long)plan.clkdiv, (double)plan.spb_data,
@@ -666,7 +817,7 @@ static float volts_per_div(const app_t *app, int ch) {
 }
 
 static void draw_header(const app_t *app, uint16_t *fb, const palette_t *p) {
-    static const char *const NAMES[APP_MODE_COUNT] = {"CH1+2", "CH1", "CH2", "LOGIC", "METER"};
+    static const char *const NAMES[APP_MODE_COUNT] = {"CH1+2", "CH1", "CH2", "LOGIC", "METER", "DECODE"};
     char buf[48];
     lcd_fb_rect(fb, 0, 0, (int)LCD_WIDTH, HDR_H - 1, lcd_rgb565(22, 26, 34));
     int x = lcd_fb_draw_text_scaled(fb, 2, 1, NAMES[app->mode], 1, p->text) + 6;
@@ -830,19 +981,30 @@ static void render_decode(const app_t *app, uint16_t *fb, const palette_t *p) {
     char r1[16], r2[16], buf[64];
     lcd_fb_rect(fb, 0, 0, (int)LCD_WIDTH, HDR_H - 1, lcd_rgb565(22, 26, 34));
     app_format_eng(d->rate, "", r1, sizeof r1);
-    if (d->proto == DEC_PROTO_CAN && d->data_rate > d->rate) {
+    if (!d->proto) {
+        snprintf(buf, sizeof buf, "DECODE");
+    } else if (app->dec_auto) {
+        snprintf(buf, sizeof buf, "UART %s auto", SRC[d->src & 3u]);
+    } else if (d->proto == DEC_PROTO_CAN && d->data_rate > d->rate) {
         app_format_eng(d->data_rate, "", r2, sizeof r2);
-        snprintf(buf, sizeof buf, "CAN %s %s/%s", SRC[d->src & 3u], r1, r2);
+        snprintf(buf, sizeof buf, "CAN FD %s %s/%s", SRC[d->src & 3u], r1, r2);
+    } else if (d->proto == DEC_PROTO_UART) {
+        snprintf(buf, sizeof buf, "UART %s %.0f", SRC[d->src & 3u], (double)d->rate);   /* 115200, not 115k */
     } else {
-        snprintf(buf, sizeof buf, "%s %s %s", d->proto == DEC_PROTO_UART ? "UART" : "CAN", SRC[d->src & 3u], r1);
+        snprintf(buf, sizeof buf, "CAN %s %s", SRC[d->src & 3u], r1);
     }
     lcd_fb_draw_text_scaled(fb, 2, 1, buf, 1, p->text);
-    if (d->burst) {
+    bool running = app->decoding && !app->decode_stop;
+    if (!running) {
+        snprintf(buf, sizeof buf, "HOLD");
+    } else if (app->dec_auto) {
+        snprintf(buf, sizeof buf, "LISTEN");
+    } else if (d->burst) {
         snprintf(buf, sizeof buf, "BURST %d%%", (int)(d->coverage * 100.0f + 0.5f));
     } else {
         snprintf(buf, sizeof buf, "LIVE");
     }
-    lcd_fb_draw_text_scaled(fb, (int)LCD_WIDTH - lcd_text_width(buf, 1) - 1, 1, buf, 1, p->pod[0]);
+    lcd_fb_draw_text_scaled(fb, (int)LCD_WIDTH - lcd_text_width(buf, 1) - 1, 1, buf, 1, running ? p->pod[0] : p->hold);
     int lh = LCD_GLYPH_H + 1;
     int lines = ((int)LCD_HEIGHT - HDR_H - lh - 2) / lh;
     if (lines > (int)APP_DEC_LINES) {
@@ -852,11 +1014,26 @@ static void render_decode(const app_t *app, uint16_t *fb, const palette_t *p) {
         int k = ((int)app->dec_log_line - (lines - 1) + i + 2 * (int)APP_DEC_LINES) % (int)APP_DEC_LINES;
         lcd_fb_draw_text_scaled(fb, 2, HDR_H + 1 + i * lh, app->dec_log[k], 1, p->ch[0]);
     }
-    snprintf(buf, sizeof buf, "%lu rec  %lu err  %lu lost", (unsigned long)d->records, (unsigned long)d->errors,
-             (unsigned long)d->lost_events);
-    lcd_fb_draw_text_scaled(fb, 2, (int)LCD_HEIGHT - lh, buf, 1, (d->errors || d->lost_events) ? p->trig : p->dim);
-    lcd_fb_draw_text_scaled(fb, (int)LCD_WIDTH - lcd_text_width("btn: stop", 1) - 1, (int)LCD_HEIGHT - lh, "btn: stop", 1,
-                            p->dim);
+    float seen = dec_seen_rate(d);
+    bool bad = d->errors || d->lost_events;
+    int check = running ? dec_rate_check(d) : DEC_RATE_OK;
+    if (check == DEC_RATE_TOO_FAST) {   /* say what the edges show, so a wrong setting is plain */
+        snprintf(buf, sizeof buf, "edges too fast: rate set too low");
+        bad = true;
+    } else if (check != DEC_RATE_OK) {
+        app_format_eng(seen, "", r1, sizeof r1);
+        snprintf(buf, sizeof buf, "edges show ~%sbit/s: rate?", r1);
+        bad = true;
+    } else if (running && d->edges == 0u && d->pos > (uint64_t)d->fs) {
+        snprintf(buf, sizeof buf, "no edges: check the source");
+        bad = true;
+    } else {
+        snprintf(buf, sizeof buf, "%lu rec %lu err %lu lost", (unsigned long)d->records, (unsigned long)d->errors,
+                 (unsigned long)d->lost_events);
+    }
+    lcd_fb_draw_text_scaled(fb, 2, (int)LCD_HEIGHT - lh, buf, 1, bad ? p->trig : p->dim);
+    const char *hint = app->mode == APP_MODE_DECODE ? "UP/DN bus" : "btn: stop";
+    lcd_fb_draw_text_scaled(fb, (int)LCD_WIDTH - lcd_text_width(hint, 1) - 1, (int)LCD_HEIGHT - lh, hint, 1, p->dim);
 }
 
 static void render_stream(const app_t *app, uint16_t *fb, const palette_t *p) {
@@ -900,7 +1077,7 @@ void app_render(const app_t *app, uint16_t *fb, const uint16_t *ch_a, const uint
         render_stream(app, fb, &p);
         return;
     }
-    if (app->decoding) {
+    if (app->decoding || app->mode == APP_MODE_DECODE) {
         render_decode(app, fb, &p);
         return;
     }

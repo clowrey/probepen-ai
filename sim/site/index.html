@@ -41,8 +41,10 @@
         <thead><tr><th>Button</th><th>Short press</th><th>Held</th></tr></thead>
         <tbody>
           <tr><td>ASK</td><td>run / hold</td><td>send a snapshot to the host app</td></tr>
-          <tr><td>MODE</td><td>CH1+2, CH1, CH2, LOGIC, METER (DC, AC RMS, pulse widths)</td><td>trigger source and slope</td></tr>
+          <tr><td>MODE</td><td>CH1+2, CH1, CH2, LOGIC, METER (DC, AC RMS, pulse widths), DECODE</td><td>trigger source and slope</td></tr>
           <tr><td>UP / DOWN</td><td>slower / faster timebase</td><td>trigger level up / down</td></tr>
+          <tr><td colspan="3"><b>In DECODE:</b> UP / DOWN pick the bus (UART CH1 auto-baud or 9600 to 1 M, UART CH2 auto,
+            CAN 125 k to 1 M, CAN FD 500 k/2 M to 1 M/8 M, CAN on CH1 − CH2); ASK holds and goes on; MODE leaves</td></tr>
         </tbody>
       </table>
     </section>

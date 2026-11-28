@@ -546,3 +546,113 @@ def test_host_parses_decoded_lines():
     r = parse_decoded("DEC CAN T=0.002000 ID=123 EXT=0 FD=1 BRS=1 ESI=0 RTR=0 DLC=10 LEN=16 ACK=1 ERR=NONE "
                       "HEX=48656C6C6F20776F726C642030303432")
     assert r["id"] == "123" and r["err"] == "NONE" and r["data"] == b"Hello world 0042"
+
+
+
+# ---- DECODE mode on the pen, auto-baud, and what it says when nothing decodes -------------------
+
+class Pen:
+    """The simulated pen driven by its buttons (sim_set_buttons), as a hand would."""
+
+    def __init__(self, sim):
+        self.sim, self.t = sim, 0.0
+        sim.sim_init()
+
+    def step(self, ms):
+        end = self.t + ms
+        while self.t < end:
+            self.t += 16.0
+            self.sim.sim_step(ctypes.c_double(self.t))
+
+    def press(self, button):
+        self.sim.sim_set_buttons(1 << button)
+        self.step(64)
+        self.sim.sim_set_buttons(0)
+        self.step(48)
+
+    def out(self):
+        n = self.sim.sim_usb_out_len()
+        data = bytes(self.sim.sim_usb_out()[:n])
+        self.sim.sim_usb_out_clear()
+        return data.decode(errors="replace").splitlines()
+
+    def info(self):
+        return json.loads(self.sim.sim_info())
+
+
+ASK, MODE, UP, DOWN = 0, 1, 2, 3
+
+
+def test_decode_mode_on_the_buttons(sims):
+    pen = Pen(sims[150])
+    pen.sim.sim_set_signal(0, 7, 3.3, 0, 57600, 0.5, 0.01)          # UART at 57600 on CH1
+    pen.sim.sim_set_signal(1, 0, 0, 0, 1, 0.5, 0)
+    pen.step(200)
+    for _ in range(5):                                               # CH1+2 -> ... -> METER -> DECODE
+        pen.press(MODE)
+    pen.out()
+    pen.step(600)
+    info = pen.info()
+    assert info["mode"] == "DECODE" and info["decoding"] == 1 and info["dec_preset"] == 0
+    assert info["dec_auto"] == 0 and info["dec_rate"] == 57600       # auto-baud listened, then picked 57600
+    lines = [l for l in pen.out() if l.startswith("DEC UART")]
+    assert len(lines) > 100 and all("FE=0" in l for l in lines)
+    assert bytes.fromhex(lines[0].split("HEX=")[1]).decode().startswith("Hello world ")
+    pen.press(ASK)                                                   # hold
+    info = pen.info()
+    assert info["mode"] == "DECODE" and info["decoding"] == 0 and info["dec_hold"] == 1
+    # CAN FD on the tips, DOWN from the first bus wraps to the last: CAN FD 1M/8M, then DOWN to 1M/5M
+    for ch, kind in ((0, 9), (1, 10)):
+        pen.sim.sim_set_signal(ch, kind, 0, 0, 1e6, 0.5, 0.02)
+        pen.sim.sim_set_bitrate(ch, 5e6)
+    pen.press(DOWN)
+    pen.press(DOWN)
+    pen.out()
+    pen.step(400)
+    info = pen.info()
+    assert (info["dec_rate"], info["dec_data"], info["dec_src"], info["decoding"]) == (1e6, 5e6, 3, 1)
+    frames = [l for l in pen.out() if l.startswith("DEC CAN")]
+    assert frames and all("ERR=NONE" in f and "ID=123" in f for f in frames)
+    pen.press(MODE)                                                  # leave: decoding stops
+    info = pen.info()
+    assert info["mode"] == "CH1+2" and info["decoding"] == 0
+
+
+def test_host_decode_puts_the_pen_in_decode_mode(sims):
+    pen = Pen(sims[150])
+    pen.sim.sim_set_signal(0, 7, 3.3, 0, 115200, 0.5, 0.01)
+    pen.step(100)
+    b = b"DECODE UART 1 115200\0"
+    ctypes.memmove(pen.sim.sim_usb_in_buf(), b, len(b))
+    pen.sim.sim_usb_in_commit()
+    pen.step(100)
+    info = pen.info()
+    assert info["mode"] == "DECODE" and info["dec_preset"] == -1 and info["decoding"] == 1
+    pen.press(UP)                                                    # UP: the pen's own buses, from the first
+    assert pen.info()["dec_preset"] == 0
+
+
+def test_wrong_rate_shows_the_rate_the_edges_have(sims):
+    sig = [(7, 3.3, 0, 115200, 0.5, 0.01), (0, 0, 0, 1, 0.5, 0)]
+    _, info = sim_decode(sims[150], sig, [0, 0], "DECODE UART 1 460800")         # set too fast: garbage ...
+    assert info["dec_check"] == 2 and info["dec_seen"] == pytest.approx(115200, rel=0.05)    # ... and why
+    _, info = sim_decode(sims[150], sig, [0, 0], "DECODE UART 1 9600")           # set too slow
+    assert info["dec_check"] == 1                                    # edges too fast for 77 kS/s to time
+    _, info = sim_decode(sims[150], sig, [0, 0], "DECODE UART 1 115200")         # right
+    assert info["dec_check"] == 0 and info["dec_errors"] == 0
+
+
+def test_differential_decode_puts_both_channels_on_one_range(core):
+    app = ctypes.create_string_buffer(8192)
+    core.app_init(app)                                               # both channels start on +-26 V
+    reply = ctypes.create_string_buffer(512)
+    core.app_usb_command(app, b"GAIN 0", reply, 512)
+    n = 2000
+    lo = (ctypes.c_uint16 * n)(*([128 + 10] * (n // 2) + [128 - 10] * (n // 2)))
+    core.app_process_scope(app, lo, lo, n)                           # small signals: auto-range goes to +-5 V ...
+    core.app_usb_command(app, b"DECODE CAN 3 500000 2000000", reply, 512)
+    assert reply.value.startswith(b"OK")
+    core.app_format_meas.restype = ctypes.c_size_t
+    meas = ctypes.create_string_buffer(512)
+    core.app_format_meas(app, meas, 512)
+    assert meas.value.count(b"RANGE=1X") == 2                        # ... and both stay on the same one

@@ -69,12 +69,43 @@ void dec_reset(dec_t *d) {
     d->pos = 0u;
     d->run_start = 0u;
     d->run_flushed = false;
+    d->run_from_edge = false;
     d->spb = d->spb_arb;
     d->bit_pos = 0.0;
     d->state = ST_WAIT_IDLE;
     memset(&d->rec, 0, sizeof d->rec);
     d->records = d->errors = d->lost_events = 0u;
     d->lost_samples = 0u;
+    d->edges = 0u;
+    d->min_run = UINT32_MAX;
+}
+
+void dec_copy_stats(dec_t *dst, const dec_t *src) {
+    if (!dst || !src) {
+        return;
+    }
+    dst->records = src->records;
+    dst->errors = src->errors;
+    dst->lost_events = src->lost_events;
+    dst->lost_samples = src->lost_samples;
+    dst->pos = src->pos;
+    dst->edges = src->edges;
+    dst->min_run = src->min_run;
+}
+
+int dec_rate_check(const dec_t *d) {
+    if (!d || d->listen || d->edges < 40u || d->min_run == UINT32_MAX) {
+        return DEC_RATE_OK;
+    }
+    if (d->min_run <= 4u) {
+        return DEC_RATE_TOO_FAST;
+    }
+    float r = dec_seen_rate(d) / (d->proto == DEC_PROTO_CAN ? d->data_rate : d->rate);
+    return r < 0.85f ? DEC_RATE_SLOWER : (r > 1.15f ? DEC_RATE_FASTER : DEC_RATE_OK);
+}
+
+float dec_seen_rate(const dec_t *d) {
+    return (d && d->min_run != UINT32_MAX && d->min_run) ? d->fs / (float)d->min_run : 0.0f;
 }
 
 bool dec_plan(dec_t *d, uint8_t proto, uint8_t src, float rate, float data_rate, float adc_max_hz) {
@@ -131,7 +162,7 @@ static void emit_rec(dec_t *d, dec_emit_fn emit, void *ctx) {
         ++d->errors;
     }
     ++d->records;
-    if (emit) {
+    if (emit && !d->listen) {
         emit(&d->rec, ctx);
     }
     memset(&d->rec, 0, sizeof d->rec);
@@ -469,12 +500,18 @@ void dec_push_codes(dec_t *d, const uint8_t *codes, size_t n, dec_emit_fn emit, 
                 uint8_t s = codes[i];
                 if (level ? (s < th_lo) : (s > th_hi)) {
                     uint64_t at = d->pos + i;
+                    uint32_t len = (uint32_t)(at - d->run_start);
+                    ++d->edges;
+                    if (d->run_from_edge && len >= 3u && len < d->min_run) {
+                        d->min_run = len;
+                    }
                     if (!d->run_flushed) {
-                        handle_run(d, level, (uint32_t)(at - d->run_start), emit, ctx);
+                        handle_run(d, level, len, emit, ctx);
                     }
                     level ^= 1u;
                     d->run_start = at;
                     d->run_flushed = false;
+                    d->run_from_edge = true;
                 }
             }
             d->level = level;
@@ -543,6 +580,7 @@ void dec_skip(dec_t *d, uint64_t n, bool lost, dec_emit_fn emit, void *ctx) {
     d->pos += n;
     d->run_start = d->pos;
     d->run_flushed = false;
+    d->run_from_edge = false;
     d->spb = d->spb_arb;
     d->state = ST_WAIT_IDLE;
     if (lost && n) {
