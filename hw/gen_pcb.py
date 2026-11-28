@@ -810,7 +810,22 @@ def build() -> pcbnew.BOARD:
 
     silkscreen(board)
     place_references(board)
+    turn_back_silk(board)
     return board
+
+
+def turn_back_silk(board: pcbnew.BOARD):
+    """Turn every bottom-silk text 180 degrees about its own centre (same footprint on the board, so the
+    clearance fitting above still holds). The bottom is the screen side: this makes the labels read the
+    same way up as the display when the pen is held in the right hand."""
+    items = [d for d in board.GetDrawings() if isinstance(d, pcbnew.PCB_TEXT)]
+    for fp in board.GetFootprints():
+        items += [fp.Reference(), fp.Value()]
+        items += [g for g in (i.Cast() for i in fp.GraphicalItems()) if isinstance(g, pcbnew.PCB_TEXT)]
+    for t in items:
+        if t.GetLayer() == pcbnew.B_SilkS and t.IsVisible():
+            t.SetKeepUpright(False)               # footprint text would otherwise flip itself back
+            t.Rotate(t.GetBoundingBox().GetCenter(), pcbnew.EDA_ANGLE(180.0, pcbnew.DEGREES_T))
 
 
 def features(board: pcbnew.BOARD) -> dict:
