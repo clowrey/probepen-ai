@@ -656,3 +656,90 @@ def test_differential_decode_puts_both_channels_on_one_range(core):
     meas = ctypes.create_string_buffer(512)
     core.app_format_meas(app, meas, 512)
     assert meas.value.count(b"RANGE=1X") == 2                        # ... and both stay on the same one
+
+
+
+# ---- METER: averaging, its own window, two pages ----------------------------------------------------
+
+class MeterAvg(ctypes.Structure):
+    _fields_ = [(k, ctypes.c_float) for k in ("dc", "vrms", "vpp", "freq", "t_high", "t_low", "duty")]
+
+
+def meter_app(core):
+    app = ctypes.create_string_buffer(8192)
+    core.app_init(app)
+    core.app_meter_avg.restype = ctypes.POINTER(MeterAvg)
+    core.app_sample_rate_hz.restype = ctypes.c_float
+    core.app_timebase_ns.restype = ctypes.c_uint32
+    core.app_capture_samples.restype = ctypes.c_size_t
+    reply = ctypes.create_string_buffer(512)
+
+    def cmd(line):
+        core.app_usb_command(app, line.encode(), reply, 512)
+        return reply.value.decode()
+
+    def capture(freq, amp=50.0, seed=0):
+        """One capture of a sine at freq (codes), at the rate and length the app asks for now."""
+        rng = random.Random(seed)
+        fs = core.app_sample_rate_hz(app)
+        n = core.app_capture_samples(app, ctypes.c_size_t(4096))
+        ph = rng.random()
+        a = [int(round(128 + amp * math.sin(2 * math.pi * (freq * i / fs + ph)) + rng.gauss(0, 1.5))) for i in range(n)]
+        arr = (ctypes.c_uint16 * n)(*a)
+        core.app_process_scope(app, arr, arr, ctypes.c_size_t(n))
+        return n / fs
+
+    return app, cmd, capture
+
+
+def test_meter_picks_its_window_and_gives_the_timebase_back(core):
+    app, cmd, capture = meter_app(core)
+    cmd("GAIN 1")
+    cmd("TB 3")
+    scope_tb = core.app_timebase_ns(app)
+    cmd("MODE 4")
+    for k in range(30):                                  # a 1 kHz sine: the window grows to hold 3 to 40 periods
+        window = capture(1e3, seed=k)
+    assert 3 <= 1e3 * window <= 40
+    assert core.app_meter_avg(app, 0).contents.freq == pytest.approx(1e3, rel=0.01)
+    for k in range(30):                                  # then 200 kHz: it shrinks again
+        window = capture(200e3, seed=k)
+    assert 3 <= 200e3 * window <= 40
+    cmd("MODE 0")
+    assert core.app_timebase_ns(app) == scope_tb        # the scope's timebase is back
+
+
+def test_meter_averages_and_follows_real_changes(core):
+    app, cmd, capture = meter_app(core)
+    cmd("GAIN 1")
+    cmd("MODE 4")
+    raw = []
+    for k in range(60):                                  # amplitude wobbling +-4 % around 50 codes
+        capture(5e3, amp=50.0 * (1.04 if k % 2 else 0.96), seed=k)
+        raw.append(core.app_meter_avg(app, 0).contents.vrms)
+    late = raw[-20:]
+    assert max(late) - min(late) < 0.25 * (0.08 * 50 / math.sqrt(2) * 0.0392)   # far steadier than the input
+    before = raw[-1]
+    capture(5e3, amp=100.0, seed=99)                      # doubled: one odd reading is not believed ...
+    assert core.app_meter_avg(app, 0).contents.vrms == pytest.approx(before, rel=0.02)
+    capture(5e3, amp=100.0, seed=98)                      # ... a second one is, at once, not crept up to
+    assert core.app_meter_avg(app, 0).contents.vrms == pytest.approx(2 * before, rel=0.06)
+    # DC from the DC-sense ADC is averaged too
+    core.app_set_dc(app, 1163, 1795, 3427)
+    first = core.app_meter_avg(app, 0).contents.dc
+    for raw_code in (1164, 1162, 1163, 1165, 1161) * 4:
+        core.app_set_dc(app, raw_code, 1795, 3427)
+    assert core.app_meter_avg(app, 0).contents.dc == pytest.approx(first, abs=0.01)
+
+
+def test_meter_pages_draw(core):
+    app, cmd, capture = meter_app(core)
+    cmd("MODE 4")
+    core.app_set_dc(app, 1163, 1795, 3427)
+    capture(10e3)
+    fb_a = (ctypes.c_uint16 * (240 * 135))()
+    fb_b = (ctypes.c_uint16 * (240 * 135))()
+    core.app_render(app, fb_a, None, None, ctypes.c_size_t(0), None, ctypes.c_size_t(0))
+    core.app_button_event(app, 2, 1)                     # UP: the TIMING page
+    core.app_render(app, fb_b, None, None, ctypes.c_size_t(0), None, ctypes.c_size_t(0))
+    assert len(set(fb_a)) > 3 and len(set(fb_b)) > 3 and list(fb_a) != list(fb_b)

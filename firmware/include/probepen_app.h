@@ -59,6 +59,14 @@ void buttons_init(buttons_t *b);
 /* pressed_mask: bit n set while button n is down. Writes (button << 4 | event) codes; returns how many. */
 size_t buttons_update(buttons_t *b, uint8_t pressed_mask, uint32_t now_ms, uint8_t *events, size_t max_events);
 
+enum { APP_METER_VOLTS = 0, APP_METER_TIMING = 1, APP_METER_PAGES = 2 };
+#define APP_METER_TAU_S 0.8f    /* averaging time constant; a change of more than 15 % is followed at once */
+
+typedef struct {
+    float dc, vrms, vpp, freq, t_high, t_low, duty;   /* NAN until the first reading */
+    float pend[6];      /* a jump waits for a second reading that agrees (dc, vrms, vpp, freq, t_high, t_low) */
+} meter_avg_t;
+
 typedef struct {
     app_mode_t mode;
     uint8_t tb;                 /* timebase index, see app_timebase_ns() */
@@ -118,6 +126,13 @@ typedef struct {
     int8_t dec_preset;          /* DECODE mode: the bus picked with UP / DOWN (-1: set over USB) */
     bool dec_hold;              /* DECODE mode, ASK: stopped until ASK again */
     bool dec_auto;              /* UART auto-baud: listening for the shortest bit */
+
+    /* METER: two pages (UP / DOWN), readings averaged over about APP_METER_TAU_S, and a capture window it picks
+     * itself (3 to 40 periods); the scope's timebase comes back on leaving */
+    uint8_t meter_page;         /* APP_METER_VOLTS or APP_METER_TIMING */
+    uint8_t scope_tb;
+    bool meter_search;          /* lengthening the window from the fastest rate (no aliasing) until it fits */
+    meter_avg_t mavg[2];
 } app_t;
 
 void app_init(app_t *app);
@@ -149,6 +164,8 @@ void app_decode_text(app_t *app, const char *text);
 /* While decoding, after the main loop has copied the decoder's statistics into decode_plan: UART auto-baud
  * picks a rate once it has seen enough edges (and asks for a restart through decode_req). */
 void app_decode_tick(app_t *app);
+/* METER's averaged readings for a channel (what its pages show). */
+const meter_avg_t *app_meter_avg(const app_t *app, int ch);
 /* DECODE mode's buses (UP / DOWN), for the screen and the host. */
 size_t app_decode_preset_count(void);
 const char *app_decode_preset_name(int i);

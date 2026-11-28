@@ -68,12 +68,25 @@ def screens(lcd096: bool = False) -> list[Image.Image]:
         lib.app_set_dc(app, 1163, 1795, 3427)      # +1.234 V, -3.30 V, VBUS 5.02 V
         fb = (ctypes.c_uint16 * (w * h))()
         imgs = []
-        for mode in (0, 1, 3, 4):
+        for mode, page in ((0, 0), (3, 0), (4, 0), (4, 1)):
             cmd(f"MODE {mode}")
             if mode == 3:
                 lib.app_process_logic(app, nib, ctypes.c_size_t(n))
             else:
                 lib.app_process_scope(app, ca, cb, ctypes.c_size_t(n))
+            if mode == 4:   # the meter searches for its window over a few captures, then averages
+                lib.app_sample_rate_hz.restype = ctypes.c_float
+                for _ in range(30):
+                    fs_m = lib.app_sample_rate_hz(app)
+                    n_m = lib.app_capture_samples(app, ctypes.c_size_t(4096))
+                    am = (ctypes.c_uint16 * n_m)(*[int(128 + per_v * 1.5 * math.sin(2 * math.pi * 50e3 * i / fs_m))
+                                                   for i in range(n_m)])
+                    bm = (ctypes.c_uint16 * n_m)(*[int(128 + per_v * (3.3 if (i * 25e3 / fs_m) % 1.0 < 0.3 else 0.0))
+                                                   for i in range(n_m)])
+                    lib.app_process_scope(app, am, bm, ctypes.c_size_t(n_m))
+                    lib.app_set_dc(app, 1163, 1795, 3427)
+                if page:
+                    lib.app_button_event(app, 2, 1)   # UP, short: the TIMING page
             lib.app_render(app, fb, ca, cb, ctypes.c_size_t(n), nib, ctypes.c_size_t(n))
             im = Image.new("RGB", (w, h))
             px = im.load()

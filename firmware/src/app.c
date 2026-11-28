@@ -118,6 +118,49 @@ size_t buttons_update(buttons_t *b, uint8_t pressed_mask, uint32_t now_ms, uint8
     return n;
 }
 
+/* ---- METER: averaging and its own window ------------------------------------------------------ */
+
+#define METER_TB_MAX 15u   /* 10 ms/div: the longest window METER picks by itself (0.4 s of signal) */
+
+static void meter_reset(app_t *app) {
+    for (int c = 0; c < 2; ++c) {
+        meter_avg_t *m = &app->mavg[c];
+        m->dc = m->vrms = m->vpp = m->freq = m->t_high = m->t_low = m->duty = NAN;
+        for (int k = 0; k < 6; ++k) {
+            m->pend[k] = NAN;
+        }
+    }
+}
+
+/* One step of the average: a = dt / (tau + dt). A change beyond 15 % (and beyond `floor`, the reading's own
+ * noise) is a new value, not noise: it is followed at once, as a bench meter does, once a second reading in a
+ * row agrees with it (`pend` holds the first). A lone odd reading is dropped. */
+static float smooth(float avg, float x, float a, float floor, float *pend) {
+    if (!isfinite(avg) || !isfinite(x) || x == 0.0f || avg == 0.0f) {
+        *pend = NAN;
+        return x;
+    }
+    float d = fabsf(x - avg);
+    if (d > floor && d > 0.15f * fabsf(avg)) {
+        if (isfinite(*pend) && fabsf(x - *pend) <= floor + 0.15f * fabsf(x)) {
+            *pend = NAN;
+            return x;
+        }
+        *pend = x;
+        return avg;
+    }
+    *pend = NAN;
+    return avg + a * (x - avg);
+}
+
+static float meter_alpha(float dt) {
+    return dt / (APP_METER_TAU_S + dt);
+}
+
+const meter_avg_t *app_meter_avg(const app_t *app, int ch) {
+    return app ? &app->mavg[ch & 1] : NULL;
+}
+
 /* ---- state ----------------------------------------------------------------------------------- */
 
 void app_init(app_t *app) {
@@ -139,6 +182,8 @@ void app_init(app_t *app) {
     afe_cal_init_default(&app->cal[1]);
     app->sample_rate_hz = app_sample_rate_hz(app);
     app->win_len = app_screen_samples(app);
+    app->scope_tb = TB_DEFAULT;
+    meter_reset(app);
 }
 
 static bool scope_mode(app_mode_t m) {
@@ -238,6 +283,14 @@ static void set_mode(app_t *app, app_mode_t m) {
         decode_halt(app);
     }
     app_mode_t was = app->mode;
+    if (was == APP_MODE_METER && m != APP_MODE_METER) {
+        app->tb = app->scope_tb;          /* the meter picked its own window */
+    } else if (m == APP_MODE_METER && was != APP_MODE_METER) {
+        app->scope_tb = app->tb;
+        meter_reset(app);
+        app->tb = 0u;                     /* the window search starts at the fastest rate */
+        app->meter_search = true;
+    }
     app->mode = m;
     if (m == APP_MODE_DECODE && was != APP_MODE_DECODE && !app->streaming && !app->deep_busy) {
         decode_start_preset(app);
@@ -335,6 +388,12 @@ void app_button_event(app_t *app, uint8_t button, btn_event_t ev) {
     case BTN_UP:
     case BTN_DOWN: {
         bool up = (button == BTN_UP);
+        if (app->mode == APP_MODE_METER) {   /* the meter sets its own window: UP / DOWN turn the page */
+            if (ev == BTN_EV_SHORT) {
+                app->meter_page = (uint8_t)((app->meter_page + 1u) % APP_METER_PAGES);
+            }
+            break;
+        }
         if (ev == BTN_EV_SHORT) {
             if (up && app->tb + 1u < TB_COUNT) {
                 ++app->tb;
@@ -367,6 +426,64 @@ static void range_scale(const app_t *app, int ch, afe_range_t r, float *code_sca
     float offs = (r == AFE_RANGE_10X) ? cal->offset_10x_v : cal->offset_1x_v;
     *code_scale = gain * 1.024f / 256.0f;        /* 1.024 V ADC span over 256 codes */
     *zero_code = 128.0f - offs / *code_scale;
+}
+
+/* After a METER capture of `window` seconds: average the readings, then pick the next window.
+ *
+ * The window that fits holds 6 to 60 periods of the faster channel. To find it the meter starts at the
+ * fastest rate and lengthens the window step by step: a frequency only counts with 20 samples or more per
+ * period, so a slow sample rate can never pass an alias off as the signal (searching down from the longest
+ * window could). DC or a quiet input ends at the longest window. While searching, the readings shown stay as
+ * they were. */
+static void meter_update(app_t *app, float window) {
+    float fast = 0.0f;
+    bool swing = false;
+    bool real[2];
+    for (int c = 0; c < 2; ++c) {
+        const scope_meas_t *s = &app->meas[c];
+        float scale, zero;
+        range_scale(app, c, app->range[c], &scale, &zero);
+        bool big = s->vpp / scale >= 16.0f;   /* well above the noise */
+        real[c] = big && s->freq_hz > 0.0f && s->freq_hz <= app->sample_rate_hz / 20.0f;
+        swing = swing || big;
+        if (real[c]) {
+            fast = fmaxf(fast, s->freq_hz);
+        }
+    }
+    float periods = fast * window;
+    if (!app->meter_search) {   /* a window that fits: average this capture */
+        float a = meter_alpha(window + 0.03f);   /* plus about 30 ms to draw and start the next capture */
+        float t_floor = 1.5f / app->sample_rate_hz;
+        for (int c = 0; c < 2; ++c) {
+            const scope_meas_t *s = &app->meas[c];
+            meter_avg_t *m = &app->mavg[c];
+            float scale, zero;
+            range_scale(app, c, app->range[c], &scale, &zero);
+            m->vrms = smooth(m->vrms, s->vrms_ac, a, 3.0f * scale, &m->pend[1]);
+            m->vpp = smooth(m->vpp, s->vpp, a, 3.0f * scale, &m->pend[2]);
+            m->freq = smooth(m->freq, real[c] ? s->freq_hz : 0.0f, a, 0.0f, &m->pend[3]);
+            m->t_high = smooth(m->t_high, real[c] ? s->t_high_s : 0.0f, a, t_floor, &m->pend[4]);
+            m->t_low = smooth(m->t_low, real[c] ? s->t_low_s : 0.0f, a, t_floor, &m->pend[5]);
+            m->duty = (m->t_high > 0.0f && m->t_low > 0.0f) ? m->t_high / (m->t_high + m->t_low) : 0.0f;
+        }
+    }
+    bool longest = app->tb >= METER_TB_MAX;
+    bool fits = fast > 0.0f && (periods >= 6.0f || longest);   /* below 15 Hz the longest window has to do */
+    if (app->meter_search) {
+        if (fits || longest) {
+            app->meter_search = false;
+            if (periods > 60.0f && app->tb > 0u) {
+                --app->tb;
+            }
+        } else {
+            ++app->tb;
+        }
+    } else if (fast > 0.0f && periods > 60.0f && app->tb > 0u) {
+        --app->tb;                        /* faster signal: shorter window (a faster rate cannot alias) */
+    } else if ((fast > 0.0f && !fits) || (fast == 0.0f && swing) || (fast == 0.0f && !swing && !longest)) {
+        app->tb = 0u;                     /* lost it, or it went quiet: search again from the fastest rate */
+        app->meter_search = true;
+    }
 }
 
 void app_process_scope(app_t *app, const uint16_t *ch_a, const uint16_t *ch_b, size_t n) {
@@ -453,6 +570,9 @@ void app_process_scope(app_t *app, const uint16_t *ch_a, const uint16_t *ch_b, s
         }
     }
     app->win_len = span < n ? span : n;
+    if (app->mode == APP_MODE_METER && n > 0u) {
+        meter_update(app, (float)n / app->sample_rate_hz);
+    }
 }
 
 void app_process_logic(app_t *app, const uint8_t *nibbles, size_t n) {
@@ -503,6 +623,9 @@ void app_set_dc(app_t *app, uint16_t raw_ch1, uint16_t raw_ch2, uint16_t raw_vbu
     }
     app->dc_v[0] = afe_dc_sense_to_volts(&app->cal[0], app->range[0], raw_ch1);
     app->dc_v[1] = afe_dc_sense_to_volts(&app->cal[1], app->range[1], raw_ch2);
+    for (int c = 0; c < 2; ++c) {   /* the main loop reads it every 100 ms */
+        app->mavg[c].dc = smooth(app->mavg[c].dc, app->dc_v[c], meter_alpha(0.1f), 0.02f, &app->mavg[c].pend[0]);
+    }
     app->vbus_v = (float)raw_vbus / 4096.0f * app->cal[0].vref_v * 2.0f;   /* R17/R18 100k:100k */
 }
 
@@ -939,40 +1062,87 @@ static void render_logic(const app_t *app, uint16_t *fb, const palette_t *p, con
     }
 }
 
-/* Per channel: DC (12-bit DC-sense ADC) large, then from the scope capture the AC RMS, peak to peak and
- * frequency, and the pulse widths (time high, time low, duty). */
+/* Draws text right-aligned to x_right; returns its left edge. */
+static int text_right(uint16_t *fb, int x_right, int y, const char *s, int scale, uint16_t color) {
+    int x = x_right - lcd_text_width(s, scale);
+    lcd_fb_draw_text_scaled(fb, x, y, s, scale, color);
+    return x;
+}
+
+/* Two pages of averaged readings in large digits, UP / DOWN to turn:
+ *   VOLTS   per channel the DC level (12-bit DC-sense ADC) and the AC RMS (scope capture, whole periods)
+ *   TIMING  per channel the frequency, the duty, and the time high (+W) and low (-W) */
 static void render_meter(const app_t *app, uint16_t *fb, const palette_t *p) {
-    int big = LCD_WIDTH >= 200u ? 2 : 1;
-    int row = (PLOT_H + 2) / 2;
+    bool wide = LCD_WIDTH >= 200u;
+    int big = wide ? 3 : 1, mid = wide ? 2 : 1;
+    int x_val = (int)LCD_WIDTH - (wide ? 26 : 14);   /* values end here, their units follow */
+    int row = ((int)LCD_HEIGHT - HDR_H - LCD_GLYPH_H - 2) / 2;
+    bool volts = app->meter_page == APP_METER_VOLTS;
+    lcd_fb_draw_text_scaled(fb, lcd_text_width("METER ", 1) + 2, 1, volts ? "VOLTS" : "TIMING", 1, p->trig);
     for (int c = 0; c < 2; ++c) {
-        const scope_meas_t *m = &app->meas[c];
-        char v[24], a[16], b[16], f[16], buf[64];
-        int y = PLOT_Y0 + 1 + c * row;
-        snprintf(buf, sizeof buf, "CH%d %s", c + 1, app->range[c] == AFE_RANGE_10X ? "+-26V" : "+-5V");
-        lcd_fb_draw_text_scaled(fb, 2, y + (big - 1) * 4, buf, 1, p->dim);
-        snprintf(v, sizeof v, "%+.3fV DC", (double)app->dc_v[c]);
-        lcd_fb_draw_text_scaled(fb, (int)LCD_WIDTH - lcd_text_width(v, big) - 2, y, v, big, p->ch[c]);
-        y += big * LCD_GLYPH_H + 2;
-        app_format_eng(m->vrms_ac, "V", a, sizeof a);
-        app_format_eng(m->vpp, "V", b, sizeof b);
-        app_format_eng(m->freq_hz, "Hz", f, sizeof f);
-        snprintf(buf, sizeof buf, "AC %srms %spp %s", a, b, m->freq_hz > 0.0f ? f : "--");
-        lcd_fb_draw_text_scaled(fb, 2, y, buf, 1, p->text);
-        y += LCD_GLYPH_H + 1;
-        if (m->t_high_s > 0.0f) {
-            app_format_eng(m->t_high_s, "s", a, sizeof a);
-            app_format_eng(m->t_low_s, "s", b, sizeof b);
-            snprintf(buf, sizeof buf, "+W %s -W %s D %.1f%%", a, b, (double)(m->duty * 100.0f));
+        const meter_avg_t *m = &app->mavg[c];
+        char v[40], a[16], b[24];
+        int y = HDR_H + 2 + c * row;
+        snprintf(v, sizeof v, "CH%d", c + 1);
+        lcd_fb_draw_text_scaled(fb, 2, y, v, 1, p->ch[c]);
+        lcd_fb_draw_text_scaled(fb, 2, y + LCD_GLYPH_H + 1, app->range[c] == AFE_RANGE_10X ? "+-26V" : "+-5V", 1, p->dim);
+        if (volts) {
+            if (isfinite(m->dc)) {
+                snprintf(v, sizeof v, fabsf(m->dc) < 9.995f ? "%+.3fV" : "%+.2fV", (double)m->dc);
+            } else {
+                snprintf(v, sizeof v, "--");
+            }
+            text_right(fb, x_val, y, v, big, p->ch[c]);
+            lcd_fb_draw_text_scaled(fb, x_val + 3, y + (big - 1) * LCD_GLYPH_H, "DC", 1, p->dim);
+            y += big * LCD_GLYPH_H + 3;
+            if (isfinite(m->vrms)) {
+                app_format_eng(m->vrms, "V", v, sizeof v);
+            } else {
+                snprintf(v, sizeof v, "--");
+            }
+            text_right(fb, x_val, y, v, mid, p->text);
+            lcd_fb_draw_text_scaled(fb, x_val + 3, y + (mid - 1) * LCD_GLYPH_H, "rms", 1, p->dim);
+            if (isfinite(m->vpp)) {
+                app_format_eng(m->vpp, "V", a, sizeof a);
+                snprintf(b, sizeof b, "%spp", a);
+                lcd_fb_draw_text_scaled(fb, 2, y + (mid - 1) * LCD_GLYPH_H, b, 1, p->dim);
+            }
         } else {
-            snprintf(buf, sizeof buf, "+W -- -W --  (UP: longer window)");
+            if (isfinite(m->freq) && m->freq > 0.0f) {
+                app_format_eng(m->freq, "Hz", v, sizeof v);
+            } else {
+                snprintf(v, sizeof v, "--Hz");
+            }
+            text_right(fb, x_val + (wide ? 18 : 6), y, v, big, p->ch[c]);
+            y += big * LCD_GLYPH_H + 3;
+            bool widths = isfinite(m->t_high) && m->t_high > 0.0f && isfinite(m->t_low) && m->t_low > 0.0f;
+            if (widths) {
+                snprintf(v, sizeof v, "%.1f%%", (double)(m->duty * 100.0f));
+            } else {
+                snprintf(v, sizeof v, "--%%");
+            }
+            int xd = text_right(fb, (int)LCD_WIDTH / 2 - 4, y, v, mid, p->text);
+            lcd_fb_draw_text_scaled(fb, xd - lcd_text_width("D ", 1), y + (mid - 1) * LCD_GLYPH_H, "D", 1, p->dim);
+            if (widths) {
+                app_format_eng(m->t_high, "s", a, sizeof a);
+                app_format_eng(m->t_low, "s", b, sizeof b);
+            } else {
+                snprintf(a, sizeof a, "--");
+                snprintf(b, sizeof b, "--");
+            }
+            snprintf(v, sizeof v, "+W %s", a);
+            lcd_fb_draw_text_scaled(fb, (int)LCD_WIDTH / 2 + 6, y, v, 1, p->text);
+            snprintf(v, sizeof v, "-W %s", b);
+            lcd_fb_draw_text_scaled(fb, (int)LCD_WIDTH / 2 + 6, y + LCD_GLYPH_H, v, 1, p->text);
         }
-        lcd_fb_draw_text_scaled(fb, 2, y, buf, 1, p->text);
     }
     char v[16], w[16], buf[64];
     app_format_eng(app->vbus_v, "V", v, sizeof v);
     app_format_eng((float)app_capture_samples(app, 4096u) / app_sample_rate_hz(app), "s", w, sizeof w);   /* main.c's CAPTURE_MAX */
-    snprintf(buf, sizeof buf, "VBUS %s %s window %s", v, app->auto_range ? "AUTO" : "FIXED", w);
-    lcd_fb_draw_text_scaled(fb, 2, FOOT_Y + LCD_GLYPH_H + 1, buf, 1, p->dim);
+    snprintf(buf, sizeof buf, "AVG  VBUS %s  win %s", v, w);
+    int yf = (int)LCD_HEIGHT - LCD_GLYPH_H;
+    lcd_fb_draw_text_scaled(fb, 2, yf, buf, 1, p->dim);
+    text_right(fb, (int)LCD_WIDTH - 1, yf, "UP:page", 1, p->dim);
 }
 
 static void render_decode(const app_t *app, uint16_t *fb, const palette_t *p) {
