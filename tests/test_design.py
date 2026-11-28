@@ -173,7 +173,7 @@ def test_buttons_and_lcd_pinout():
 
 
 def test_bootsel_diode_polarity():
-    """Schottky D6 cathode (pin 1) -> BTN_MODE_N, anode (pin 2) -> BOOT_KEY -> R21 -> QSPI_SS_N."""
+    """D6 (1N4148WS) cathode (pin 1) -> BTN_MODE_N, anode (pin 2) -> BOOT_KEY -> R21 -> QSPI_SS_N."""
     assert design.pin_net("D6", "1") == "BTN_MODE_N"
     assert design.pin_net("D6", "2") == "BOOT_KEY"
     assert {design.pin_net("R21", "1"), design.pin_net("R21", "2")} == {"QSPI_SS_N", "BOOT_KEY"}
@@ -183,9 +183,10 @@ def test_usb_cc_and_esd():
     # USB CC1/CC2 5.1k pulldowns
     assert {design.pin_net("R10", "1"), design.pin_net("R10", "2")} == {"USB_CC1", "GND"}
     assert {design.pin_net("R11", "1"), design.pin_net("R11", "2")} == {"USB_CC2", "GND"}
-    # USB-C ESD (D1) referenced to VBUS_RAW; side pod 4-ch ESD (D2) referenced to +5V_VBUS
+    # USB-C ESD (D1) referenced to VBUS_RAW; side pod 4-ch ESD (D2) with VP open, so a live target cannot
+    # feed the unpowered pen through the steering diodes (its internal TVS still clamps)
     assert design.pin_net("D1", "5") == "VBUS_RAW"
-    assert design.pin_net("D2", "5") == "+5V_VBUS"
+    assert ("D2", "5") in design.NC_PINS
     assert {design.pin_net("D2", p) for p in ("1", "3", "4", "6")} == {
         "POD_CH0_RAW", "POD_CH1_RAW", "POD_CH2_RAW", "POD_CH3_RAW",
     }

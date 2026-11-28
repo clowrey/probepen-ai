@@ -231,7 +231,8 @@ COMPONENTS: list[Comp] = [
     C("C29", "c_100n_0402", {"1": "ADC_AVDD", "2": "GND"}, block="mcu"),
     C("C20", "c_1u_0402", {"1": "ADC_AVDD", "2": "GND"}, block="mcu"),
 
-    # 12 MHz 2520 crystal (CL = 10 pF -> 2 * (10 - 2.5 stray) = 15 pF load caps), 1k on XOUT
+    # 12 MHz ABM8-272-T3 (the Pico 2 crystal: CL = 10 pF, ESR <= 50R) with 15 pF load caps and 1k on XOUT,
+    # as in Raspberry Pi's "Hardware design with RP2350"
     C("Y1", "xtal_12m", {"1": "XIN", "2": "GND", "3": "XOUT_XTAL", "4": "GND"}, block="mcu"),
     C("R20", "r_1k_0402", {"1": "XOUT_RAW", "2": "XOUT_XTAL"}, block="mcu"),
     C("C30", "c_15p_0402", {"1": "XIN", "2": "GND"}, block="mcu"),
@@ -239,7 +240,7 @@ COMPONENTS: list[Comp] = [
 
     # BOOTSEL (hold MODE while plugging USB-C), RUN pull-up, SWD test pads
     C("R21", "r_1k_0402", {"1": "QSPI_SS_N", "2": "BOOT_KEY"}, block="mcu"),
-    C("D6", "d_1n5819ws", {"1": "BTN_MODE_N", "2": "BOOT_KEY"}, block="mcu"),  # 1=K, 2=A
+    C("D6", "d_1n4148ws", {"1": "BTN_MODE_N", "2": "BOOT_KEY"}, block="mcu"),  # 1=K, 2=A
     C("R22", "r_10k_0402", {"1": "+3V3_DIG", "2": "RUN_N"}, block="mcu"),
     _tp("TP_BOOT", "BOOT_KEY", "mcu"),
     # No SWD / RUN test pads in this revision: the MCU is programmed over USB (BOOT_KEY), and the pads had no room
@@ -266,7 +267,10 @@ COMPONENTS: list[Comp] = [
     # Channel 1 & 2 single-supply level-shifted HV dividers (940k + 100k//51k -> 1/28.83, rest 0.978 V)
     C("R1", "r_470k_0805", {"1": "CH1_TIP", "2": "CH1_HV_MID"}, block="afe"),
     C("R2", "r_470k_0805", {"1": "CH1_HV_MID", "2": "CH1_VDIV"}, block="afe"),
-    C("C32", "c_1p_0402", {"1": "CH1_TIP", "2": "CH1_VDIV"}, block="afe"),
+    # top capacitor of the compensated divider: 2 x 2.2 pF in series through the mid node (1.1 pF, 100 V,
+    # +/-11 %), each across one 470k
+    C("C32", "c_2p2_0402", {"1": "CH1_TIP", "2": "CH1_HV_MID"}, block="afe"),
+    C("C35", "c_2p2_0402", {"1": "CH1_HV_MID", "2": "CH1_VDIV"}, block="afe"),
     C("R3U", "r_100k_0402", {"1": "+3V0_REF", "2": "CH1_VDIV"}, block="afe"),
     C("R3", "r_51k_0402", {"1": "CH1_VDIV", "2": "AGND"}, block="afe"),
     C("C33", "c_22p_0402", {"1": "CH1_VDIV", "2": "AGND"}, block="afe"),
@@ -277,7 +281,8 @@ COMPONENTS: list[Comp] = [
 
     C("R1B", "r_470k_0805", {"1": "CH2_TIP", "2": "CH2_HV_MID"}, block="afe"),
     C("R2B", "r_470k_0805", {"1": "CH2_HV_MID", "2": "CH2_VDIV"}, block="afe"),
-    C("C32B", "c_1p_0402", {"1": "CH2_TIP", "2": "CH2_VDIV"}, block="afe"),
+    C("C32B", "c_2p2_0402", {"1": "CH2_TIP", "2": "CH2_HV_MID"}, block="afe"),
+    C("C35B", "c_2p2_0402", {"1": "CH2_HV_MID", "2": "CH2_VDIV"}, block="afe"),
     C("R3UB", "r_100k_0402", {"1": "+3V0_REF", "2": "CH2_VDIV"}, block="afe"),
     C("R3B", "r_51k_0402", {"1": "CH2_VDIV", "2": "AGND"}, block="afe"),
     C("C33B", "c_22p_0402", {"1": "CH2_VDIV", "2": "AGND"}, block="afe"),
@@ -306,7 +311,7 @@ COMPONENTS: list[Comp] = [
 
     C("R4A", "r_510r_0402", {"1": "CH1_VBUF", "2": "CH1_INV"}, block="afe"),
     C("R5A", "r_1k5_0402", {"1": "CH1_INV", "2": "CH1_OUT"}, block="afe"),
-    C("C40A", "c_4p7_0402", {"1": "CH1_INV", "2": "CH1_OUT"}, block="afe"),
+    C("C40A", "c_2p2_0402", {"1": "CH1_INV", "2": "CH1_OUT"}, block="afe"),
     C("R6A", "r_330r_0402", {"1": "CH1_INV", "2": "CH1_SW_LO"}, block="afe"),
     C("R24", "r_10k_0402", {"1": "CH1_OUT", "2": "CH1_DC_SENSE"}, block="afe"),
     C("C41", "c_10n_0402", {"1": "CH1_DC_SENSE", "2": "AGND"}, block="afe"),  # beside R24, on the analog ground island
@@ -314,7 +319,7 @@ COMPONENTS: list[Comp] = [
 
     C("R4B", "r_510r_0402", {"1": "CH2_VBUF", "2": "CH2_INV"}, block="afe"),
     C("R5B", "r_1k5_0402", {"1": "CH2_INV", "2": "CH2_OUT"}, block="afe"),
-    C("C40B", "c_4p7_0402", {"1": "CH2_INV", "2": "CH2_OUT"}, block="afe"),
+    C("C40B", "c_2p2_0402", {"1": "CH2_INV", "2": "CH2_OUT"}, block="afe"),
     C("R6B", "r_330r_0402", {"1": "CH2_INV", "2": "CH2_SW_LO"}, block="afe"),
     C("R24B", "r_10k_0402", {"1": "CH2_OUT", "2": "CH2_DC_SENSE"}, block="afe"),
     C("C41B", "c_10n_0402", {"1": "CH2_DC_SENSE", "2": "GND"}, block="afe"),   # beside R24B
@@ -350,14 +355,14 @@ COMPONENTS: list[Comp] = [
         "14": "ADC_ENCB", # ENCB
         "15": "+3V3_DIG", # VDD
         "16": "GND",      # GND (digital side)
-        "17": "ADCB_D7",  # D7B (MSB)
-        "18": "ADCB_D6",  # D6B
-        "19": "ADCB_D5",  # D5B
-        "20": "ADCB_D4",  # D4B
-        "21": "ADCB_D3",  # D3B
-        "22": "ADCB_D2",  # D2B
-        "23": "ADCB_D1",  # D1B
-        "24": "ADCB_D0",  # D0B (LSB)
+        "17": "ADCB_D7_O",  # D7B (MSB)
+        "18": "ADCB_D6_O",  # D6B
+        "19": "ADCB_D5_O",  # D5B
+        "20": "ADCB_D4_O",  # D4B
+        "21": "ADCB_D3_O",  # D3B
+        "22": "ADCB_D2_O",  # D2B
+        "23": "ADCB_D1_O",  # D1B
+        "24": "ADCB_D0_O",  # D0B (LSB)
         "25": "NC",
         "26": "NC",
         "27": "GND",      # GND
@@ -370,24 +375,30 @@ COMPONENTS: list[Comp] = [
         "34": "GND",      # GND
         "35": "NC",
         "36": "NC",
-        "37": "ADCA_D0",  # D0A (LSB)
-        "38": "ADCA_D1",  # D1A
-        "39": "ADCA_D2",  # D2A
-        "40": "ADCA_D3",  # D3A
-        "41": "ADCA_D4",  # D4A
-        "42": "ADCA_D5",  # D5A
-        "43": "ADCA_D6",  # D6A
-        "44": "ADCA_D7",  # D7A (MSB)
+        "37": "ADCA_D0_O",  # D0A (LSB)
+        "38": "ADCA_D1_O",  # D1A
+        "39": "ADCA_D2_O",  # D2A
+        "40": "ADCA_D3_O",  # D3A
+        "41": "ADCA_D4_O",  # D4A
+        "42": "ADCA_D5_O",  # D5A
+        "43": "ADCA_D6_O",  # D6A
+        "44": "ADCA_D7_O",  # D7A (MSB)
         "45": "GND",      # GND
         "46": "+3V3_DIG", # VDD
         "47": "ADC_ENCA", # ENCA
         "48": "+3V3_ANA", # VD
     }, value="AD9288BSTZ-80 DNP", symbol="ppa:AD9288", footprint="Package_QFP:LQFP-48_7x7mm_P0.5mm",
       dnp=True, block="adc"),
-    # Direct 16-bit data bus to RP2354B over L2 GND plane; R36A/R36B damp the two encode clocks. ENCB has its
+    # 16-bit data bus to RP2354B over L2 GND plane; R36A/R36B damp the two encode clocks. ENCB has its
     # own MCU pin (GPIO28), so the firmware can clock channel B in phase or 180 deg out of phase (interleaved)
     C("R36A", "r_33r_0402", {"1": "ADC_CLK_MCU", "2": "ADC_ENCA"}, block="adc"),
     C("R36B", "r_33r_0402", {"1": "ADC_CLKB_MCU", "2": "ADC_ENCB"}, block="adc"),
+    # 33R in series with every data output, beside the ADC: they slow the edges and limit the current that
+    # charging 16 lines draws through the AD9288's own supply and ground ("the length of the output data lines
+    # and loads placed on them must be minimized to reduce transients within the AD9288", datasheet; ADI's
+    # evaluation board uses 47R arrays, the ToolTop ET829 33R, the Hantek 2D72 22R with the MXT2088/AD9288)
+    *[C(f"R{60 + i}", "r_33r_0402", {"1": f"ADCA_D{i}_O", "2": f"ADCA_D{i}"}, block="adc") for i in range(8)],
+    *[C(f"R{70 + i}", "r_33r_0402", {"1": f"ADCB_D{i}_O", "2": f"ADCB_D{i}"}, block="adc") for i in range(8)],
     # AD9288 reference & consolidated supply decoupling (4-layer power/ground planes)
     C("C44", "c_1u_0402", {"1": "ADC_VREF", "2": "AGND"}, block="adc"),
     C("C46", "c_100n_0402", {"1": "+3V3_ANA", "2": "AGND"}, block="adc"),
@@ -398,7 +409,7 @@ COMPONENTS: list[Comp] = [
     C("C52C", "c_100n_0402", {"1": "+3V3_DIG", "2": "GND"}, block="adc"),
 
     # ---- 6-Pin Bidirectional GPIO Expansion Header (logic) ----------------------------------
-    # JST-SH 6P + shared PTC + 220R + SRV05-4 (VP=+5V_VBUS) direct to 5V-tolerant GPIO0..3
+    # JST-SH 6P + shared PTC + 1k + SRV05-4 (VP open) to 5V-tolerant GPIO0..3
     C("J3", "jst_sh6", {
         "1": "GND", "2": "+3V3_POD",
         "3": "POD_CH0_RAW", "4": "POD_CH1_RAW", "5": "POD_CH2_RAW", "6": "POD_CH3_RAW",
@@ -406,11 +417,13 @@ COMPONENTS: list[Comp] = [
     }, block="logic"),
     C("F2", "ptc_500ma", {"1": "+3V3_DIG", "2": "+3V3_POD"}, block="logic"),
     C("C56", "c_100n_0402", {"1": "+3V3_POD", "2": "GND"}, block="logic"),
-    *[C(f"R{43 + i}", "r_220r_0402", {"1": f"POD_CH{i}_RAW", "2": f"POD_CH{i}"}, block="logic") for i in range(4)],
+    # 1k: limits the current into GPIO0..3 when a pod line is driven while the pen is unpowered (the pins are
+    # 5 V tolerant only with IOVDD up)
+    *[C(f"R{43 + i}", "r_1k_0402", {"1": f"POD_CH{i}_RAW", "2": f"POD_CH{i}"}, block="logic") for i in range(4)],
     C("D2", "srv05_4", {
         "1": "POD_CH0_RAW", "2": "GND", "3": "POD_CH1_RAW",
-        "4": "POD_CH2_RAW", "5": "+5V_VBUS", "6": "POD_CH3_RAW",
-    }, block="logic"),
+        "4": "POD_CH2_RAW", "5": "NC", "6": "POD_CH3_RAW",
+    }, block="logic"),   # VP open: the internal TVS still clamps; tied to VBUS it fed a live target into the pen
 
     # ---- LCD: 1.14"/0.96" 13P 0.70 mm Solder FPC on B.Cu + AO3401A high-side backlight (lcd) -
     # AO3401A SOT-23: 1=G, 2=S, 3=D

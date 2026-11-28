@@ -447,7 +447,15 @@
       },
       {
         "netclass": "HIGHSPEED",
+        "pattern": "/ADCA_D0_O"
+      },
+      {
+        "netclass": "HIGHSPEED",
         "pattern": "/ADCA_D1"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCA_D1_O"
       },
       {
         "netclass": "HIGHSPEED",
@@ -455,7 +463,15 @@
       },
       {
         "netclass": "HIGHSPEED",
+        "pattern": "/ADCA_D2_O"
+      },
+      {
+        "netclass": "HIGHSPEED",
         "pattern": "/ADCA_D3"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCA_D3_O"
       },
       {
         "netclass": "HIGHSPEED",
@@ -463,7 +479,15 @@
       },
       {
         "netclass": "HIGHSPEED",
+        "pattern": "/ADCA_D4_O"
+      },
+      {
+        "netclass": "HIGHSPEED",
         "pattern": "/ADCA_D5"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCA_D5_O"
       },
       {
         "netclass": "HIGHSPEED",
@@ -471,7 +495,15 @@
       },
       {
         "netclass": "HIGHSPEED",
+        "pattern": "/ADCA_D6_O"
+      },
+      {
+        "netclass": "HIGHSPEED",
         "pattern": "/ADCA_D7"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCA_D7_O"
       },
       {
         "netclass": "ANALOG",
@@ -483,7 +515,15 @@
       },
       {
         "netclass": "HIGHSPEED",
+        "pattern": "/ADCB_D0_O"
+      },
+      {
+        "netclass": "HIGHSPEED",
         "pattern": "/ADCB_D1"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCB_D1_O"
       },
       {
         "netclass": "HIGHSPEED",
@@ -491,7 +531,15 @@
       },
       {
         "netclass": "HIGHSPEED",
+        "pattern": "/ADCB_D2_O"
+      },
+      {
+        "netclass": "HIGHSPEED",
         "pattern": "/ADCB_D3"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCB_D3_O"
       },
       {
         "netclass": "HIGHSPEED",
@@ -499,7 +547,15 @@
       },
       {
         "netclass": "HIGHSPEED",
+        "pattern": "/ADCB_D4_O"
+      },
+      {
+        "netclass": "HIGHSPEED",
         "pattern": "/ADCB_D5"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCB_D5_O"
       },
       {
         "netclass": "HIGHSPEED",
@@ -507,7 +563,15 @@
       },
       {
         "netclass": "HIGHSPEED",
+        "pattern": "/ADCB_D6_O"
+      },
+      {
+        "netclass": "HIGHSPEED",
         "pattern": "/ADCB_D7"
+      },
+      {
+        "netclass": "HIGHSPEED",
+        "pattern": "/ADCB_D7_O"
       },
       {
         "netclass": "ANALOG",

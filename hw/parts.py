@@ -98,10 +98,12 @@ _LIST = [
         },
     ),
     Part(
-        "d_1n5819ws", "C191023", "Device:D_Schottky",
+        "d_1n4148ws", "C2128", "Device:D",
         "Diode_SMD:D_SOD-323",
-        "1N5819WS", mpn="1N5819WS", basic=True, per_board=1,
-        extra={"notes": "Low-Vf Schottky for BOOTSEL diode-OR from BTN_MODE_N to QSPI_SS_N (<0.3 V drop)"},
+        "1N4148WS", mpn="1N4148WS", basic=True, per_board=1,
+        extra={"notes": "BOOTSEL diode-OR from BTN_MODE_N to QSPI_SS_N: ~2 pF and nA leakage, so flash chip-select "
+                        "edges and a warm diode cannot pull the MODE line low (a 1N5819WS has ~100 pF and uA-mA "
+                        "leakage). Vf ~0.5 V at the ~60 uA QSPI_SS pull-up, below its 0.8 V VIL"},
     ),
     Part(
         "ao3401a", "C15127", "Transistor_FET:AO3401A",
@@ -126,13 +128,12 @@ _LIST = [
         extra={"notes": "200 mA, 450 mOhm DCR, isolates analog +5V rail"},
     ),
     Part(
-        "xtal_12m", "C284154", "Device:Crystal_GND24",
-        "Crystal:Crystal_SMD_2520-4Pin_2.5x2.0mm",
-        "12MHz", mpn="TXM12M0004252DBCEO00T", basic=False, per_board=1,
+        "xtal_12m", "C20625731", "Device:Crystal_GND24",
+        "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm",
+        "12MHz", mpn="ABM8-272-T3", basic=False, per_board=1,
         extra={
-            "datasheet": "https://wmsc.lcsc.com/wmsc/upload/file/pdf/v2/lcsc/1810251532_Yajingxin-TXM12M0004252DBCEO00T_C284154.pdf",
-            "notes": "YXC/TXC-style 12.000 MHz 2520, CL=10 pF, ESR<=120 ohm, +/-10 ppm; 15 pF load caps and 1k on XOUT. "
-                     "Higher ESR than the 3225 ABM8-272-T3 Raspberry Pi validated: check start-up on first boards",
+            "notes": "Abracon ABM8-272-T3 12.000 MHz 3225, CL=10 pF, ESR<=50 ohm, +/-30 ppm: the crystal Raspberry Pi "
+                     "recommends and tuned Pico 2 for (15 pF load caps, 1k on XOUT), 'Hardware design with RP2350' s.4",
         },
     ),
     Part(
@@ -180,21 +181,20 @@ _LIST = [
     Part("r_0r_0603", "C21189", "Device:R", _R0603, "0R", per_board=1, mpn="0603WAF0000T5E", basic=True),
     Part("r_27r_0603", "C25190", "Device:R", _R0603, "27R", per_board=3, mpn="0603WAF270JT5E", basic=False,
          extra={"preferred": True}),
-    Part("r_33r_0402", "C25105", "Device:R", _R0402, "33R", per_board=6, mpn="0402WGF330JTCE", basic=True),
+    Part("r_33r_0402", "C25105", "Device:R", _R0402, "33R", per_board=22, mpn="0402WGF330JTCE", basic=True),
     Part("r_51r_0402", "C25125", "Device:R", _R0402, "51R", per_board=2, mpn="0402WGF510JTCE", basic=False,
          extra={"preferred": True, "notes": "ADC input RC: 51R x 100pF = 31 MHz anti-alias pole on both ranges"}),
     Part("r_330r_0402", "C25104", "Device:R", _R0402, "330R 1%", per_board=2, mpn="0402WGF3300TCE", basic=True),
-    Part("r_220r_0402", "C25091", "Device:R", _R0402, "220R", per_board=6, mpn="0402WGF2200TCE", basic=True),
-    Part("r_1k_0402", "C11702", "Device:R", _R0402, "1k", per_board=3, mpn="0402WGF1001TCE", basic=True),
+    Part("r_220r_0402", "C25091", "Device:R", _R0402, "220R", per_board=2, mpn="0402WGF2200TCE", basic=True),
+    Part("r_1k_0402", "C11702", "Device:R", _R0402, "1k", per_board=7, mpn="0402WGF1001TCE", basic=True),
     Part("r_5k1_0402", "C25905", "Device:R", _R0402, "5.1k", per_board=2, mpn="0402WGF5101TCE", basic=True),
     Part("r_10k_0402", "C25744", "Device:R", _R0402, "10k", per_board=3, mpn="0402WGF1002TCE", basic=True),
     Part("r_47k_0402", "C25792", "Device:R", _R0402, "47k", per_board=1, mpn="0402WGF4702TCE", basic=True),
     Part("r_100k_0402", "C25741", "Device:R", _R0402, "100k", per_board=4, mpn="0402WGF1003TCE", basic=True),
     # --- Capacitors (Basic or Preferred $0 fee) -----------------------------------------------
-    Part("c_1p_0402", "C1550", "Device:C", _C0402, "1pF C0G", per_board=2, mpn="0402CG1R0C500NT", basic=False,
-         extra={"preferred": True, "notes": "50 V rated C0G across R1+R2"}),
-    Part("c_4p7_0402", "C1569", "Device:C", _C0402, "4.7pF C0G", per_board=2, mpn="0402CG4R7C500NT", basic=False,
-         extra={"preferred": True}),
+    Part("c_2p2_0402", "C1559", "Device:C", _C0402, "2.2pF C0G", per_board=6, mpn="0402CG2R2C500NT", basic=False,
+         extra={"preferred": True, "notes": "JLC preferred ($0 fee): 2 in series across R1/R2 (C32/C35), and "
+                                            "the gain stage feedback C40 (pole 48 MHz with 1.5k)"}),
     Part("c_22p_0402", "C1555", "Device:C", _C0402, "22pF C0G", per_board=2, mpn="0402CG220J500NT", basic=True),
     Part("c_15p_0402", "C1548", "Device:C", _C0402, "15pF C0G", per_board=2, mpn="0402CG150J500NT", basic=True),
     Part("c_100p_0402", "C1546", "Device:C", _C0402, "100pF C0G", per_board=2, mpn="0402CG101J500NT", basic=True),

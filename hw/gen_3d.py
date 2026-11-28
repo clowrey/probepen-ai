@@ -113,6 +113,10 @@ def crystal_2520():
     return [fbox(-1.25, -1.0, 1.25, 1.0, 0.0, 0.25, TAN), fbox(-1.1, -0.85, 1.1, 0.85, 0.25, 0.55, SILVER, "lid")]
 
 
+def crystal_3225():
+    return [fbox(-1.6, -1.25, 1.6, 1.25, 0.0, 0.25, TAN), fbox(-1.45, -1.1, 1.45, 1.1, 0.25, 0.75, SILVER, "lid")]
+
+
 def jst_sh6_horizontal(pads):
     parts = [fbox(-4.0, -1.7, 4.0, 2.6, 0.0, 2.95, BEIGE)]
     parts.append(fbox(-3.0, 0.4, 3.0, 2.62, 0.55, 2.45, (0.35, 0.33, 0.30), "socket"))   # mating opening, +y side
@@ -201,6 +205,7 @@ def model_for(name: str, pads: list):
         "TSSOP-8_3x3mm_P0.65mm": lambda: gullwing(pads, 1.5, 1.5, 1.0),
         "LQFP-48_7x7mm_P0.5mm": lambda: gullwing(pads, 3.5, 3.5, 1.4),
         "Crystal_SMD_2520-4Pin_2.5x2.0mm": crystal_2520,
+        "Crystal_SMD_3225-4Pin_3.2x2.5mm": crystal_3225,
         "JST_SH_SM06B-SRSS-TB_1x06-1MP_P1.00mm_Horizontal": lambda: jst_sh6_horizontal(pads),
         "SW_Push_Side_TS24CA": lambda: ts24ca(pads),
         "LED_Side_XL3806_3.8x1.0mm": lambda: led_xl3806(pads),

@@ -27,11 +27,11 @@ local copy of the page (see [AI mode](#ai-mode)), since it needs an API key on y
 
 | | |
 |---|---|
-| **MCU** | RP2354B (QFN-80, 0.4 mm pitch): dual Cortex-M33 at 150 MHz (or overclocked to 250 MHz, a build option), 2 MB stacked flash, 12 PIO state machines, on-chip 1.1 V core buck (layout copied from the owner's CellKeeper board), 12 MHz crystal |
+| **MCU** | RP2354B (QFN-80, 0.4 mm pitch): dual Cortex-M33 at 150 MHz (or overclocked to 250 MHz, a build option), 2 MB stacked flash, 12 PIO state machines, on-chip 1.1 V core buck (layout copied from the owner's CellKeeper board), 12 MHz Abracon ABM8-272-T3 crystal (the one Raspberry Pi tuned the Pico 2 for: ESR ≤ 50 Ω, 15 pF load caps, 1 kΩ on XOUT) |
 | **Scope ADC** | AD9288 (LQFP-48, hand-soldered, not placed by the assembler): two 8-bit channels, read by one PIO program as one 32-bit word per sample, clocked by PIO side-set at up to 75 MSPS (150 MHz / 2 / integer divider, set by the timebase), or 125 MSPS in the 250 MHz build |
-| **Front end** | Per channel: 940 kΩ (2 × 470 kΩ) with 1 pF into a 100 kΩ / 51 kΩ divider biased from the 3.000 V reference (rests at 0.978 V), BAV199 clamp, RS8752 buffer, RS8752 inverting gain stage pivoting on REF_MID (0.978 V), 74LVC2G66 gain switch. High range about ±5 V, low range about ±26 V |
+| **Front end** | Per channel: 940 kΩ (2 × 470 kΩ, each bridged by 2.2 pF: 1.1 pF in all, 100 V) into a 100 kΩ / 51 kΩ divider biased from the 3.000 V reference (rests at 0.978 V), BAV199 clamp, RS8752 buffer, RS8752 inverting gain stage pivoting on REF_MID (0.978 V), 74LVC2G66 gain switch. High range about ±5 V, low range about ±26 V |
 | **References and supplies** | REF3030 (3.000 V), two RT9013-33 LDOs (`+3V3_DIG`, and `+3V3_ANA` behind a 600 Ω ferrite); the analog ground island joins digital ground at one 0 Ω link (R16) |
-| **Logic pod** | 6-pin JST-SH side connector on GPIO0..3 (the 5 V tolerant pins), PTC-fused 3.3 V out, SRV05-4 ESD |
+| **Logic pod** | 6-pin JST-SH side connector on GPIO0..3 (the 5 V tolerant pins, while the pen is powered), 1 kΩ in each line, PTC-fused 3.3 V out, SRV05-4 ESD with its VP pin open (tied to VBUS, a live target would power the unplugged pen through it) |
 | **Display and buttons** | 1.14" 135 × 240 ST7789V IPS LCD (Wisevision N114-2413THBIG01-H13, LCSC C2890618), its 13-pin 0.7 mm flex soldered to pads on the bottom side (SPI1), AO3401A backlight switch; four side-actuated buttons (ASK, MODE/BOOTSEL, UP, DOWN); two front white work-light LEDs |
 | **Board** | 132 × 17.6 mm, tapered to 14 mm at the nose, 4 layers (JLC04161H-7628), 1.6 mm, single-sided assembly on the top |
 | **Case** | Two-piece build123d pen shell, 136 × 21.5 × 12.2 mm; screws self-tap into the plastic (no inserts) |
@@ -47,8 +47,8 @@ firmware change but no hardware change.
 | **Channels** | 2, sampled at the same instant (both AD9288 encode pins are driven from one MCU clock pin) |
 | **Resolution** | 8 bits. One step is 39 mV on the ±5 V range and 214 mV on the ±26 V range |
 | **Ranges** | ±5.0 V (high gain) and about ±26 V (low gain), chosen per channel, automatically or fixed. Auto-range switches up at 90 % of ±5 V or when the ADC reports over-range, and back down below 70 % |
-| **Input** | About 975 kΩ, DC coupled. The divider is compensated (1 pF over 22 pF plus an optional 2–10 pF trimmer, `CT1`/`CT2`) |
-| **Bandwidth** | Expected to be limited by the 31 MHz anti-alias filter (51 Ω × 100 pF) in front of the ADC. The 250 MHz RS8752 buffers are not the limit. Not yet measured |
+| **Input** | About 975 kΩ, DC coupled. The divider is compensated: 1.1 pF over 22 pF, plus the clamp, buffer and pads (about 5 pF), plus an optional 2–10 pF trimmer (`CT1`/`CT2`, on the bottom). The trimmer only adds capacitance; fit it and set it for a flat square wave |
+| **Bandwidth** | About 25 MHz expected: the 31 MHz anti-alias filter (51 Ω × 100 pF) in front of the ADC together with the gain stage's feedback pole (1.5 kΩ ∥ 2.2 pF, 48 MHz, on the ±5 V range; it was 23 MHz with 4.7 pF). The 250 MHz RS8752 amplifiers are not the limit. Not yet measured |
 | **Maximum sample rate** | 75 MS/s on each channel at once (150 MHz system clock ÷ 2 PIO cycles per sample) |
 | **Overclocked build** | `cmake -DPROBEPEN_SYS_MHZ=250`: the RP2354B at 250 MHz (core voltage raised to 1.20 V at boot) and the AD9288 at up to **125 MS/s** per channel, beyond the AD9288-80's 80 MS/s rating. Every rate in the firmware follows from the clock (`firmware/include/probepen_clock.h`): sample rates are 125 MHz ÷ an integer, peak detect runs at 4.2 MS/s, and bus decoding gets 5/3 the CPU time. Neither the core, the flash (its clock follows the system clock) nor the ADC has been run this fast on this board; the simulator has a build for each clock |
 | **One channel faster?** | Not yet in firmware. Showing one channel does not raise the rate. The board gives channel B its own encode clock pin (GPIO28, `ADC_CLKB`), so a firmware mode can clock the two channels 180° apart and interleave them: **150 MS/s on one signal** (250 MS/s in the 250 MHz build), with both probe tips on the same point. Today the firmware clocks the two channels in phase. Interleaving doubles the sample density, not the bandwidth (the 31 MHz anti-alias filter stays), and needs the two channels' gain, offset and timing matched by calibration |
@@ -59,7 +59,7 @@ firmware change but no hardware change.
 | **Trigger** | Software trigger on the captured record: rising or falling edge, on CH1 or CH2, with 3 codes of hysteresis. The trigger point sits a quarter of the way across the screen, so 25 % of the screen is pre-trigger. If no edge is found, the display free-runs (like *Auto*) and the trigger label turns grey |
 | **Trigger level** | Any 8-bit code, 0–255. Holding UP/DOWN moves it 4 codes at a time (157 mV on ±5 V, 0.86 V on ±26 V); the USB command `TRIG n` sets an exact code. It is drawn as a tick on the left edge and shown in volts in the header |
 | **Trigger timing** | The trigger lands on the first sample past the level, with no interpolation between samples, so the trace can shift by up to one sample period (13.3 ns at 75 MS/s). Captures are taken back to back, and while a frame is being drawn and sent to the LCD (about 15–20 ms per frame, estimated), new edges are not seen. It is a display trigger, not a hardware trigger that catches every event |
-| **Timing accuracy** | Set by the ±10 ppm 12 MHz crystal. The frequency readout averages every crossing in the record, so its error is about one sample period divided by the record's duration |
+| **Timing accuracy** | Set by the ±30 ppm 12 MHz crystal. The frequency readout averages every crossing in the record, so its error is about one sample period divided by the record's duration |
 | **Voltage accuracy** | Offset: `CAL` with both tips on AGND zeroes both ranges of each channel separately, and the result is stored in flash. Gain: uncalibrated, the result depends on 1 % resistors, the 0.2 % REF3030 and the AD9288's own gain error, so expect a few percent. A two-point gain calibration routine exists (`afe_calibrate_two_point`) but no command is wired to it yet. Linearity is about ±½ LSB typical (AD9288 datasheet) |
 | **Meter mode** | Two pages in large digits, UP or DOWN to turn. **VOLTS:** per channel the DC level from the RP2354B's 12-bit ADC on each gain stage (`CHx_DC_SENSE`, 10 kΩ / 10 nF), slow but finer than the 8-bit scope ADC, and the AC RMS from the scope capture (over whole periods), with peak to peak beside it. **TIMING:** per channel the frequency, the duty, and the pulse widths, time high (+W) and time low (−W), from a Schmitt trigger centred on the signal's midpoint, so equal rise and fall times cancel. The readings are averaged (time constant 0.8 s), and a change of more than 15 % is shown at once when two readings in a row agree, as on a bench meter. The meter picks its own capture window: it starts at the fastest rate and lengthens the window until it holds 6 to 60 periods, so a slow sample rate cannot report an alias; DC and quiet inputs get the longest window (0.4 s). The timing page works up to about 3.7 MHz (20 samples per period); above that, use the scope. Leaving METER gives the scope its timebase back. The raw readings are also in `MEAS?` as `VRMS= TH= TL= DUTY=` |
 | **Logic pod** | 4 inputs (5 V tolerant), sampled at the scope's rate for the timebase, up to 75 MS/s, 4096 samples. Shows each line's level and edge count |
@@ -194,6 +194,14 @@ sits at the tail.
 - **ADC capture.** `ADCA_D7..D0` are on GPIO16..23 (bit-reversed, to keep the bus uncrossed) and
   `ADCB_D0..D7` on GPIO32..39, so with the PIO GPIO base at 16 a single `in pins, 32` reads both
   channels. `ADC_CLK` (GPIO24, ENCA) is driven by side-set, and channel B's encode clock `ADC_CLKB` (GPIO28, ENCB) by a second state machine in lockstep: in phase today, 180° apart for a future interleaved mode (150 MS/s, or 250 MS/s in the 250 MHz build).
+- **Data-line resistors.** Each of the 16 data lines has 33 Ω (`R60`–`R67`, `R70`–`R77`, 0402) right beside
+  the ADC, in two staggered columns per bus. They slow the edges and limit the current that charging the
+  lines and the MCU pins draws through the AD9288's own supply and ground: the datasheet says the length
+  of the output lines and their loads "must be minimized to reduce transients within the AD9288". ADI's
+  evaluation board uses 47 Ω here, the ToolTop ET829 33 Ω and the Hantek 2D72 22 Ω (both MXT2088/AD9288).
+- **MODE is also BOOTSEL.** `D6` (1N4148WS) and `R21` (1 kΩ) pull `QSPI_SS` low when MODE is held at
+  power-up. A small-signal diode (about 2 pF, nA leakage) is used because a power Schottky (about 100 pF)
+  couples every flash chip-select edge onto the MODE line.
 - **DC sense.** Each channel's gain-stage output also feeds an RP2354B ADC input (GPIO40, GPIO42)
   through 10 kΩ and 10 nF, for a slow DC reading. `VBUS_SENSE` is on GPIO46.
 
@@ -402,7 +410,9 @@ uploaded and taken through to the quote, but not ordered. The board was 138 mm l
   - MSOP-8 (RS8752): 270°
   - TSSOP-8 (74LVC2G66): 180°
 
-  The RP2354B, crystal, SOD-323 Schottky, USB-C and side switches were already right. JLC has no 3D
+  The RP2354B, the crystal, the SOD-323 diode, USB-C and side switches were already right. The crystal
+  (now the 3225 ABM8-272-T3) and the diode (now a 1N4148WS) changed after that check and have not been
+  looked at in the viewer yet. JLC has no 3D
   model for the logic pod's JST connector (J3). Choose "Confirm Parts Placement: Yes" when ordering,
   so JLC's engineers check it.
 - **JLC's matcher** leaves BOM lines with letter-suffixed designators (C32B, R25A, …) unticked

@@ -28,8 +28,7 @@ IN2_RAILS = {
     # 5 V from the USB end to the analog LDO's ferrite, along the north edge, with branches across the
     # tail and to the side header's ESD array
     "+5V_VBUS": [(39.0, -8.35, _MCU_X - 6.0, -7.45), (_MCU_X - 6.5, -8.5, _MCU_X + 7.0, -8.1),
-                 (_MCU_X + 6.5, -8.35, 127.5, -7.45), (123.6, -8.35, 124.4, 8.35), (116.0, 7.45, 127.5, 8.35),
-                 (116.5, -8.35, 117.5, -1.0)],
+                 (_MCU_X + 6.5, -8.35, 127.5, -7.45), (123.6, -8.35, 124.4, 8.35), (116.0, 7.45, 127.5, 8.35)],
     # 3.0 V reference to the MCU's ADC supply filter (R23): a quiet DC rail along the south edge
     "+3V0_REF": [(45.0, 7.4, _MCU_X - 6.0, 8.2), (_MCU_X - 6.5, 8.0, _MCU_X + 5.9, 8.4), (45.0, 6.0, 45.8, 8.2)],
 }
