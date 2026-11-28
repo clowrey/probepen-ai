@@ -378,7 +378,7 @@ static bool g_cap_logic;
 static uint32_t g_cap_ms;    /* capture length, for the info panel */
 
 static void capture_start(double now_ms) {
-    g_cap_logic = (g_app.mode == APP_MODE_LOGIC);
+    g_cap_logic = (app_view(&g_app) == APP_MODE_LOGIC);
     size_t n = app_capture_samples(&g_app, CAPTURE_MAX);
     double fs = (double)app_sample_rate_hz(&g_app);
     uint32_t m = g_cap_logic ? 0u : app_peak_factor(&g_app);
@@ -835,6 +835,7 @@ EXPORT void sim_set_pod(int kind, float freq) {
 EXPORT int sim_step(double now_ms) {
     uint8_t ev[BTN_COUNT];
     size_t nev = buttons_update(&g_btn, g_buttons, (uint32_t)now_ms, ev, BTN_COUNT);
+    app_ai_tick(&g_app, (uint32_t)now_ms);
     for (size_t i = 0u; i < nev; ++i) {
         app_button_event(&g_app, (uint8_t)(ev[i] >> 4), (btn_event_t)(ev[i] & 0x0Fu));
     }
@@ -925,6 +926,15 @@ EXPORT int sim_step(double now_ms) {
         send_frames(g_app.win_start, g_app.capture_req);
         g_app.capture_req = 0u;
     }
+    if (g_app.ai_req && app_view(&g_app) == APP_MODE_DUAL) {   /* AI mode's question: this capture */
+        char meas[512];
+        char line[540];
+        app_format_meas(&g_app, meas, sizeof meas);
+        snprintf(line, sizeof line, "AIASK %s", meas);
+        usb_puts_line(line);
+        send_frames(g_app.win_start, g_app.win_len);
+        g_app.ai_req = false;
+    }
     int drawn = 0;
     if (g_fresh || now_ms - g_last_draw >= 50.0) {
         app_render(&g_app, g_fb, g_ch_a, g_ch_b, g_n, g_nib, g_n_nib);
@@ -932,7 +942,7 @@ EXPORT int sim_step(double now_ms) {
         g_fresh = false;
         drawn = 1;
     }
-    if (g_app.mode == APP_MODE_LOGIC) {
+    if (app_view(&g_app) == APP_MODE_LOGIC) {
         g_app.cal_pending = false;
     }
     if (g_app.run || g_app.cal_pending) {
@@ -973,7 +983,7 @@ EXPORT void sim_usb_out_clear(void) {
 
 /* Live capture settings for the page's info panel, as JSON. */
 EXPORT const char *sim_info(void) {
-    static const char *const MODES[APP_MODE_COUNT] = {"CH1+2", "CH1", "CH2", "LOGIC", "METER", "DECODE"};
+    static const char *const MODES[APP_MODE_COUNT] = {"CH1+2", "CH1", "CH2", "LOGIC", "METER", "DECODE", "AI"};
     size_t n = app_capture_samples(&g_app, CAPTURE_MAX);
     snprintf(g_info, sizeof g_info,
              "{\"mode\":\"%s\",\"tb_ns\":%lu,\"fs\":%.1f,\"clkdiv\":%lu,\"peak_m\":%lu,\"screen\":%lu,"
@@ -996,13 +1006,14 @@ EXPORT const char *sim_info(void) {
              "\"dec_div\":%lu,\"dec_spb\":%.2f,\"dec_burst\":%d,\"dec_cover\":%.3f,\"dec_burst_n\":%lu,\"dec_records\":%lu,"
              "\"dec_errors\":%lu,\"dec_lost\":%lu,\"dec_seconds\":%.4f,\"dec_speed\":%.3f,"
              "\"sys_mhz\":%d,\"adc_max\":%.0f,\"dec_live_max\":%.0f,\"dec_edges\":%lu,\"dec_seen\":%.0f,\"dec_min_run\":%lu,\"dec_check\":%d,"
-             "\"dec_preset\":%d,\"dec_auto\":%d,\"dec_hold\":%d}",
+             "\"dec_preset\":%d,\"dec_auto\":%d,\"dec_hold\":%d,\"ai_state\":%u,\"ai_view\":%u}",
              (int)g_app.decoding, (unsigned)d->proto, (unsigned)d->src, (double)d->rate, (double)d->data_rate,
              (double)d->fs, (unsigned long)d->clkdiv, (double)d->spb_data, (int)d->burst, (double)d->coverage,
              (unsigned long)d->burst_n, (unsigned long)d->records, (unsigned long)d->errors,
              (unsigned long)d->lost_events, d->fs > 0.0f ? (double)d->pos / (double)d->fs : 0.0, g_dec_speed,
              (int)PROBEPEN_SYS_MHZ, (double)APP_ADC_MAX_HZ, (double)DEC_LIVE_MAX_HZ, (unsigned long)d->edges,
              (double)dec_seen_rate(d), (unsigned long)(d->min_run == UINT32_MAX ? 0u : d->min_run),
-             g_app.decoding ? dec_rate_check(d) : 0, (int)g_app.dec_preset, (int)g_app.dec_auto, (int)g_app.dec_hold);
+             g_app.decoding ? dec_rate_check(d) : 0, (int)g_app.dec_preset, (int)g_app.dec_auto, (int)g_app.dec_hold,
+             (unsigned)g_app.ai_state, (unsigned)g_app.ai_view);
     return g_info;
 }

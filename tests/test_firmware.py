@@ -351,7 +351,7 @@ def test_app_scope_logic_render(core_lib):
     assert "TRIG=YES" in meas
 
     fb = (ctypes.c_uint16 * (LCD_W * LCD_H))()
-    for mode in range(6):
+    for mode in range(7):
         _cmd(core_lib, app, f"MODE {mode}")
         core_lib.app_render(app, fb, a, b, ctypes.c_size_t(n), None, ctypes.c_size_t(0))
         assert len(set(fb)) > 3, f"mode {mode} drew nothing"

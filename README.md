@@ -22,7 +22,8 @@ rail, CAN FD, an SPI bus on the logic pod), and drive it from a host app over th
 protocol: capture once or continuously (with a history to scroll back through), measure, calibrate, decode
 UART and CAN FD buses into text, stream continuously (with a USB budget you can set, to see where samples start
 to drop), take deep records, and receive ASK snapshots. A selector switches between the 150 MHz firmware and
-the 250 MHz overclocked build. The simulated hardware is in [`sim/sim.c`](sim/sim.c).
+the 250 MHz overclocked build. The simulated hardware is in [`sim/sim.c`](sim/sim.c). AI mode works only in a
+local copy of the page (see [AI mode](#ai-mode)), since it needs an API key on your computer.
 
 | | |
 |---|---|
@@ -138,6 +139,41 @@ The analog inputs can also decode analog encodings that a logic analyser cannot 
 frequency keying, DTMF and modem tones, PWM duty as a value, sensor pulse amplitudes, video sync, and
 eye-pattern or rise-time checks on any of the buses above. The pen is not isolated: its ground is the
 USB host's ground, so connect AGND to the circuit's ground first.
+
+## AI mode
+
+The last mode on the MODE button. The pen sends a snapshot of both channels to the computer, the
+computer's AI works out what the tips are touching, and the pen shows the view that suits it (scope,
+meter page, a bus decoder) with the AI's title on top. UP or DOWN shows its explanation (what the signal
+is, levels, rate, anything notable); ASK asks again; with no answer the pen says what to run.
+
+On the computer ([`host/ai_view.py`](host/ai_view.py)):
+1. **Survey.** Captures at 500 ns, 10 µs, 200 µs and 5 ms per division, then a 2.6 ms deep record of both
+   channels at 25 MS/s (whole CAN frames, a UART line, 12 samples per 2 Mbit/s bit).
+2. **Measure.** Each capture: two-level or analog, edges, the shortest pulse (one bit, from the
+   finest-sampled capture that resolves it), the idle level, period and how regular it is, duty.
+3. **Rules.** A first guess without any model: opposite swings around 2.5 V on the two tips are CAN
+   (decode CH1 − CH2); two levels with irregular edges are UART (baud from the shortest pulse); two levels
+   at a steady rate are a clock or PWM (meter timing page); an analog wave goes on the scope with about 4
+   periods across; still tips go to the meter.
+4. **Model.** Gemini (`gemini-flash-latest`, low thinking: about 5 s) or Claude checks the guess against the
+   numbers and a sketch of each waveform, may pick another view, and words a title and up to 6 lines.
+   Settings it leaves out come from the rules; if it fails, the rules' answer is used.
+5. **Commands.** `AI CLEAR`, `AI TITLE …`, `AI LINE …`, the settings (`GAIN`, `TB`, `TRIG`, `DECODE …`) and
+   `AI VIEW n [page]`.
+
+Running it:
+- **Simulator:** `python3 host/ai_server.py [--provider gemini|anthropic|rules] [--key-file FILE]` serves the
+  simulator at http://127.0.0.1:8765/ with AI mode. It listens on 127.0.0.1 only and keeps the key to itself;
+  the page never sees it. The key comes from `GEMINI_API_KEY` / `ANTHROPIC_API_KEY`, or from `--key-file`, a
+  JSON file holding `{"keys": {"gemini": "…"}}`. The published simulator has no such server: there, AI mode
+  says so.
+- **The pen:** `python3 host/probepen.py PORT ai [gemini|anthropic|rules] [KEY_FILE]` answers the pen's
+  questions over USB.
+
+USB: the pen sends `AIASK <measurements>` and both channels' frames; the host answers with `AI WAIT` (the
+pen then waits up to 2 minutes instead of 8 s), `AI CLEAR`, `AI TITLE text`, `AI LINE text`, `AI VIEW n
+[page]`, or `AI FAIL`. `AI ASK` asks from the host, `AI?` reports the state.
 
 ## How it works
 
@@ -269,12 +305,13 @@ the decode screen (from the simulated board) with UART live and CAN FD in bursts
 | Button | Short press | Held |
 |---|---|---|
 | ASK | run / hold | send the measurements and the screen's samples to the host (`ASK …` line + frames) |
-| MODE | next mode: CH1+2, CH1, CH2, LOGIC, METER, DECODE | trigger source and slope |
+| MODE | next mode: CH1+2, CH1, CH2, LOGIC, METER, DECODE, AI | trigger source and slope |
 | any | while streaming: stop | |
 
 In DECODE, UP and DOWN step through the buses (UART on CH1 with auto-baud or at 9600 to 1 M, UART on CH2
 with auto-baud, CAN at 125 k to 1 M, CAN FD at 500 k/2 M to 1 M/8 M, CAN on CH1 − CH2), ASK holds and goes on,
-and MODE leaves (back to CH1+2).
+and MODE leaves. In AI, ASK asks the computer again, UP or DOWN switch between the view and the AI's
+explanation, and MODE goes back to CH1+2.
 | UP / DOWN | slower / faster timebase; in METER, the next page (VOLTS, TIMING) | trigger level up / down (repeats) |
 
 USB (CDC serial, one command per line): `*IDN?`, `MODE n` (0..4), `TB n`, `GAIN 0|1|10` (0 = auto
@@ -291,7 +328,7 @@ replies `OK N= CH= RATE= DIV= SECONDS= LSB1= ZERO1= LSB2= ZERO2=`, takes the rec
 [`host/probepen.py`](host/probepen.py) speaks this protocol from a PC: `idn`, `meas`, `capture N`
 (CSV), `send "<command>"`, `stream RATE [CH] [SECONDS] [OUT]` (prints the bytes per second, samples per
 second and losses it measured; writes CSV volts or raw bytes), `deep [N] [CH] [RATE] [OUT]`, `decode uart|can SRC RATE [DATA_RATE] [SECONDS]`, `watch [N] [COUNT] [OUT.jsonl]`
-(continuous captures), and `ask`, which waits for ASK presses
+(continuous captures), `ai [PROVIDER] [KEY_FILE]` (answers AI mode), and `ask`, which waits for ASK presses
 and returns each snapshot for an assistant to look at.
 
 `firmware/include/probepen_pins.h` is generated from the GPIO map in `hw/design.py`

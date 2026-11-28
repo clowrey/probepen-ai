@@ -272,7 +272,7 @@ static void capture_poll(void) {
 }
 
 static void capture_start(void) {
-    g_cap_logic = (g_app.mode == APP_MODE_LOGIC);
+    g_cap_logic = (app_view(&g_app) == APP_MODE_LOGIC);
     size_t n = app_capture_samples(&g_app, CAPTURE_MAX);
     uint32_t k = app_clkdiv(&g_app);
     PIO pio = g_cap_logic ? pio1 : pio0;
@@ -749,6 +749,7 @@ int main(void) {
             app_button_event(&g_app, (uint8_t)(ev[i] >> 4), (btn_event_t)(ev[i] & 0x0Fu));
         }
         usb_poll();
+        app_ai_tick(&g_app, now);
         if (now - last_dc >= 100u) {
             app_set_dc(&g_app, adc_read_pin(PIN_CH1_DC_SENSE), adc_read_pin(PIN_CH2_DC_SENSE),
                        adc_read_pin(PIN_VBUS_SENSE));
@@ -837,13 +838,20 @@ int main(void) {
             send_frames(g_app.win_start, g_app.capture_req);
             g_app.capture_req = 0u;
         }
+        if (g_app.ai_req && app_view(&g_app) == APP_MODE_DUAL) {   /* AI mode's question: this capture */
+            char meas[512];
+            app_format_meas(&g_app, meas, sizeof meas);
+            printf("AIASK %s\n", meas);
+            send_frames(g_app.win_start, g_app.win_len);
+            g_app.ai_req = false;
+        }
         if (fresh || now - last_draw >= 50u) {   /* in HOLD, redraw at 20 Hz so button changes show */
             app_render(&g_app, g_fb, g_ch_a, g_ch_b, g_n, g_nib, g_n_nib);
             lcd_flush();
             last_draw = now;
             fresh = false;
         }
-        if (g_app.mode == APP_MODE_LOGIC) {
+        if (app_view(&g_app) == APP_MODE_LOGIC) {
             g_app.cal_pending = false;     /* CAL needs a scope capture; dropped if the mode changed */
         }
         if (g_app.run || g_app.cal_pending) {

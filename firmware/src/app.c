@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "probepen_lcd.h"
@@ -49,7 +50,7 @@ uint32_t app_clkdiv(const app_t *app) {
 
 uint32_t app_peak_factor(const app_t *app) {
     uint32_t k = app_clkdiv(app);
-    if (!app || !scope_mode(app->mode) || k < 2u * APP_PEAK_CLKDIV) {
+    if (!app || !scope_mode(app_view(app)) || k < 2u * APP_PEAK_CLKDIV) {
         return 0u;
     }
     return 2u * k / APP_PEAK_CLKDIV;
@@ -277,28 +278,78 @@ static void decode_start_preset(app_t *app) {
     decode_begin(app, &plan);
 }
 
-/* Mode changes go through here: leaving DECODE stops it, entering starts the bus last picked. */
-static void set_mode(app_t *app, app_mode_t m) {
-    if (app->mode == APP_MODE_DECODE && m != APP_MODE_DECODE) {
+app_mode_t app_view(const app_t *app) {
+    if (!app) {
+        return APP_MODE_DUAL;
+    }
+    return app->mode == APP_MODE_AI ? app->ai_view : app->mode;
+}
+
+/* What a change of view brings: leaving DECODE stops it; METER picks its own window and gives the scope's
+ * timebase back on leaving. */
+static void view_change(app_t *app, app_mode_t was, app_mode_t now) {
+    if (was == now) {
+        return;
+    }
+    if (was == APP_MODE_DECODE) {
         decode_halt(app);
     }
-    app_mode_t was = app->mode;
-    if (was == APP_MODE_METER && m != APP_MODE_METER) {
-        app->tb = app->scope_tb;          /* the meter picked its own window */
-    } else if (m == APP_MODE_METER && was != APP_MODE_METER) {
+    if (was == APP_MODE_METER) {
+        app->tb = app->scope_tb;
+    } else if (now == APP_MODE_METER) {
         app->scope_tb = app->tb;
         meter_reset(app);
         app->tb = 0u;                     /* the window search starts at the fastest rate */
         app->meter_search = true;
     }
+    if (now == APP_MODE_CH2) {
+        app->trig_src = 1u;
+    } else if (now == APP_MODE_CH1) {
+        app->trig_src = 0u;
+    }
+}
+
+static void ai_set_view(app_t *app, app_mode_t v) {
+    app_mode_t was = app_view(app);
+    app->ai_view = v;
+    view_change(app, was, app_view(app));
+}
+
+/* A new question for the computer: a fresh capture of both channels goes out as an AIASK snapshot. */
+static void ai_ask(app_t *app) {
+    ai_set_view(app, APP_MODE_DUAL);
+    app->ai_state = AI_ASKING;
+    app->ai_req = true;
+    app->ai_ask_ms = 0u;
+    app->ai_page = 1u;
+    app->run = true;
+}
+
+/* Mode changes go through here: entering DECODE starts the bus last picked, entering AI asks the computer. */
+static void set_mode(app_t *app, app_mode_t m) {
+    app_mode_t was = app->mode, was_view = app_view(app);
     app->mode = m;
+    if (m == APP_MODE_AI && was != APP_MODE_AI) {
+        app->ai_view = APP_MODE_DUAL;
+    }
+    view_change(app, was_view, app_view(app));
     if (m == APP_MODE_DECODE && was != APP_MODE_DECODE && !app->streaming && !app->deep_busy) {
         decode_start_preset(app);
     }
-    if (m == APP_MODE_CH2) {
-        app->trig_src = 1u;
-    } else if (m == APP_MODE_CH1) {
-        app->trig_src = 0u;
+    if (m == APP_MODE_AI && was != APP_MODE_AI) {
+        ai_ask(app);
+    }
+}
+
+void app_ai_tick(app_t *app, uint32_t now_ms) {
+    if (!app || app->mode != APP_MODE_AI || (app->ai_state != AI_ASKING && app->ai_state != AI_THINKING) ||
+        app->ai_req) {
+        return;
+    }
+    if (!app->ai_ask_ms) {
+        app->ai_ask_ms = now_ms ? now_ms : 1u;   /* the snapshot has gone out: start counting */
+    } else if (now_ms - app->ai_ask_ms > (app->ai_state == AI_THINKING ? 120000u : APP_AI_TIMEOUT_MS)) {
+        app->ai_state = AI_NO_ANSWER;
     }
 }
 
@@ -341,12 +392,25 @@ void app_button_event(app_t *app, uint8_t button, btn_event_t ev) {
         }
         return;
     }
+    if (app->mode == APP_MODE_AI) {
+        if (ev != BTN_EV_SHORT) {
+            return;
+        }
+        if (button == BTN_MODE) {
+            set_mode(app, APP_MODE_DUAL);            /* AI is the last mode */
+        } else if (button == BTN_ASK) {
+            ai_ask(app);                             /* look again */
+        } else {
+            app->ai_page ^= 1u;                      /* UP / DOWN: the view or the explanation */
+        }
+        return;
+    }
     if (app->mode == APP_MODE_DECODE) {
         if (ev != BTN_EV_SHORT) {
             return;
         }
         if (button == BTN_MODE) {
-            set_mode(app, APP_MODE_DUAL);            /* DECODE is the last mode */
+            set_mode(app, APP_MODE_AI);
         } else if (button == BTN_ASK) {              /* hold / go on */
             if (app->decoding && !app->decode_stop) {
                 decode_halt(app);
@@ -570,7 +634,7 @@ void app_process_scope(app_t *app, const uint16_t *ch_a, const uint16_t *ch_b, s
         }
     }
     app->win_len = span < n ? span : n;
-    if (app->mode == APP_MODE_METER && n > 0u) {
+    if (app_view(app) == APP_MODE_METER && n > 0u) {
         meter_update(app, (float)n / app->sample_rate_hz);
     }
 }
@@ -703,9 +767,87 @@ void app_decode_text(app_t *app, const char *text) {
     }
 }
 
+static void ai_add_line(app_t *app, const char *text) {
+    size_t n = strlen(text);
+    do {   /* long lines wrap */
+        if (app->ai_nlines >= APP_AI_LINES) {
+            return;
+        }
+        size_t k = n > APP_DEC_COLS ? APP_DEC_COLS : n;
+        memcpy(app->ai_lines[app->ai_nlines], text, k);
+        app->ai_lines[app->ai_nlines][k] = '\0';
+        ++app->ai_nlines;
+        text += k;
+        n -= k;
+    } while (n > 0u);
+}
+
+/* AI CLEAR | AI TITLE text | AI LINE text | AI WAIT | AI VIEW n [page] | AI FAIL | AI ASK | AI?
+ * The computer's answer to an AIASK snapshot: what to say, then the view to show (n = MODE number 0..5). */
+static int ai_command(app_t *app, const char *arg, char *reply, size_t max_len) {
+    while (*arg == ' ') {
+        ++arg;
+    }
+    if (*arg == '?') {
+        return snprintf(reply, max_len, "AI STATE=%u VIEW=%u PAGE=%u LINES=%u", (unsigned)app->ai_state,
+                        (unsigned)app->ai_view, (unsigned)app->ai_page, (unsigned)app->ai_nlines);
+    }
+    if (!strncmp(arg, "CLEAR", 5)) {
+        app->ai_title[0] = '\0';
+        app->ai_nlines = 0u;
+    } else if (!strncmp(arg, "TITLE ", 6)) {
+        snprintf(app->ai_title, sizeof app->ai_title, "%s", arg + 6);
+    } else if (!strncmp(arg, "LINE", 4)) {
+        ai_add_line(app, arg[4] == ' ' ? arg + 5 : "");
+    } else if (!strncmp(arg, "WAIT", 4)) {
+        app->ai_state = AI_THINKING;
+        app->ai_ask_ms = 0u;
+    } else if (!strncmp(arg, "FAIL", 4)) {
+        app->ai_state = AI_NO_ANSWER;
+        app->ai_page = 1u;
+    } else if (!strncmp(arg, "ASK", 3)) {
+        if (app->mode != APP_MODE_AI) {
+            set_mode(app, APP_MODE_AI);
+        } else {
+            ai_ask(app);
+        }
+    } else if (!strncmp(arg, "VIEW ", 5)) {
+        char *end = NULL;
+        long v = strtol(arg + 5, &end, 10);
+        long page = (end && *end) ? strtol(end, NULL, 10) : 0;
+        if (v < 0 || v >= (long)APP_MODE_AI) {
+            return snprintf(reply, max_len, "ERR");
+        }
+        if (app->mode != APP_MODE_AI) {   /* the host may show a view without being asked */
+            app->ai_view = app_view(app);
+            app->mode = APP_MODE_AI;
+        }
+        ai_set_view(app, (app_mode_t)v);
+        if (v == APP_MODE_METER) {
+            app->meter_page = (uint8_t)(page == 1 ? APP_METER_TIMING : APP_METER_VOLTS);
+        }
+        app->ai_state = AI_SHOWN;
+        app->ai_page = 0u;
+        app->ai_req = false;
+    } else {
+        return snprintf(reply, max_len, "ERR");
+    }
+    return snprintf(reply, max_len, "OK");
+}
+
 size_t app_usb_command(app_t *app, const char *line, char *reply, size_t max_len) {
     if (!app || !reply || max_len == 0u) {
         return 0u;
+    }
+    if (line) {
+        const char *l = line;
+        while (*l == ' ') {
+            ++l;
+        }
+        if ((l[0] == 'A' || l[0] == 'a') && (l[1] == 'I' || l[1] == 'i') && (l[2] == ' ' || l[2] == '?')) {
+            int w = ai_command(app, l + 2, reply, max_len);
+            return w < 0 ? 0u : ((size_t)w < max_len ? (size_t)w : max_len - 1u);
+        }
     }
     usb_cmd_t cmd = usb_parse_command(line);
     int w = -1;
@@ -738,7 +880,7 @@ size_t app_usb_command(app_t *app, const char *line, char *reply, size_t max_len
             w = snprintf(reply, max_len, "OK");
             break;
         case USB_CMD_CAL:      /* needs a scope capture: refused in LOGIC and METER */
-            app->cal_pending = scope_mode(app->mode);
+            app->cal_pending = scope_mode(app_view(app));
             w = snprintf(reply, max_len, app->cal_pending ? "OK" : "ERR");
             break;
         case USB_CMD_MEAS:
@@ -748,7 +890,7 @@ size_t app_usb_command(app_t *app, const char *line, char *reply, size_t max_len
             w = snprintf(reply, max_len, "OK");
             break;
         case USB_CMD_CAPTURE:
-            if (scope_mode(app->mode)) {
+            if (scope_mode(app_view(app))) {
                 app->capture_req = (uint16_t)cmd.arg_i;
                 w = snprintf(reply, max_len, "OK %ld", (long)cmd.arg_i);
             } else {
@@ -829,7 +971,11 @@ size_t app_usb_command(app_t *app, const char *line, char *reply, size_t max_len
                 w = snprintf(reply, max_len, "ERR");
                 break;
             }
-            app->mode = APP_MODE_DECODE;   /* the pen shows it; UP / DOWN then step through its own buses */
+            if (app->mode == APP_MODE_AI) {
+                ai_set_view(app, APP_MODE_DECODE);   /* the AI picked a bus */
+            } else {
+                app->mode = APP_MODE_DECODE;   /* the pen shows it; UP / DOWN then step through its own buses */
+            }
             app->dec_preset = -1;
             app->dec_auto = false;
             memset(app->dec_log, 0, sizeof app->dec_log);
@@ -939,16 +1085,21 @@ static float volts_per_div(const app_t *app, int ch) {
     return gain * 1.024f / 10.0f;   /* 1.024 V ADC span over 10 divisions: 1.0 V/div or 5.5 V/div */
 }
 
+static const char *mode_name(app_mode_t m) {
+    static const char *const NAMES[APP_MODE_COUNT] = {"CH1+2", "CH1", "CH2", "LOGIC", "METER", "DECODE", "AI"};
+    return m < APP_MODE_COUNT ? NAMES[m] : "?";
+}
+
 static void draw_header(const app_t *app, uint16_t *fb, const palette_t *p) {
-    static const char *const NAMES[APP_MODE_COUNT] = {"CH1+2", "CH1", "CH2", "LOGIC", "METER", "DECODE"};
     char buf[48];
     lcd_fb_rect(fb, 0, 0, (int)LCD_WIDTH, HDR_H - 1, lcd_rgb565(22, 26, 34));
-    int x = lcd_fb_draw_text_scaled(fb, 2, 1, NAMES[app->mode], 1, p->text) + 6;
-    if (app->mode != APP_MODE_METER) {
+    app_mode_t view = app_view(app);
+    int x = lcd_fb_draw_text_scaled(fb, 2, 1, mode_name(view), 1, p->text) + 6;
+    if (view != APP_MODE_METER) {
         fmt_timebase(app_timebase_ns(app), buf, sizeof buf);
         x = lcd_fb_draw_text_scaled(fb, x, 1, buf, 1, p->dim) + 6;
     }
-    if (scope_mode(app->mode)) {
+    if (scope_mode(view)) {
         char v[16];
         float scale, zero;
         range_scale(app, app->trig_src & 1u, app->range[app->trig_src & 1u], &scale, &zero);
@@ -984,10 +1135,11 @@ static void render_scope(const app_t *app, uint16_t *fb, const palette_t *p, con
     if (start + len > n) {
         len = n - start;
     }
-    if (app->mode != APP_MODE_CH2 && ch_a) {
+    app_mode_t view = app_view(app);
+    if (view != APP_MODE_CH2 && ch_a) {
         draw_trace(fb, ch_a + start, len, p->ch[0]);
     }
-    if (app->mode != APP_MODE_CH1 && ch_b) {
+    if (view != APP_MODE_CH1 && ch_b) {
         draw_trace(fb, ch_b + start, len, p->ch[1]);
     }
     /* trigger level tick at the left edge, trigger position tick at the top */
@@ -995,11 +1147,11 @@ static void render_scope(const app_t *app, uint16_t *fb, const palette_t *p, con
     lcd_fb_hline(fb, 0, 4, ty, p->trig);
     lcd_fb_vline(fb, PLOT_W / 4, PLOT_Y0, PLOT_Y0 + 3, p->trig);
 
-    if (app->mode == APP_MODE_DUAL) {
+    if (view == APP_MODE_DUAL) {
         draw_channel_line(app, fb, p, 0, FOOT_Y, false);
         draw_channel_line(app, fb, p, 1, FOOT_Y + LCD_GLYPH_H + 1, false);
     } else {
-        int ch = app->mode == APP_MODE_CH2 ? 1 : 0;
+        int ch = view == APP_MODE_CH2 ? 1 : 0;
         char a[16], b[16], buf[64];
         draw_channel_line(app, fb, p, ch, FOOT_Y, true);
         app_format_eng(app->meas[ch].freq_hz, "Hz", a, sizeof a);
@@ -1202,7 +1354,7 @@ static void render_decode(const app_t *app, uint16_t *fb, const palette_t *p) {
                  (unsigned long)d->lost_events);
     }
     lcd_fb_draw_text_scaled(fb, 2, (int)LCD_HEIGHT - lh, buf, 1, bad ? p->trig : p->dim);
-    const char *hint = app->mode == APP_MODE_DECODE ? "UP/DN bus" : "btn: stop";
+    const char *hint = app->mode == APP_MODE_DECODE ? "UP/DN bus" : (app->mode == APP_MODE_AI ? "" : "btn: stop");
     lcd_fb_draw_text_scaled(fb, (int)LCD_WIDTH - lcd_text_width(hint, 1) - 1, (int)LCD_HEIGHT - lh, hint, 1, p->dim);
 }
 
@@ -1236,6 +1388,37 @@ static void render_stream(const app_t *app, uint16_t *fb, const palette_t *p) {
     lcd_fb_draw_text_scaled(fb, 2, FOOT_Y + LCD_GLYPH_H + 1, "any button: stop", 1, p->dim);
 }
 
+/* AI mode's own page: the question's status, the AI's title and its explanation. */
+static void render_ai(const app_t *app, uint16_t *fb, const palette_t *p) {
+    static const char *const STATE[] = {"", "ASKING", "THINKING", "SHOWN", "NO ANSWER"};
+    lcd_fb_rect(fb, 0, 0, (int)LCD_WIDTH, HDR_H - 1, lcd_rgb565(40, 22, 52));
+    lcd_fb_draw_text_scaled(fb, 2, 1, "AI", 1, p->trig);
+    bool bad = app->ai_state == AI_NO_ANSWER;
+    text_right(fb, (int)LCD_WIDTH - 1, 1, STATE[app->ai_state < 5u ? app->ai_state : 0u], 1, bad ? p->hold : p->pod[0]);
+    int lh = LCD_GLYPH_H + 1, y = HDR_H + 2;
+    const char *title = app->ai_title;
+    if (app->ai_state == AI_ASKING) {
+        title = "Asking the computer...";
+    } else if (app->ai_state == AI_THINKING) {
+        title = "The computer's AI is looking...";
+    }
+    lcd_fb_draw_text_scaled(fb, 2, y, title, 1, p->ch[0]);
+    y += lh + 2;
+    if (bad && app->ai_nlines == 0u) {
+        static const char *const HELP[] = {"No answer from the computer.", "", "On the PC, run:", " host/probepen.py PORT ai",
+                                           "or the simulator page from", " host/ai_server.py", "", "ASK: try again"};
+        for (size_t i = 0u; i < sizeof HELP / sizeof HELP[0]; ++i, y += lh) {
+            lcd_fb_draw_text_scaled(fb, 2, y, HELP[i], 1, p->text);
+        }
+    } else if (app->ai_state == AI_SHOWN || bad) {
+        for (uint8_t i = 0u; i < app->ai_nlines && y < (int)LCD_HEIGHT - 2 * lh; ++i, y += lh) {
+            lcd_fb_draw_text_scaled(fb, 2, y, app->ai_lines[i], 1, p->text);
+        }
+    }
+    const char *hint = app->ai_state == AI_SHOWN ? "ASK: again  UP: the view  MODE: exit" : "ASK: again  MODE: exit";
+    lcd_fb_draw_text_scaled(fb, 2, (int)LCD_HEIGHT - lh, hint, 1, p->dim);
+}
+
 void app_render(const app_t *app, uint16_t *fb, const uint16_t *ch_a, const uint16_t *ch_b, size_t n,
                 const uint8_t *nibbles, size_t n_nib) {
     if (!app || !fb) {
@@ -1247,20 +1430,35 @@ void app_render(const app_t *app, uint16_t *fb, const uint16_t *ch_a, const uint
         render_stream(app, fb, &p);
         return;
     }
-    if (app->decoding || app->mode == APP_MODE_DECODE) {
-        render_decode(app, fb, &p);
+    bool ai = app->mode == APP_MODE_AI;
+    if (ai && (app->ai_page || app->ai_state != AI_SHOWN)) {
+        render_ai(app, fb, &p);
         return;
     }
-    draw_header(app, fb, &p);
-    switch (app->mode) {
-    case APP_MODE_LOGIC:
-        render_logic(app, fb, &p, nibbles, n_nib);
-        break;
-    case APP_MODE_METER:
-        render_meter(app, fb, &p);
-        break;
-    default:
-        render_scope(app, fb, &p, ch_a, ch_b, n);
-        break;
+    app_mode_t view = app_view(app);
+    if (app->decoding || view == APP_MODE_DECODE) {
+        render_decode(app, fb, &p);
+    } else {
+        draw_header(app, fb, &p);
+        switch (view) {
+        case APP_MODE_LOGIC:
+            render_logic(app, fb, &p, nibbles, n_nib);
+            break;
+        case APP_MODE_METER:
+            render_meter(app, fb, &p);
+            break;
+        default:
+            render_scope(app, fb, &p, ch_a, ch_b, n);
+            break;
+        }
+    }
+    if (ai) {   /* the AI's title over the view's header; UP shows the whole explanation */
+        lcd_fb_rect(fb, 0, 0, (int)LCD_WIDTH, HDR_H - 1, lcd_rgb565(40, 22, 52));
+        int x = lcd_fb_draw_text_scaled(fb, 2, 1, "AI", 1, p.trig) + 5;
+        char t[APP_DEC_COLS + 1];
+        int room = ((int)LCD_WIDTH - x - lcd_text_width("UP:more", 1) - 4) / LCD_GLYPH_W;
+        snprintf(t, sizeof t, "%.*s", room > 0 ? room : 0, app->ai_title[0] ? app->ai_title : mode_name(view));
+        lcd_fb_draw_text_scaled(fb, x, 1, t, 1, p.text);
+        text_right(fb, (int)LCD_WIDTH - 1, 1, "UP:more", 1, p.dim);
     }
 }

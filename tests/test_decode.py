@@ -613,9 +613,11 @@ def test_decode_mode_on_the_buttons(sims):
     assert (info["dec_rate"], info["dec_data"], info["dec_src"], info["decoding"]) == (1e6, 5e6, 3, 1)
     frames = [l for l in pen.out() if l.startswith("DEC CAN")]
     assert frames and all("ERR=NONE" in f and "ID=123" in f for f in frames)
-    pen.press(MODE)                                                  # leave: decoding stops
+    pen.press(MODE)                                                  # leave: decoding stops, AI is next
     info = pen.info()
-    assert info["mode"] == "CH1+2" and info["decoding"] == 0
+    assert info["mode"] == "AI" and info["decoding"] == 0
+    pen.press(MODE)                                                  # and then back to the start
+    assert pen.info()["mode"] == "CH1+2"
 
 
 def test_host_decode_puts_the_pen_in_decode_mode(sims):

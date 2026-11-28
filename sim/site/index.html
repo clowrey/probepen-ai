@@ -41,10 +41,12 @@
         <thead><tr><th>Button</th><th>Short press</th><th>Held</th></tr></thead>
         <tbody>
           <tr><td>ASK</td><td>run / hold</td><td>send a snapshot to the host app</td></tr>
-          <tr><td>MODE</td><td>CH1+2, CH1, CH2, LOGIC, METER (DC, AC RMS, pulse widths), DECODE</td><td>trigger source and slope</td></tr>
+          <tr><td>MODE</td><td>CH1+2, CH1, CH2, LOGIC, METER (DC, AC RMS, pulse widths), DECODE, AI</td><td>trigger source and slope</td></tr>
           <tr><td>UP / DOWN</td><td>slower / faster timebase; in METER, VOLTS or TIMING page</td><td>trigger level up / down</td></tr>
           <tr><td colspan="3"><b>In DECODE:</b> UP / DOWN pick the bus (UART CH1 auto-baud or 9600 to 1 M, UART CH2 auto,
             CAN 125 k to 1 M, CAN FD 500 k/2 M to 1 M/8 M, CAN on CH1 − CH2); ASK holds and goes on; MODE leaves</td></tr>
+          <tr><td colspan="3"><b>In AI:</b> the computer's AI looks at the tips and picks the view; ASK asks again,
+            UP / DOWN switch between the view and its explanation (needs the local page from <code>host/ai_server.py</code>)</td></tr>
         </tbody>
       </table>
     </section>
@@ -90,6 +92,8 @@
           <input id="hCapN" value="1024" inputmode="numeric" aria-label="Samples per channel"> samples</span>
         <label title="Ask for the next capture as soon as one arrives, and keep the last 200"><input type="checkbox" id="hLive"> Continuous</label>
         <button id="hCsv" type="button" disabled>CSV</button>
+        <button id="hAi" type="button" title="The pen's AI mode: the computer's AI picks what to show">Ask AI</button>
+        <span id="aiStat" class="sstats"></span>
       </div>
       <div class="toolbar hist" id="hHist" hidden>
         <b>History</b>
@@ -130,6 +134,10 @@
       <div class="plot-wrap"><canvas id="plot"></canvas><p class="plot-empty" id="plotEmpty"><span>Press
         <b>Capture</b> to read samples over USB, or hold <b>ASK</b> on the pen.</span></p></div>
       <div class="meas" id="meas"></div>
+      <div class="ai-wrap" id="aiWrap" hidden>
+        <h3>AI <span class="sub" id="aiSub"></span></h3>
+        <div class="ai-out" id="aiOut"></div>
+      </div>
       <div class="term-wrap" id="termWrap" hidden>
         <h3>Decoded <span class="sub" id="termSub"></span></h3>
         <div class="term" id="term" aria-live="off"></div>

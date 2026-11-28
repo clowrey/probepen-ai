@@ -16,6 +16,10 @@
     python host/probepen.py PORT decode can SRC RATE [DATA_RATE] [SECONDS]
                                                   # the pen decodes the bus and sends text: SRC 1 = CH1, 2 = CH2,
                                                   # 3 = CH1 - CH2 (CAN_H - CAN_L); prints each line or frame
+    python host/probepen.py PORT ai [gemini|anthropic|rules] [KEY_FILE]
+                                                  # AI mode: answers the pen's AIASK snapshots (MODE to AI, or
+                                                  # ASK in it): surveys 4 timebases, asks the model, sets the
+                                                  # pen's view and explanation (host/ai_view.py)
     python host/probepen.py PORT watch [N] [COUNT] [OUT.jsonl]
                                                   # continuous captures, one after another: prints each one's
                                                   # measurements and appends {time, meas, ch1, ch2} to OUT
@@ -318,6 +322,7 @@ class ProbePen:
         for k, c in enumerate(chans):
             lsb, zero = plan[f"LSB{c + 1}"], plan[f"ZERO{c + 1}"]
             out[f"CH{c + 1}"] = [(b - zero) * lsb for b in payload[k::len(chans)]]
+            out[f"codes{c + 1}"] = list(payload[k::len(chans)])
         return out
 
     def decode(self, proto: str, src: int, rate: float, data_rate: float = 0.0, seconds: float = 10.0):
@@ -351,6 +356,35 @@ class ProbePen:
         while True:
             a, b = self.capture(n)
             yield parse_meas(self.command("MEAS?")), a, b
+
+    def ai_serve(self, provider: str = "gemini", key: str = "", model: str = ""):
+        """Answers the pen's AI questions until stopped: yields each result (ai_view.ai_plan)."""
+        import ai_view
+        while True:
+            try:
+                line = self.readline(timeout=3600.0)
+            except TimeoutError:
+                continue
+            if not line.startswith("AIASK "):
+                continue
+            frames = dict(self.read_frame() for _ in range(2))
+            snaps = [{"meas": line[6:], "ch1": frames[0], "ch2": frames[1]}]
+            self.command("AI WAIT")
+            for tb in ai_view.SURVEY_TB:
+                self.command(f"TB {tb}")
+                for _ in range(4):   # the capture in flight may still be at the old timebase
+                    a, b = self.capture(512)
+                    meas = self.command("MEAS?")
+                    if parse_meas(meas).get("TB") == ai_view.TB_NS[tb]:
+                        snaps.append({"meas": meas, "ch1": a, "ch2": b})
+                        break
+            n, rate = ai_view.SURVEY_DEEP
+            rec = self.deep(n, 3, rate)
+            snaps.append(ai_view.deep_snapshot(rec["plan"], rec["codes1"], rec["codes2"]))
+            out = ai_view.ai_plan(snaps, provider, key, model)
+            for c in out["commands"]:
+                self.command(c)
+            yield out
 
     def wait_ask(self):
         """Yields (measurements, ch1, ch2) each time the ASK button is held."""
@@ -467,6 +501,19 @@ def main(argv: list[str]) -> None:
                 status = "" if rec["err"] == "NONE" else f"  [{rec['err']} error]"
                 kind = ("FD" if rec["fd"] == "1" else "CAN") + (" BRS" if rec["brs"] == "1" else "")
                 print(f"{rec['t']:12.6f}  {rec['id']:>8s} {kind:6s} [{rec['len']}] {rec['text']}{status}")
+    elif cmd == "ai":
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import ai_view
+        provider = argv[3] if len(argv) > 3 else "gemini"
+        key = "" if provider == "rules" else ai_view.load_key(provider, argv[4] if len(argv) > 4 else None)
+        print(f"# AI mode: {provider if key else 'rules (no API key)'}; put the pen in AI mode (MODE), ASK to ask again")
+        for out in pen.ai_serve(provider, key):
+            p = out["plan"]
+            print(f"{time.strftime('%H:%M:%S')}  {out['source']}: {p.get('view')} - {p.get('title')}")
+            for line in p.get("lines", []):
+                print("           ", line)
+            if out["note"]:
+                print("           (" + out["note"] + ")")
     elif cmd == "watch":
         import json
         n = int(argv[3]) if len(argv) > 3 else 1024

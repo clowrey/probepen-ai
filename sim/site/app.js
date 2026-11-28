@@ -4,7 +4,7 @@
 "use strict";
 
 const W = 240, H = 135;
-const MODES = ["CH1+2", "CH1", "CH2", "LOGIC", "METER", "DECODE"];
+const MODES = ["CH1+2", "CH1", "CH2", "LOGIC", "METER", "DECODE", "AI"];
 const TB_NS = [100, 200, 500, 1e3, 2e3, 5e3, 1e4, 2e4, 5e4, 1e5, 2e5, 5e5, 1e6, 2e6, 5e6, 1e7, 2e7, 5e7];
 const GAIN = [9.803, 53.56];                      // tip volts per ADC volt, +-5 V and +-26 V ranges
 const LSB = GAIN.map((g) => (g * 1.024) / 256);   // volts per code
@@ -555,6 +555,11 @@ function onLine(line) {
     frameSink = { frames: [], done: (fr) => addSnapshot(meas, fr) };
     return;
   }
+  if (line.startsWith("AIASK ")) {        /* AI mode: the pen asks the computer what to show */
+    const measLine = line.slice(6);
+    frameSink = { frames: [], done: (fr) => aiQuestion(measLine, fr) };
+    return;
+  }
   const p = pending.shift();
   if (p && p.onReply) p.onReply(line);
 }
@@ -777,6 +782,7 @@ function deepDone() {
   $("plotEmpty").style.display = "none";
   note(`deep record: ${n.toLocaleString()} samples per channel, ${nch * n} bytes of samples`);
   drawDeep();
+  if (dp.onDone) { const f = dp.onDone; dp.onDone = null; f(); }
 }
 function deepVolts(code, ch) {
   return (code - dp.plan[ch ? "ZERO2" : "ZERO1"]) * dp.plan[ch ? "LSB2" : "LSB1"];
@@ -1006,6 +1012,97 @@ function showHistory() {
     ($("hLive").checked && rate ? ` · ${rate.toFixed(1)} captures/s` : "");
 }
 
+/* ---------- host app: AI mode ---------- */
+/* The AI runs on this computer: host/ai_server.py serves this page and answers /ai/plan with the API key it
+ * holds. The published page has no such server, so there the pen is told so. */
+const AI_SURVEY_TB = [2, 6, 10, 14];   /* 500 ns, 10 us, 200 us, 5 ms per division (host/ai_view.py) */
+let aiInfo = null;
+let aiBusy = false;
+async function aiProbe() {
+  try {
+    const r = await fetch("ai/status", { cache: "no-store" });
+    aiInfo = r.ok ? await r.json() : null;
+  } catch (e) {
+    aiInfo = null;
+  }
+  $("aiStat").textContent = aiInfo
+    ? (aiInfo.has_key ? `AI: ${aiInfo.provider} ${aiInfo.model}` : "AI: rules only (no API key)")
+    : "AI: local preview only";
+}
+const sendP = (line) => new Promise((res) => send(line, res));
+function captureP(n) {
+  return new Promise((res) => send(`CAPTURE ${n}`, (reply) => {
+    if (!reply.startsWith("OK")) { res(null); return; }
+    frameSink = { frames: [], done: (fr) => res(fr) };
+  }));
+}
+async function aiSnapshot(tb) {
+  for (let k = 0; k < 4; k++) {   /* the capture in flight may still be at the old timebase */
+    const fr = await captureP(512);
+    const meas = await sendP("MEAS?");
+    if (fr && parseMeas(meas).TB === TB_NS[tb]) return { meas, ch1: Array.from(fr[0]), ch2: Array.from(fr[1]) };
+  }
+  return null;
+}
+const AI_DEEP = [65536, 25e6];   /* then a deep record of both channels: 2.6 ms at 25 MS/s */
+function aiDeep() {
+  return new Promise((res) => send(`DEEP ${AI_DEEP[0]} 3 ${AI_DEEP[1]}`, (reply) => {
+    if (!reply.startsWith("OK")) { res(null); return; }
+    const kv = {};
+    reply.split(/\s+/).slice(1).forEach((w) => { const [k, v] = w.split("="); kv[k] = +v; });
+    Object.assign(dp, { plan: kv, mask: 3, a: new Uint8Array(kv.N), b: new Uint8Array(kv.N), got: 0, trig: -1,
+      t0: performance.now(), bytes: 0 });
+    dp.onDone = () => {
+      const rng = (c) => (kv[`LSB${c}`] > 0.1 ? "10X" : "1X");
+      res({ meas: { FS: kv.RATE, TB: 0, CH1: { RANGE: rng(1) }, CH2: { RANGE: rng(2) } },
+        ch1: Array.from(dp.a), ch2: Array.from(dp.b) });
+    };
+  }));
+}
+async function aiQuestion(measLine, frames) {
+  if (aiBusy) return;
+  aiBusy = true;
+  try {
+    if (!aiInfo) {
+      for (const c of ["AI CLEAR", "AI TITLE AI needs the local page", "AI LINE The AI runs on your computer:",
+        "AI LINE python3 host/ai_server.py", "AI LINE then open http://127.0.0.1:8765", "AI FAIL"]) await sendP(c);
+      note("AI mode needs the local page from host/ai_server.py (it holds the API key); the published page has none");
+      return;
+    }
+    await sendP("AI WAIT");
+    const snaps = [{ meas: measLine, ch1: Array.from(frames[0]), ch2: Array.from(frames[1]) }];
+    for (const tb of AI_SURVEY_TB) {
+      await sendP(`TB ${tb}`);
+      const s = await aiSnapshot(tb);
+      if (s) snaps.push(s);
+    }
+    const deep = await aiDeep();
+    if (deep) snaps.push(deep);
+    note(`AI: ${snaps.length} captures to the computer's AI (${aiInfo.has_key ? aiInfo.provider : "rules"})`);
+    const r = await fetch("ai/plan", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ snapshots: snaps }) });
+    const out = await r.json();
+    if (!r.ok) throw new Error(out.error || r.status);
+    for (const c of out.commands) await sendP(c);
+    aiShow(out);
+  } catch (e) {
+    note(`AI: ${e.message}`);
+    for (const c of ["AI CLEAR", "AI TITLE The AI did not answer", `AI LINE ${String(e.message).slice(0, 40)}`, "AI FAIL"]) await sendP(c);
+  } finally {
+    aiBusy = false;
+  }
+}
+function aiShow(out) {
+  const p = out.plan;
+  $("aiWrap").hidden = false;
+  $("aiSub").textContent = `${out.source}${out.note ? ` — ${out.note}` : ""}`;
+  $("aiOut").innerHTML = `<div class="t">${esc(p.title || "")}</div>` +
+    (p.lines || []).map((l) => `<div>${esc(l)}</div>`).join("") +
+    `<div class="why">${esc(p.reason || "")}</div>` +
+    `<div class="why">Sent to the pen: <code>${out.commands.map(esc).join(" · ")}</code></div>`;
+  note(`AI (${out.source}): ${p.view} — ${p.title}`);
+}
+
 /* ---------- host app: controls ---------- */
 let syncing = false;
 function buildHost() {
@@ -1024,6 +1121,7 @@ function buildHost() {
   });
   $("hMeas").addEventListener("click", () => send("MEAS?", (l) => showMeas(parseMeas(l))));
   $("hCap").addEventListener("click", () => capBusy || capture());
+  $("hAi").addEventListener("click", () => send("AI ASK"));
   $("hLive").addEventListener("change", (e) => {
     histFollow = true;
     if (e.target.checked && !capBusy) capture();
@@ -1219,8 +1317,13 @@ function addSnapshot(meas, fr) {
 }
 
 /* ---------- main loop ---------- */
+/* Driven by animation frames, and by a timer when none come (a hidden pane or a background tab), so the
+ * simulated pen keeps running and answering its host. */
 let lastInfoT = 0;
-function frame(t) {
+let lastFrameT = 0;
+setInterval(() => { if (ex && performance.now() - lastFrameT > 250) frame(performance.now(), true); }, 100);
+function frame(t, fromTimer = false) {
+  lastFrameT = performance.now();
   ex.sim_set_buttons(buttons);
   if (ex.sim_step(t)) blit();
   pump();
@@ -1230,7 +1333,7 @@ function frame(t) {
     updateNow();
     lastInfoT = t;
   }
-  requestAnimationFrame(frame);
+  if (!fromTimer) requestAnimationFrame(frame);
 }
 
 async function main() {
@@ -1250,6 +1353,7 @@ async function main() {
   }
   applySignals();
   markPreset(0);
+  aiProbe();
   $("status").textContent = "Firmware running";
   $("status").className = "status ok";
   send("*IDN?", (l) => {

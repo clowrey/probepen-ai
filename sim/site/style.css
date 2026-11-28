@@ -143,6 +143,11 @@ input[type="range"] { padding: 0; accent-color: var(--accent); }
 .hist input[type="range"] { flex: 1 1 200px; width: auto; padding: 0; }
 .hist b, .stream-bar b { font-size: 13px; }
 .term-wrap { margin-top: 12px; }
+.ai-wrap { margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--panel-2); }
+.ai-out { font-size: 13px; }
+.ai-out .t { font-weight: 600; color: var(--accent); }
+.ai-out .why { color: var(--muted); margin-top: 4px; }
+.ai-out code { font-size: 12px; }
 .term {
   height: 220px; overflow: auto; background: #07090d; color: #d7f5df; border-radius: 6px; padding: 8px;
   font: 13px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace; white-space: pre-wrap; word-break: break-word;

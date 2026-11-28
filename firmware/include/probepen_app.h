@@ -22,6 +22,10 @@ extern "C" {
 #define APP_FW_VERSION    "0.4"
 #define APP_DEC_LINES     12u            /* decoded text on the screen: 12 lines of 40 characters */
 #define APP_DEC_COLS      40u
+#define APP_AI_LINES      11u            /* the AI's explanation: a title and up to 11 lines */
+#define APP_AI_TIMEOUT_MS 8000u          /* no word from the computer this long after a snapshot: say so */
+
+enum { AI_IDLE = 0, AI_ASKING, AI_THINKING, AI_SHOWN, AI_NO_ANSWER };
 
 typedef enum {
     APP_MODE_DUAL = 0,   /* both scope channels */
@@ -30,6 +34,7 @@ typedef enum {
     APP_MODE_LOGIC,      /* 4-channel logic pod */
     APP_MODE_METER,      /* DC from the MCU ADC; AC RMS and pulse widths from the scope capture */
     APP_MODE_DECODE,     /* bus decoding on the pen: UP / DOWN pick the bus, ASK holds */
+    APP_MODE_AI,         /* the computer's AI picks the view and explains it (USB commands AI ...) */
     APP_MODE_COUNT
 } app_mode_t;
 
@@ -131,8 +136,18 @@ typedef struct {
      * itself (3 to 40 periods); the scope's timebase comes back on leaving */
     uint8_t meter_page;         /* APP_METER_VOLTS or APP_METER_TIMING */
     uint8_t scope_tb;
-    bool meter_search;          /* lengthening the window from the fastest rate (no aliasing) until it fits */
     meter_avg_t mavg[2];
+    bool meter_search;
+
+    /* AI: the computer looks at a snapshot (AIASK line + frames), picks a view and explains it (see app.c) */
+    app_mode_t ai_view;         /* the view shown in AI mode: DUAL, CH1, CH2, LOGIC, METER or DECODE */
+    uint8_t ai_state;           /* AI_* */
+    uint8_t ai_page;            /* 0: the view with the AI's title on top, 1: the explanation */
+    bool ai_req;                /* the main loop sends the next capture as an AIASK snapshot */
+    uint32_t ai_ask_ms;         /* when the snapshot went out (0: not yet) */
+    char ai_title[APP_DEC_COLS + 1];
+    char ai_lines[APP_AI_LINES][APP_DEC_COLS + 1];
+    uint8_t ai_nlines;
 } app_t;
 
 void app_init(app_t *app);
@@ -164,6 +179,10 @@ void app_decode_text(app_t *app, const char *text);
 /* While decoding, after the main loop has copied the decoder's statistics into decode_plan: UART auto-baud
  * picks a rate once it has seen enough edges (and asks for a restart through decode_req). */
 void app_decode_tick(app_t *app);
+/* What the screen and the capture follow: the mode, or in AI mode the view the AI picked. */
+app_mode_t app_view(const app_t *app);
+/* AI mode's clock: says so when no answer comes (call it from the main loop). */
+void app_ai_tick(app_t *app, uint32_t now_ms);
 /* METER's averaged readings for a channel (what its pages show). */
 const meter_avg_t *app_meter_avg(const app_t *app, int ch);
 /* DECODE mode's buses (UP / DOWN), for the screen and the host. */
